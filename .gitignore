@@ -1,0 +1,25 @@
+# Created by Setup.bat from your own copy of the game: never commit these
+/DISKA/
+/DISKB/
+/DISKC/
+/SAMPLES/
+/MAIN.EXE
+/INTR.EXE
+/MS.EXE
+/MOON.CFG
+/SAVEHOOK.COM
+/music.conf
+/_fixes/
+/_music/adlib/
+/_music/gm/
+/_music/mt32/
+/_music/amiga/
+/save/
+*.FLG
+# Your own files
+/amiga/*.adf
+/amiga/*.ADF
+/mt32-roms/*.ROM
+/mt32-roms/*.rom
+/soundfonts/*.sf2
+__pycache__/

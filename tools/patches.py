@@ -1,0 +1,137 @@
+"""Byte patches for the uncompressed MAIN.EXE (see make_main_exe.py). Each patch names its address in the
+running program (segment:offset in the load-segment-1000h image, or DS:offset with DS = 223Bh), the original bytes
+it expects and the new bytes, so a patch can never be applied to the wrong file. Fix ids match FIXES.md (K1...)."""
+import struct
+
+LOAD_SEG, DS_SEG = 0x1000, 0x223b
+
+PATCHES = {
+    'K1': {
+        'title': 'CHEAP1B sample: the sample name table lists "cheap2b" twice (DS:8721, entries 8 and 9); '
+                 'entry 8 is meant to be cheap1b (the list is alphabetical), so CHEAP1B was never played',
+        'bytes': [(('DS', 0x87c1), b'cheap2b\0', b'cheap1b\0')],
+    },
+    'K2': {
+        'title': 'Ratmen grow stronger as the moon waxes (manual). The ratmen setup at 1000:23fe used its strong '
+                 'stats (7 HP, bite 6, claw 3) at full moon (2Dh) and its strongest (12 HP, bite 8, claw 5) at new moon '
+                 '(31h). Now: strongest at full moon, strong at three-quarter moon (2Fh), normal otherwise',
+        'bytes': [((0x1000, 0x240c), b'\x83\x3e\x89\x89\x2d', b'\x83\x3e\x89\x89\x2f'),   # strong:    full -> 3/4
+                  ((0x1000, 0x2427), b'\x83\x3e\x89\x89\x31', b'\x83\x3e\x89\x89\x2d')],  # strongest: new  -> full
+    },
+    'K4': {
+        'title': 'Object slot leak in fights (dragon fight hang, probably also the crash after the Guardian or dragon, K3). '
+                 'New fight objects (fire, hit effects, daggers) are made at 1000:3E89: a game object slot (20 at DS:6F08) and '
+                 'an animation slot (10 at DS:947E, call 981F). When the animation slots are full, 981F returns AX=1, which '
+                 'was ignored: the game slot stayed taken for the rest of the fight, and with all 20 gone the next object '
+                 'was written past the table (DS:76B0). Now the routine ends with [di] = AX xor 1, which frees the game slot '
+                 'when the animation slot could not be had (2A1E has already set [di] to 1, so the old mov word [di],1 '
+                 'was redundant)',
+        'bytes': [((0x1000, 0x3ea5), bytes.fromhex('c7050100885535e87059c3'),      # mov word [di],1 / mov [di+35h],dl /
+                                                                                    # call 981F / ret
+                                     bytes.fromhex('885535e874593401' '8805c3'))],  # mov [di+35h],dl / call 981F /
+    },                                                                              # xor al,1 / mov [di],al / ret
+    'D6': {
+        'title': 'Save state before every fight (Moonstone Rebuilt only). Every fight (lairs, dragon, Guardian, knights) '
+                 'starts in the routine at 1000:0307; its first instruction (mov word [7841h],0) becomes int 66h, '
+                 'which SAVEHOOK.COM (make_savehook.py) handles: it does that instruction and has DOSBox-X autosave '
+                 'the state. Needs SAVEHOOK.COM resident, otherwise the game crashes at the first fight',
+        'bytes': [((0x1000, 0x0307), b'\xc7\x06\x41\x78\x00\x00', b'\xcd\x66\x90\x90\x90\x90')],
+    },
+    'D7': {
+        'title': 'Save state at the start of every human turn on the map (Moonstone Rebuilt only). The turn change at '
+                 '1000:a610 sets up the next knight (call 1000:a697) and then loads its record (1000:a63f, '
+                 'mov si,[77e8h]); that instruction becomes int 65h, which SAVEHOOK.COM handles: it does the '
+                 'instruction and, unless the knight is computer-controlled, has DOSBox-X autosave the state. '
+                 'Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xa63f), b'\x8b\x36\xe8\x77', b'\xcd\x65\x90\x90')],
+    },
+}
+
+# --- INTR.EXE (intro and ending) -----------------------------------------------------------------------------------
+# K9: skip the intro (and ending) with Enter, Space or Esc. Every intro scene waits for vertical retrace in the routine
+# at 0000:0F9E; it is replaced by a far jump to new code in the unused tail of the music-module buffer (segment 0492h,
+# offset 2300h; the largest intro module is 8274 bytes). When the module is loaded (first byte 1Eh = push ds) and one of
+# the keys is pressed, the new code resets the stack and jumps to the intro's own shutdown path at 0000:00D1 (stop music,
+# restore video and timer, exit). Otherwise it does the original retrace wait and returns through a RET at 0000:0FA3.
+INTR_CAVE_SEG, INTR_CAVE_OFF = 0x0492, 0x2300
+INTR_DATA_SEG, INTR_STACK_TOP = 0x06d2, 0x0800
+
+KEY_STATE_TABLE = 0x46f3                                # INTR's own int 9 handler (0000:4774): byte per scan code,
+SKIP_SCANCODES = (0x1c, 0x39, 0x01)                     # 00 = held, FF = released. Enter, Space, Esc.
+
+def _intr_skip_code():
+    """Machine code for the cave, plus offsets (within it) of words that need relocation. INTR replaces the keyboard
+    interrupt and never passes keys to the BIOS, so the code reads INTR's key state table instead of int 16h."""
+    c, relocs, fix = bytearray(), [], {}
+    def emit(*b): c.extend(b)
+    def jcc(op, label): emit(op, 0); fix[len(c) - 1] = label
+    emit(0x2e, 0x80, 0x3e); flag_ref = len(c); emit(0, 0, 0x00)   # cmp byte cs:[flag], 0     already skipping?
+    jcc(0x75, 'wait')                                  # jne wait
+    emit(0x2e, 0x80, 0x3e, 0x00, 0x00, 0x1e)          # cmp byte cs:[0000], 1Eh   music module loaded?
+    jcc(0x75, 'wait')                                  # jne wait
+    emit(0x50, 0x06)                                   # push ax / push es
+    emit(0xb8); relocs.append(len(c)); emit(0x00, 0x00)   # mov ax, segment 0 (INTR code)
+    emit(0x8e, 0xc0)                                   # mov es, ax
+    for code in SKIP_SCANCODES:
+        addr = KEY_STATE_TABLE + code
+        emit(0x26, 0x80, 0x3e, addr & 0xff, addr >> 8, 0x00)   # cmp byte es:[table+code], 0   held?
+        jcc(0x74, 'skip')
+    emit(0x07, 0x58)                                   # pop es / pop ax
+    labels = {'wait': len(c)}
+    emit(0xba, 0xda, 0x03)                             # mov dx, 3DAh  (original retrace wait)
+    emit(0xec, 0xa8, 0x08, 0x75, 0xfb)                 # in al,dx / test al,8 / jnz -5
+    emit(0xec, 0xa8, 0x08, 0x74, 0xfb)                 # in al,dx / test al,8 / jz -5
+    emit(0xea, 0xa3, 0x0f); relocs.append(len(c)); emit(0x00, 0x00)   # jmp far 0000:0FA3 (ret)
+    labels['skip'] = len(c)
+    emit(0x07, 0x58)                                   # pop es / pop ax
+    emit(0x2e, 0xc6, 0x06); flag_set = len(c); emit(0, 0, 0x01)      # mov byte cs:[flag], 1
+    emit(0xb8); relocs.append(len(c)); emit(INTR_DATA_SEG & 0xff, INTR_DATA_SEG >> 8)   # mov ax, data segment
+    emit(0x8e, 0xd8)                                   # mov ds, ax
+    emit(0xbc, INTR_STACK_TOP & 0xff, INTR_STACK_TOP >> 8)                         # mov sp, 0800h
+    emit(0xea, 0xd1, 0x00); relocs.append(len(c)); emit(0x00, 0x00)   # jmp far 0000:00D1 (shutdown)
+    flag = INTR_CAVE_OFF + len(c); emit(0x00)          # flag byte
+    for pos in (flag_ref, flag_set):
+        c[pos:pos + 2] = bytes([flag & 0xff, flag >> 8])
+    for pos, label in fix.items():
+        rel = labels[label] - (pos + 1)
+        assert -128 <= rel < 128
+        c[pos] = rel & 0xff
+    return bytes(c), relocs
+
+def patch_intr_skip(exe):
+    """Apply K9 to an uncompressed INTR.EXE; returns the new EXE (relocation table extended)."""
+    from unexepack import build_mz
+    h = struct.unpack('<14H', exe[:28])
+    image = bytearray(exe[h[4] * 16:])
+    relocs = [struct.unpack('<HH', exe[h[12] + 4*i:h[12] + 4*i + 4]) for i in range(h[3])]
+    hook = 0x0f9e
+    expected = bytes.fromhex('bada0390eca80875fb90eca80874fbc3')
+    if image[hook:hook + 16] != expected:
+        raise ValueError('K9: unexpected bytes at 0000:0F9E (not the GOG INTR.EXE?)')
+    cave = INTR_CAVE_SEG * 16 + INTR_CAVE_OFF
+    code, code_relocs = _intr_skip_code()
+    if any(image[cave:cave + len(code)]):
+        raise ValueError('K9: cave area is not empty')
+    image[cave:cave + len(code)] = code
+    image[hook:hook + 5] = bytes([0xea, INTR_CAVE_OFF & 0xff, INTR_CAVE_OFF >> 8,
+                                  INTR_CAVE_SEG & 0xff, INTR_CAVE_SEG >> 8])           # jmp far 0492:2300
+    image[hook + 5] = 0xc3                                                               # ret (target of the jump back)
+    new = [hook + 3] + [cave + r for r in code_relocs]
+    relocs += [(lin & 0xf, lin >> 4) for lin in new]                                     # (offset, segment) pairs
+    return build_mz(bytes(image), relocs, h[11], h[10], h[7], h[8], h[5])
+
+def image_offset(where):
+    seg, off = where
+    seg = DS_SEG if seg == 'DS' else seg
+    return (seg - LOAD_SEG) * 16 + off
+
+def apply_patches(exe, ids):
+    out = bytearray(exe)
+    header = struct.unpack('<H', exe[8:10])[0] * 16
+    for pid in ids:
+        for where, old, new in PATCHES[pid]['bytes']:
+            pos = header + image_offset(where)
+            if out[pos:pos + len(old)] != old:
+                raise ValueError(f'{pid}: expected {old!r} at {where}, found {bytes(out[pos:pos + len(old)])!r}')
+            out[pos:pos + len(new)] = new
+    return bytes(out)

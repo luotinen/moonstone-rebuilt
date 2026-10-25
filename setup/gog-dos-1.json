@@ -1,0 +1,1406 @@
+{
+ "id": "gog-dos-1",
+ "description": "GOG.com DOS release (game id 1854348302)",
+ "files": [
+  {
+   "path": "MAIN.EXE",
+   "size": 120124,
+   "sha256": "29bf4832e9e28326e7dc84fc829589e24c69afc1f05773a0367a9625a783a87e"
+  },
+  {
+   "path": "INTR.EXE",
+   "size": 37357,
+   "sha256": "815b3735cc33f40c815e8e48ca134b1ebfb9baae27a8505fe701c970d4eb8a30"
+  },
+  {
+   "path": "MS.EXE",
+   "size": 1692,
+   "sha256": "f7130f690bf1ccfd85ef7ff6c7480ed8af8c8521b8e49d820a603774d491d9e6"
+  },
+  {
+   "path": "DISKA/AT1.BIN",
+   "size": 4632,
+   "sha256": "e4cb2745fb177a3dd186b28266ecd62c3799a42eca7d30d009c6867761994bb6"
+  },
+  {
+   "path": "DISKA/ATUNE1.BIN",
+   "size": 7046,
+   "sha256": "8a86aae76676a99952c542711df2800ea2c5d2874fdd45b253dd3834007e74c1"
+  },
+  {
+   "path": "DISKA/ATUNE6.BIN",
+   "size": 8274,
+   "sha256": "cf689a554c6292e447255f192fdbf2cea0a724c1fd0c32c60585ea19f6aec9e9"
+  },
+  {
+   "path": "DISKA/AU1.CEL",
+   "size": 31289,
+   "sha256": "64d149b3d28ab1844e81dc1ec33948ffefc01111f2aac287ae8fdf59c8956dc0"
+  },
+  {
+   "path": "DISKA/BG1A.PIV",
+   "size": 15742,
+   "sha256": "908c0333ed5ce11d345c14b62599df4674aa3039edc2e4c2eb624070ddd1ea66"
+  },
+  {
+   "path": "DISKA/BG1B.PIV",
+   "size": 28190,
+   "sha256": "8c4418f7089f5fb5e60e1e166b8f253b1781b4971eaeee3198c0b60b04d555ac"
+  },
+  {
+   "path": "DISKA/BG1C.PIV",
+   "size": 16828,
+   "sha256": "9046c965c730c323ea6b6d4b8d8da82b9d20c3b69f5d2f629d8aca224d09eede"
+  },
+  {
+   "path": "DISKA/BG2.PIV",
+   "size": 17571,
+   "sha256": "83b1f3ad537f5ce70807748bd59ae51909a471dde1a81892f64860e76790ff3e"
+  },
+  {
+   "path": "DISKA/BG2A.PIV",
+   "size": 21170,
+   "sha256": "441dee3daf975ce3157e84202233e26cc1ed1b004292f7cff777df4f2f05ff78"
+  },
+  {
+   "path": "DISKA/BG3.PIV",
+   "size": 20984,
+   "sha256": "b61d3911c4a2b9b3148672cdce1ab0324cb9122841f152f889ea72bcc5c6320d"
+  },
+  {
+   "path": "DISKA/BG4.PIV",
+   "size": 11082,
+   "sha256": "59d17f17600ae46b60667992364e6b360529df12d9ea41b976c01f1d2527b051"
+  },
+  {
+   "path": "DISKA/BG5.PIV",
+   "size": 16586,
+   "sha256": "b67ec5d59178d79814a837776252bcf75c1f7a97f06249ed71d2afaef72b737a"
+  },
+  {
+   "path": "DISKA/BG5A.PIV",
+   "size": 25442,
+   "sha256": "aec20997ca0dd954b1bc81cc8137d51f74eca0a8f4a94866f91487d3fa1c972d"
+  },
+  {
+   "path": "DISKA/BG7.PIV",
+   "size": 13969,
+   "sha256": "6f01ac4c36c9b33f9f11b812a717c0786c1f4afa663962f854ee73d26853fa52"
+  },
+  {
+   "path": "DISKA/BG8.PIV",
+   "size": 13194,
+   "sha256": "90b305790381cc464393d1ac16a5f7f7091f6b0d26cc1ce355ce6d8f8fb39973"
+  },
+  {
+   "path": "DISKA/BOLD.F",
+   "size": 12133,
+   "sha256": "2aec40683ea11d9eed6000e1a32731d65ff1682b89298e5469adeb136fa996f8"
+  },
+  {
+   "path": "DISKA/BT1.BIN",
+   "size": 3630,
+   "sha256": "08fe36160ce7e24b2a661d95715ee6d954d44127234a043bc409f468093f8a65"
+  },
+  {
+   "path": "DISKA/BTUNE1.BIN",
+   "size": 2426,
+   "sha256": "c52b5b3550af20dd4d478d796157d1d524d578bb5325203282b976f33b1bfa8a"
+  },
+  {
+   "path": "DISKA/BTUNE6.BIN",
+   "size": 4227,
+   "sha256": "8a34ce508f6bcf75be1c56ee0ebd8ef40e57dc4b3005cad92b6dbb2e6ed1074e"
+  },
+  {
+   "path": "DISKA/CAMEL4",
+   "size": 9120,
+   "sha256": "19eb3be88849718bf521ab57e845fdc9b17f9ad41567b405dcd4e30f114364fc"
+  },
+  {
+   "path": "DISKA/CO.STI",
+   "size": 960,
+   "sha256": "2401d7f897be714e5ffeac1d3a5ff5a60838e0ce690755e9f940a0888a2151f1"
+  },
+  {
+   "path": "DISKA/CO1.CEL",
+   "size": 8652,
+   "sha256": "5336500dc1c6b816a6db3da28d34d11363509199075c39468a7ec9eca2253264"
+  },
+  {
+   "path": "DISKA/CT-VOICE.DRV",
+   "size": 2483,
+   "sha256": "a1a940270cbd399c3cdaf59414d5bff3a8a8a943e0b2803561c53085c41ccd85"
+  },
+  {
+   "path": "DISKA/DA1.CEL",
+   "size": 4440,
+   "sha256": "1dfa1138f149d941da3f45c240cc330fed44acd5cf948cf53479a567796d667d"
+  },
+  {
+   "path": "DISKA/DG1.CEL",
+   "size": 22377,
+   "sha256": "433ce1c2c4f70d2cee0283766f4b27d0b942cb9d97768ce455b73a4a9e76626e"
+  },
+  {
+   "path": "DISKA/DW1.CEL",
+   "size": 17820,
+   "sha256": "7ea20b475e03589c4c112495dc99386a436bbdf813807a47fa9ef96ec1c2cb9e"
+  },
+  {
+   "path": "DISKA/HA1.CEL",
+   "size": 11898,
+   "sha256": "6129c3a67493c1e0d579354265104af7bea0412913e47c60b375d45084f90ffe"
+  },
+  {
+   "path": "DISKA/INTRO.STI",
+   "size": 960,
+   "sha256": "d98c0d0807f0a18eeb3c1ab519a76e4251fe82ffef28388b640c90b01614d7cc"
+  },
+  {
+   "path": "DISKA/INTRO1.STI",
+   "size": 105,
+   "sha256": "29a4c0099a2fcf57e7f5e8ad99926f6aaab6c3680192001268fe425ae40180f0"
+  },
+  {
+   "path": "DISKA/KLIFT1.CEL",
+   "size": 12927,
+   "sha256": "c79ef41937cdf1a651a68766cfeec5a059fdfc4ca8a721d211a732472b4954ed"
+  },
+  {
+   "path": "DISKA/LI1.CEL",
+   "size": 14724,
+   "sha256": "bd9459d60300d9972b65ebaf10c0213fed1086e9559c755564a1e90e8416691d"
+  },
+  {
+   "path": "DISKA/MESSAGE.PIV",
+   "size": 3694,
+   "sha256": "4633b51167960dc8562ae2e3cf2be522b35d4ef7ad2126d214db2c69745be94c"
+  },
+  {
+   "path": "DISKA/MINDSCAP",
+   "size": 16473,
+   "sha256": "08429a0b903a635d7870102f09a702ad9b643fb835b14a935ca86f0893f81337"
+  },
+  {
+   "path": "DISKA/OV1.CEL",
+   "size": 11357,
+   "sha256": "680d1479bfdbe9debec2c01e1dd073c1c8a5ceaad721512a684329e59932815f"
+  },
+  {
+   "path": "DISKA/RT1.BIN",
+   "size": 3478,
+   "sha256": "8f6fc6f349b759853db9383ab8cfc3ba062e7578c5b6c07e22bf5e16018425c8"
+  },
+  {
+   "path": "DISKA/RTUNE1.BIN",
+   "size": 4725,
+   "sha256": "74372fb5cdb503b257b0ba9708e9b4c6fb69918fd1901f5279683217f6c13fab"
+  },
+  {
+   "path": "DISKA/RTUNE6.BIN",
+   "size": 5953,
+   "sha256": "5c04aa8d38a1bf24c59f99cf6867f79050b4f869a6ef128cf6745f3d61a221e1"
+  },
+  {
+   "path": "DISKB/ATUNE2.BIN",
+   "size": 4287,
+   "sha256": "d1060525f1790ef992c78993de6826ede8eab18c32f814d15a26ef58a49543f9"
+  },
+  {
+   "path": "DISKB/ATUNE3.BIN",
+   "size": 6050,
+   "sha256": "6807eab260371e5900dee7c5437217efe6b73974f5dac934b3a9c8ec3f74d76c"
+  },
+  {
+   "path": "DISKB/ATUNE4.BIN",
+   "size": 5149,
+   "sha256": "605bb2c3f4ed78aa7352dcbc8b9f9301483b584ab92518eac7136456e8b849bb"
+  },
+  {
+   "path": "DISKB/ATUNE5.BIN",
+   "size": 4287,
+   "sha256": "a81b10c378837272879a48470e2173d8f528171afd906e21eab3e2022c09617d"
+  },
+  {
+   "path": "DISKB/BLO.CEL",
+   "size": 2099,
+   "sha256": "d83857454db7f5113598c6a41a46e45f62ecb4936637372b4807e22125bf699e"
+  },
+  {
+   "path": "DISKB/BTUNE2.BIN",
+   "size": 2240,
+   "sha256": "723cb4b2d535087e40c97f21c267b9d181b748f4b5000d40a3b6c8d6b6c27f2c"
+  },
+  {
+   "path": "DISKB/BTUNE3.BIN",
+   "size": 3139,
+   "sha256": "b068a30c670fbb5490a1c0523cc7c30dad0b16eb1e17d670f73c09541c76e50e"
+  },
+  {
+   "path": "DISKB/BTUNE4.BIN",
+   "size": 2908,
+   "sha256": "efcdfb54e60b0ac39bd5195e6db4610b1c83fa24dd2f9a15df97a321933c7c4d"
+  },
+  {
+   "path": "DISKB/BTUNE5.BIN",
+   "size": 2240,
+   "sha256": "7793901773cf3cf5481bd7908d5e01a6e135d81330e74e6e0b9f206967efa212"
+  },
+  {
+   "path": "DISKB/CH.PIV",
+   "size": 9718,
+   "sha256": "376825107a9f65d264c6e7f36d6eeffd0d23ce55d4ca072b2475dbfcc098ea37"
+  },
+  {
+   "path": "DISKB/COLLIDE.HIT",
+   "size": 8356,
+   "sha256": "663bb4b7c00e8f4a9d2415cd9fb564af839b0ff8651692cb2c15d926c40e1ce1"
+  },
+  {
+   "path": "DISKB/F09.T",
+   "size": 105,
+   "sha256": "29a4c0099a2fcf57e7f5e8ad99926f6aaab6c3680192001268fe425ae40180f0"
+  },
+  {
+   "path": "DISKB/FO1.CMP",
+   "size": 22872,
+   "sha256": "ce82f66feed25e2dbba03776f1e47142aed647b0c1312d9c3d4a4b5318b05813"
+  },
+  {
+   "path": "DISKB/FO1.T",
+   "size": 710,
+   "sha256": "48c8a553ea6fb205429d50b1d7c4cff7db4e977e727c22cf74d963cc305dbd5a"
+  },
+  {
+   "path": "DISKB/FO2.CMP",
+   "size": 20809,
+   "sha256": "a3234e1f24c19b3c88c4213b8d236280f98aa90400c0b7b70cfd065670ec3f07"
+  },
+  {
+   "path": "DISKB/FO2.T",
+   "size": 380,
+   "sha256": "5b3fa0bed0217ab186380fc470b689237097620171490860cec64655f7c14aac"
+  },
+  {
+   "path": "DISKB/FO3.T",
+   "size": 569,
+   "sha256": "f460bec019f637279e817d039403d92f727d2fd51a8e6f2a108d17e486d440f3"
+  },
+  {
+   "path": "DISKB/FO4.T",
+   "size": 551,
+   "sha256": "4fa445ebc7ae8c8fada16871b8900ccd5c2a8265335103500ebbe68671e52de0"
+  },
+  {
+   "path": "DISKB/FO5.T",
+   "size": 707,
+   "sha256": "649db769f4123bb991dfa8413c5e0122e0b033e427114cb9624fddf2cbec1789"
+  },
+  {
+   "path": "DISKB/FO6.T",
+   "size": 642,
+   "sha256": "16af9293fe383f9cb4e9022f4f9d71f92732dc07722a9c48bcee0b0658e79f30"
+  },
+  {
+   "path": "DISKB/FO7.T",
+   "size": 453,
+   "sha256": "536f40e5e2588b9902a890299cdd41152d243f72a4ff34a6ada348cd8d573e77"
+  },
+  {
+   "path": "DISKB/FO8.T",
+   "size": 711,
+   "sha256": "7faffb06392e98d1189db8a077cb9bfa6203b0031163faf85b5f0b810c45842a"
+  },
+  {
+   "path": "DISKB/FOB1.CMP",
+   "size": 25493,
+   "sha256": "7387a391d7ed756885b8c6d3a639f73f2f5d3f25bef94e9d8fa0961619f8c892"
+  },
+  {
+   "path": "DISKB/FOL1.T",
+   "size": 457,
+   "sha256": "ee86fef494bfebcddfd0419eb8c2bca0373ae0bf1437b7baff6967d450d8dd32"
+  },
+  {
+   "path": "DISKB/FOL2.T",
+   "size": 564,
+   "sha256": "ad9426763e21f6dbf9dc54526c48449601080e5d4150580a6545bd931c6dce74"
+  },
+  {
+   "path": "DISKB/FOL3.T",
+   "size": 764,
+   "sha256": "656df3f9d7769154b80baae85b06fc20bdf70a28587e226c057b7043a537323a"
+  },
+  {
+   "path": "DISKB/FOL4.T",
+   "size": 730,
+   "sha256": "7b9ae309f28b601566c3a57b8a3d8075018efe509d91d3ff09bb43a81a2f6a8a"
+  },
+  {
+   "path": "DISKB/FOL5.T",
+   "size": 613,
+   "sha256": "8f14def45c0106eb26e4be1fed19a78b9189c26dafc1e1c5853d2485d299a83c"
+  },
+  {
+   "path": "DISKB/FOL6.T",
+   "size": 668,
+   "sha256": "2811fdb320be72687fba5565036dd250ab1e5fc4486423b88ced0a9190527410"
+  },
+  {
+   "path": "DISKB/GL1.T",
+   "size": 488,
+   "sha256": "ecc0442bf591a4ce609d8c34c0319db4bdb464f2bcf5f4fbc8154bf9cc10ce29"
+  },
+  {
+   "path": "DISKB/GL2.T",
+   "size": 351,
+   "sha256": "a52903fa8a495050afe4adf11b1880eca6cc2470c4b7a08363e8ff6b305be1aa"
+  },
+  {
+   "path": "DISKB/GL3.T",
+   "size": 372,
+   "sha256": "2b4abc84cc3f16beecc0e3d6ea2c4ed61449f08ad4b695fa25a08727b3f02da7"
+  },
+  {
+   "path": "DISKB/GL4.T",
+   "size": 500,
+   "sha256": "51d0bdd4591955f6a9953af8be0a4c9189574cda8cda6a4d13b23d43235d55b1"
+  },
+  {
+   "path": "DISKB/GL5.T",
+   "size": 534,
+   "sha256": "f26fc92144daa6fc25565e5cae3027ca78ce31bbf24d364de1537ddc523f48db"
+  },
+  {
+   "path": "DISKB/GL6.T",
+   "size": 565,
+   "sha256": "20fccc795a8e74644e7e8bd5605e49ef8cc8e8e58173d2065b4a71566036ac22"
+  },
+  {
+   "path": "DISKB/GL7.T",
+   "size": 442,
+   "sha256": "43481e8262f4366ce8fbbf981e9e766aab78072254ed625c515650283ed8e07c"
+  },
+  {
+   "path": "DISKB/GL8.T",
+   "size": 673,
+   "sha256": "43270061c28921fad3cd59535a382eb8ec3706aea3b77390fb41e921ea1c78dc"
+  },
+  {
+   "path": "DISKB/GLB1.CMP",
+   "size": 20901,
+   "sha256": "2f5e29d4d483fe6c8ed03303f8b365597afefa2b6c350ce17a0ecd734e136d9f"
+  },
+  {
+   "path": "DISKB/GLL1.T",
+   "size": 506,
+   "sha256": "9af516be1b92c73c9008140125f49371bc384fa0bb972f7994ab66c2e5cd56c1"
+  },
+  {
+   "path": "DISKB/GLL2.T",
+   "size": 596,
+   "sha256": "811b827621f17cc1f3825a2a5c2c6fd35b00a6da371fe00c02da0ba96bbf74a0"
+  },
+  {
+   "path": "DISKB/GLL3.T",
+   "size": 470,
+   "sha256": "e8e8ac9fb7cb143ebb7597f044d28df87cae2f6aefc6dc7c8d03ccc3b59f479a"
+  },
+  {
+   "path": "DISKB/GLL4.T",
+   "size": 832,
+   "sha256": "a5c28e686848fc8894e1eae411f6b9e8eeae0ae6399da28febe71a3e649c14f0"
+  },
+  {
+   "path": "DISKB/GLL5.T",
+   "size": 491,
+   "sha256": "c8cf2dbab033cdff4b20f445450f65d0e9ba126ede5fb870001d52015b5d5c4d"
+  },
+  {
+   "path": "DISKB/GLL6.T",
+   "size": 863,
+   "sha256": "496a6b4c008371207da176ae325931478bb6b421033e53cbba797c39c229a476"
+  },
+  {
+   "path": "DISKB/HE.A",
+   "size": 12152,
+   "sha256": "7bbdb3f3b932bd1a1fd2f997ec4cddf385ff5f9432bbdfda112306a7ad204ea8"
+  },
+  {
+   "path": "DISKB/HE1.OB",
+   "size": 21058,
+   "sha256": "bce75aed64a4087331589f2f302f6052406cee520c479617513f8b333ae4fb6f"
+  },
+  {
+   "path": "DISKB/HE2.OB",
+   "size": 8506,
+   "sha256": "549566f897fcfe01cd188162131f91446528774261f5c15b54bfeae29cf90bbb"
+  },
+  {
+   "path": "DISKB/HE3.OB",
+   "size": 11161,
+   "sha256": "43f05a245ed226b58d7803f399a9a9b077596b3f63eb90fa599beea31a4a5c42"
+  },
+  {
+   "path": "DISKB/KI.CEL",
+   "size": 11991,
+   "sha256": "02287e8990919c21e62cf94142d60d9a5fbd0573df5be283eb6e31d367071104"
+  },
+  {
+   "path": "DISKB/KN1.OB",
+   "size": 20760,
+   "sha256": "96bdcf5e73b4ebaaba4f3809bdc85eaa15808cc9173556bfb438080d171de7b5"
+  },
+  {
+   "path": "DISKB/KN2.OB",
+   "size": 8582,
+   "sha256": "5e04b50a5ea4a294176cc3101a7106e3b9b6967d172252054857fdf06000bd99"
+  },
+  {
+   "path": "DISKB/KN3.OB",
+   "size": 11113,
+   "sha256": "eb304d99b1e6a1c50e4ee8e0949c6551a4cb81a583170611a6f7ffca7001edf8"
+  },
+  {
+   "path": "DISKB/KN4.OB",
+   "size": 1600,
+   "sha256": "82dfadb1a4990054645197e4765600a84fb85bb877cb85943fdf5d41820e8384"
+  },
+  {
+   "path": "DISKB/KN5.OB",
+   "size": 14215,
+   "sha256": "0e4e325fdea1d47f533ecf7000838afea6eb7f9e0a3f31b55779a184ab8eb5da"
+  },
+  {
+   "path": "DISKB/MAP.CMP",
+   "size": 35331,
+   "sha256": "73356e68d123709694767ea06d53f5e332dd309b1b2d3edc942f44d75d79761f"
+  },
+  {
+   "path": "DISKB/MI.C",
+   "size": 4810,
+   "sha256": "31a9b9d4675600bdfc89ac823e6608be24c539e0edd2c2e251e7041031927195"
+  },
+  {
+   "path": "DISKB/PO.CEL",
+   "size": 97,
+   "sha256": "1452986d819f2ee259e78cec17d0983614b66d28713f70d1240d53a2319fcc10"
+  },
+  {
+   "path": "DISKB/RATMEN1.CEL",
+   "size": 14327,
+   "sha256": "6b59eb2aee821f94e9f5ce0fbea17eba0239ce4759a54e7dc2c057c69865f6ab"
+  },
+  {
+   "path": "DISKB/RATMEN2.CEL",
+   "size": 12832,
+   "sha256": "fdfccce1758ce662cc4777ca82fef14c3ed73476767a179df07967a464289f58"
+  },
+  {
+   "path": "DISKB/RTUNE2.BIN",
+   "size": 1966,
+   "sha256": "73303227685a9905084d405d405d46c774c49ed1d958c0b1c5b94b115ed4dc07"
+  },
+  {
+   "path": "DISKB/RTUNE3.BIN",
+   "size": 3707,
+   "sha256": "e36954d534a74313184f0c1c52d09771340bc7dd9f1863474c9ce48ae205f98d"
+  },
+  {
+   "path": "DISKB/RTUNE4.BIN",
+   "size": 2828,
+   "sha256": "47883d3581eb14295f59406dd7653dfb857ff5109dc6d6349c9f6c07fc3dff8d"
+  },
+  {
+   "path": "DISKB/RTUNE5.BIN",
+   "size": 1966,
+   "sha256": "6948c97737fa122901158f09f64c46251d45a20fceb0bce8545fe41e9dec1c74"
+  },
+  {
+   "path": "DISKB/SEL.CEL",
+   "size": 8229,
+   "sha256": "30f6b15498f18bdb94e2cfa236c5eff32a0bcd5dc9e457a0391732dfb1e20a77"
+  },
+  {
+   "path": "DISKB/SMALL.FON",
+   "size": 1035,
+   "sha256": "3a4ebc15f1176ac9428d7abb3f4ceb2b865ed3aa21ffea9068f51ec702f3b52b"
+  },
+  {
+   "path": "DISKB/SW1.CMP",
+   "size": 18008,
+   "sha256": "dd93df73ad934648497bd1a6b56ea0d60b92787f1787af5e876c608f656f8b53"
+  },
+  {
+   "path": "DISKB/SW1.T",
+   "size": 576,
+   "sha256": "21f33c843dba9523768d449f3af9ecd4824f6a02555d1cae1fe29781ad504ece"
+  },
+  {
+   "path": "DISKB/SW2.T",
+   "size": 892,
+   "sha256": "09518117c9ea142ef5c92a197dbd782b0b6dee050deee26a0d48e4b5b1b57270"
+  },
+  {
+   "path": "DISKB/SW3.T",
+   "size": 509,
+   "sha256": "1f4addb6c4ec8c067e24b4d04104a9df2a4172457a9829ff2ff5c0affcb2447b"
+  },
+  {
+   "path": "DISKB/SW4.T",
+   "size": 681,
+   "sha256": "8fbdb7e8a27289f5302386ef187d361524b58a05d614323787a16a570cc21667"
+  },
+  {
+   "path": "DISKB/SW5.T",
+   "size": 778,
+   "sha256": "39fac4f64eb9147f57cbb6b9b0d836fd66f55770923b7a512b56d6f56384e210"
+  },
+  {
+   "path": "DISKB/SW6.T",
+   "size": 705,
+   "sha256": "41be43b2cd73b05cfa48db312faaf193a5d408547851d597dd32780795e76bab"
+  },
+  {
+   "path": "DISKB/SW7.T",
+   "size": 759,
+   "sha256": "c9c00a8a327aaa0625732ae38d6c2a7ebc32d96a21683dea1de9768cc5945650"
+  },
+  {
+   "path": "DISKB/SW8.T",
+   "size": 758,
+   "sha256": "dcf35f2207e5d455edb297ffd751cd92a95c2274eac03beb89fdb37e8c9c3350"
+  },
+  {
+   "path": "DISKB/SWB1.CMP",
+   "size": 19466,
+   "sha256": "2aeef46abe44336327d6679497748a75af8bd138d6ee073fd876f722375e8716"
+  },
+  {
+   "path": "DISKB/SWL1.T",
+   "size": 993,
+   "sha256": "1169a89377fa6fa47bbf93d5b1880c5f70bd0aedbca41381f02faef7a81095eb"
+  },
+  {
+   "path": "DISKB/SWL2.T",
+   "size": 672,
+   "sha256": "8e18af9722e5c4321e55ae0b6281aeda55b089e494ec7e5823fd9baad40b8b05"
+  },
+  {
+   "path": "DISKB/SWL3.T",
+   "size": 743,
+   "sha256": "92029253a6810d21afd8fbdc9fdbeb0e26a51e2c7a9b4464693904b4fcb8e2e1"
+  },
+  {
+   "path": "DISKB/SWL4.T",
+   "size": 678,
+   "sha256": "c615707c3d23789e0aac2896258f22e7c16b52deaf1acb270d0614422eaf11c5"
+  },
+  {
+   "path": "DISKB/SWL5.T",
+   "size": 930,
+   "sha256": "5d95298e51647964157a3e26c80bc62281ebe58b3a39a1212dbbcff2f0ee94c9"
+  },
+  {
+   "path": "DISKB/SWL6.T",
+   "size": 756,
+   "sha256": "bb772c13faaa799d32b5c252fbf8fc3828323c610c0730bed22b29d21adea4dc"
+  },
+  {
+   "path": "DISKB/TROGGAX1.CEL",
+   "size": 14150,
+   "sha256": "280c39dff7a81c0c67c6565204920768ef732b7475912357a0a629c9ca061968"
+  },
+  {
+   "path": "DISKB/TROGGAX2.CEL",
+   "size": 14217,
+   "sha256": "ae47bc0e4c616e832eb7e9f2a0887b72376db54ed3a56ff4e36704a7b022e28a"
+  },
+  {
+   "path": "DISKB/TROGGSP1.CEL",
+   "size": 14358,
+   "sha256": "1f6ef71a8b7241104f11a3157a8cf991c5a9b30bf73399e3f1ca1698b2f5bf5d"
+  },
+  {
+   "path": "DISKB/TROGGSP2.CEL",
+   "size": 14078,
+   "sha256": "82bce36f10ef98b7ca1027ec98acfcd444139fcea326a73404290ddba07cb5ff"
+  },
+  {
+   "path": "DISKB/TROLL1.CEL",
+   "size": 18520,
+   "sha256": "4ecce7854ddefbba3d79cab48c3eb7b1d78b1bcd0fe104d5e0c35df4f00ee66a"
+  },
+  {
+   "path": "DISKB/TROLL2.CEL",
+   "size": 7652,
+   "sha256": "f665a3febc1cfec9036e1d9c1c8c34cfebd57f3ca286b663dd20464fdc337b9e"
+  },
+  {
+   "path": "DISKB/WA1.CMP",
+   "size": 14933,
+   "sha256": "9893811f390fd6d7eec8fc943d8c7bd2d95d3df1cdf0a4d07eb6e9bb98e7ec35"
+  },
+  {
+   "path": "DISKB/WA1.T",
+   "size": 407,
+   "sha256": "388ea4621929bceb99b1d23bbd95530a72e31822b3592f971ef2d2ff60a8ad19"
+  },
+  {
+   "path": "DISKB/WA2.T",
+   "size": 633,
+   "sha256": "7efdfdf2e8d53264ba56e1a089b193c208adf559495376e0108f4118e3ec127c"
+  },
+  {
+   "path": "DISKB/WA3.T",
+   "size": 706,
+   "sha256": "ace6c13aa8ae464c25439e1b15fc6f2f25e5951b02d681354427e8ab0e088b2e"
+  },
+  {
+   "path": "DISKB/WA4.T",
+   "size": 740,
+   "sha256": "f2d432ed854bc9da3d6e06f70b7c72f52b19cf24f9d4d180d67c95e8cc5973cc"
+  },
+  {
+   "path": "DISKB/WA5.T",
+   "size": 1002,
+   "sha256": "ad4698ae3a1aa0e533230b7ce76876e92f2468c6c88686e872ce7b596104ced8"
+  },
+  {
+   "path": "DISKB/WA6.T",
+   "size": 1296,
+   "sha256": "c56dc853bb8a0572faf904c58ed66577e6cfb0f17bbc1ad0b450cd50f089fdce"
+  },
+  {
+   "path": "DISKB/WA7.T",
+   "size": 554,
+   "sha256": "289e0e01c6297e94e1fc2792cdbd7caa3f771b6d6f1038d182167c9280996fcc"
+  },
+  {
+   "path": "DISKB/WA8.T",
+   "size": 721,
+   "sha256": "ea77beaff196d7098331a050df6bd8a7a88631eb644baa9fd09b924e5fd0ec07"
+  },
+  {
+   "path": "DISKB/WAB1.CMP",
+   "size": 20932,
+   "sha256": "eb6013adc550014bb6c220119e6ce702a960e55644565a049f46044ae93ff584"
+  },
+  {
+   "path": "DISKB/WAL1.T",
+   "size": 503,
+   "sha256": "c1618140b2337755231a6a44db7f3f03d892e0962948d7d8fde55cc3a06de3a4"
+  },
+  {
+   "path": "DISKB/WAL2.T",
+   "size": 854,
+   "sha256": "0c413f25233c27ac69af896c56c2bfee5872ad20d5ad758b910b200f02151726"
+  },
+  {
+   "path": "DISKB/WAL3.T",
+   "size": 609,
+   "sha256": "8d7c165ccd2522e12f9d097686e2f545672fb737166f2f9efb867d2346ceb3c5"
+  },
+  {
+   "path": "DISKB/WAL4.T",
+   "size": 611,
+   "sha256": "800beaf201b63215356e64dec292fb9c59037d1922dc7fdbd011e6403be76fc5"
+  },
+  {
+   "path": "DISKB/WAL5.T",
+   "size": 763,
+   "sha256": "7cbedb0297426a8432daaf5c53ff2397f349920e60426ef431e569d54359d2d0"
+  },
+  {
+   "path": "DISKB/WAL6.T",
+   "size": 1140,
+   "sha256": "9ab47846fee0ae4e2ea299010aba60818a8f657de4d3f49ad9ed3e1268c6d6a9"
+  },
+  {
+   "path": "DISKC/BALOK1.CEL",
+   "size": 26190,
+   "sha256": "c6c5130e02cdbd388fd6ca9f1674d8321b7e67c46ee58027c9fd4f0db19931bb"
+  },
+  {
+   "path": "DISKC/BALOK2.CEL",
+   "size": 6106,
+   "sha256": "15e33248d5664523f15bea8cff7c80f0270c41ce655f954015de8670f80cf6c8"
+  },
+  {
+   "path": "DISKC/BALOK3.CEL",
+   "size": 12077,
+   "sha256": "6c15f0933b0db58dff34a6d92924946950970b5a60d338819ebe15b49b708454"
+  },
+  {
+   "path": "DISKC/BE1.C",
+   "size": 21379,
+   "sha256": "4213beb60023c82a7d75144b6b72519006cd15d88ce7870e5058fa8a54276e1e"
+  },
+  {
+   "path": "DISKC/BE2.C",
+   "size": 4246,
+   "sha256": "dca0d9cf14c97738ef5f9450f87db55b402801ac2c81570b391a1d1a2ce0d0a4"
+  },
+  {
+   "path": "DISKC/DEMON1.CEL",
+   "size": 15437,
+   "sha256": "248da7eff5f029694e53d0013d7a023e18cc4c5bd940fe8133f88ce6228dc704"
+  },
+  {
+   "path": "DISKC/DEMON2.CEL",
+   "size": 32345,
+   "sha256": "81905a0644c4c3262252fa75fb790d25dc0b528064992926da5263cb845f1222"
+  },
+  {
+   "path": "DISKC/DEMON3.CEL",
+   "size": 6607,
+   "sha256": "6c647e9bc97a89fa77e6aed8ec049b91122aee6cf7a5df9a9eab83db6b44ab20"
+  },
+  {
+   "path": "DISKC/DEMON4.CEL",
+   "size": 7997,
+   "sha256": "5af35ac6f59859c539c547af724b0690da78ccfeb6ad0c6fcd7e2f2cf0830beb"
+  },
+  {
+   "path": "DISKC/DICE.CEL",
+   "size": 6364,
+   "sha256": "e8a5de9c5d22c283aacfa067bbadffde14f37577166ae51c0545cca71d699c88"
+  },
+  {
+   "path": "DISKC/DICE.PIV",
+   "size": 28129,
+   "sha256": "8987fa584d8858b74dee663d6440326d21d6f3875ceeb0b1098efd0c7a398188"
+  },
+  {
+   "path": "DISKC/DRAGON1.CEL",
+   "size": 11028,
+   "sha256": "72fef22da64e20e799a9f8849604607b16a091224ca9f188b67dcbd483de0fe9"
+  },
+  {
+   "path": "DISKC/DRAGON2.CEL",
+   "size": 13119,
+   "sha256": "662891094e0a79b5831fb0c09471852cdb1af340c2bfa6293b6b9d0e5e401599"
+  },
+  {
+   "path": "DISKC/DRAGON5.CEL",
+   "size": 14806,
+   "sha256": "3f99e992ac1543b44b450fb2374943d0917c5bfe9000f6c91151fa808d3257a2"
+  },
+  {
+   "path": "DISKC/FO1.CMP",
+   "size": 22872,
+   "sha256": "ce82f66feed25e2dbba03776f1e47142aed647b0c1312d9c3d4a4b5318b05813"
+  },
+  {
+   "path": "DISKC/FO1.T",
+   "size": 710,
+   "sha256": "48c8a553ea6fb205429d50b1d7c4cff7db4e977e727c22cf74d963cc305dbd5a"
+  },
+  {
+   "path": "DISKC/FO2.CMP",
+   "size": 20809,
+   "sha256": "a3234e1f24c19b3c88c4213b8d236280f98aa90400c0b7b70cfd065670ec3f07"
+  },
+  {
+   "path": "DISKC/FO2.T",
+   "size": 380,
+   "sha256": "5b3fa0bed0217ab186380fc470b689237097620171490860cec64655f7c14aac"
+  },
+  {
+   "path": "DISKC/FO3.T",
+   "size": 569,
+   "sha256": "f460bec019f637279e817d039403d92f727d2fd51a8e6f2a108d17e486d440f3"
+  },
+  {
+   "path": "DISKC/FO4.T",
+   "size": 551,
+   "sha256": "4fa445ebc7ae8c8fada16871b8900ccd5c2a8265335103500ebbe68671e52de0"
+  },
+  {
+   "path": "DISKC/FO5.T",
+   "size": 707,
+   "sha256": "649db769f4123bb991dfa8413c5e0122e0b033e427114cb9624fddf2cbec1789"
+  },
+  {
+   "path": "DISKC/FO6.T",
+   "size": 642,
+   "sha256": "16af9293fe383f9cb4e9022f4f9d71f92732dc07722a9c48bcee0b0658e79f30"
+  },
+  {
+   "path": "DISKC/FO7.T",
+   "size": 453,
+   "sha256": "536f40e5e2588b9902a890299cdd41152d243f72a4ff34a6ada348cd8d573e77"
+  },
+  {
+   "path": "DISKC/FO8.T",
+   "size": 711,
+   "sha256": "7faffb06392e98d1189db8a077cb9bfa6203b0031163faf85b5f0b810c45842a"
+  },
+  {
+   "path": "DISKC/FOB1.CMP",
+   "size": 25493,
+   "sha256": "7387a391d7ed756885b8c6d3a639f73f2f5d3f25bef94e9d8fa0961619f8c892"
+  },
+  {
+   "path": "DISKC/GL1.T",
+   "size": 488,
+   "sha256": "ecc0442bf591a4ce609d8c34c0319db4bdb464f2bcf5f4fbc8154bf9cc10ce29"
+  },
+  {
+   "path": "DISKC/GL2.T",
+   "size": 351,
+   "sha256": "a52903fa8a495050afe4adf11b1880eca6cc2470c4b7a08363e8ff6b305be1aa"
+  },
+  {
+   "path": "DISKC/GL3.T",
+   "size": 372,
+   "sha256": "2b4abc84cc3f16beecc0e3d6ea2c4ed61449f08ad4b695fa25a08727b3f02da7"
+  },
+  {
+   "path": "DISKC/GL4.T",
+   "size": 500,
+   "sha256": "51d0bdd4591955f6a9953af8be0a4c9189574cda8cda6a4d13b23d43235d55b1"
+  },
+  {
+   "path": "DISKC/GL5.T",
+   "size": 534,
+   "sha256": "f26fc92144daa6fc25565e5cae3027ca78ce31bbf24d364de1537ddc523f48db"
+  },
+  {
+   "path": "DISKC/GL6.T",
+   "size": 565,
+   "sha256": "20fccc795a8e74644e7e8bd5605e49ef8cc8e8e58173d2065b4a71566036ac22"
+  },
+  {
+   "path": "DISKC/GL7.T",
+   "size": 442,
+   "sha256": "43481e8262f4366ce8fbbf981e9e766aab78072254ed625c515650283ed8e07c"
+  },
+  {
+   "path": "DISKC/GL8.T",
+   "size": 673,
+   "sha256": "43270061c28921fad3cd59535a382eb8ec3706aea3b77390fb41e921ea1c78dc"
+  },
+  {
+   "path": "DISKC/GLB1.CMP",
+   "size": 20901,
+   "sha256": "2f5e29d4d483fe6c8ed03303f8b365597afefa2b6c350ce17a0ecd734e136d9f"
+  },
+  {
+   "path": "DISKC/GLL1.T",
+   "size": 506,
+   "sha256": "9af516be1b92c73c9008140125f49371bc384fa0bb972f7994ab66c2e5cd56c1"
+  },
+  {
+   "path": "DISKC/GLL2.T",
+   "size": 596,
+   "sha256": "811b827621f17cc1f3825a2a5c2c6fd35b00a6da371fe00c02da0ba96bbf74a0"
+  },
+  {
+   "path": "DISKC/GLL3.T",
+   "size": 470,
+   "sha256": "e8e8ac9fb7cb143ebb7597f044d28df87cae2f6aefc6dc7c8d03ccc3b59f479a"
+  },
+  {
+   "path": "DISKC/GLL4.T",
+   "size": 832,
+   "sha256": "a5c28e686848fc8894e1eae411f6b9e8eeae0ae6399da28febe71a3e649c14f0"
+  },
+  {
+   "path": "DISKC/GLL5.T",
+   "size": 491,
+   "sha256": "c8cf2dbab033cdff4b20f445450f65d0e9ba126ede5fb870001d52015b5d5c4d"
+  },
+  {
+   "path": "DISKC/GLL6.T",
+   "size": 863,
+   "sha256": "496a6b4c008371207da176ae325931478bb6b421033e53cbba797c39c229a476"
+  },
+  {
+   "path": "DISKC/HE.A",
+   "size": 12152,
+   "sha256": "7bbdb3f3b932bd1a1fd2f997ec4cddf385ff5f9432bbdfda112306a7ad204ea8"
+  },
+  {
+   "path": "DISKC/HEA.PIV",
+   "size": 20437,
+   "sha256": "47929169ea706558285782364875cc20ffd8eb86051b78ca6c8247156817f3ff"
+  },
+  {
+   "path": "DISKC/HEN1.C",
+   "size": 12927,
+   "sha256": "c79ef41937cdf1a651a68766cfeec5a059fdfc4ca8a721d211a732472b4954ed"
+  },
+  {
+   "path": "DISKC/HEN1.P",
+   "size": 16586,
+   "sha256": "b67ec5d59178d79814a837776252bcf75c1f7a97f06249ed71d2afaef72b737a"
+  },
+  {
+   "path": "DISKC/HIGHWOOD.PIV",
+   "size": 25814,
+   "sha256": "be52f78ffe69154f92a2da3220e0dd8cc9f0fbd94c85800b6ff0d26a163243fe"
+  },
+  {
+   "path": "DISKC/MAP.CMP",
+   "size": 35331,
+   "sha256": "73356e68d123709694767ea06d53f5e332dd309b1b2d3edc942f44d75d79761f"
+  },
+  {
+   "path": "DISKC/MUDMEN1.CEL",
+   "size": 27031,
+   "sha256": "aa89339efa93ae833bcbc34bb0e0cb87ab95956fcd7b86cbe7ae240e0024ca35"
+  },
+  {
+   "path": "DISKC/MUDMEN2.CEL",
+   "size": 22169,
+   "sha256": "c39299fdac36a4a682380c878a105e18a971abbf34b16cdbe11910fa00e058a1"
+  },
+  {
+   "path": "DISKC/MYS.CEL",
+   "size": 1698,
+   "sha256": "d7fe9eefbde25950db349b4b3f202fcd6bd96195dbe0e61c289a5c662e31a04a"
+  },
+  {
+   "path": "DISKC/MYS.PIV",
+   "size": 17349,
+   "sha256": "4a274a788b08f83b8c3d7210ac8fa04aa01c38447ab7d01be3c6afa40ede1643"
+  },
+  {
+   "path": "DISKC/SW1.CMP",
+   "size": 18008,
+   "sha256": "dd93df73ad934648497bd1a6b56ea0d60b92787f1787af5e876c608f656f8b53"
+  },
+  {
+   "path": "DISKC/SW1.T",
+   "size": 576,
+   "sha256": "21f33c843dba9523768d449f3af9ecd4824f6a02555d1cae1fe29781ad504ece"
+  },
+  {
+   "path": "DISKC/SW2.T",
+   "size": 892,
+   "sha256": "09518117c9ea142ef5c92a197dbd782b0b6dee050deee26a0d48e4b5b1b57270"
+  },
+  {
+   "path": "DISKC/SW3.T",
+   "size": 509,
+   "sha256": "1f4addb6c4ec8c067e24b4d04104a9df2a4172457a9829ff2ff5c0affcb2447b"
+  },
+  {
+   "path": "DISKC/SW4.T",
+   "size": 681,
+   "sha256": "8fbdb7e8a27289f5302386ef187d361524b58a05d614323787a16a570cc21667"
+  },
+  {
+   "path": "DISKC/SW5.T",
+   "size": 778,
+   "sha256": "39fac4f64eb9147f57cbb6b9b0d836fd66f55770923b7a512b56d6f56384e210"
+  },
+  {
+   "path": "DISKC/SW6.T",
+   "size": 705,
+   "sha256": "41be43b2cd73b05cfa48db312faaf193a5d408547851d597dd32780795e76bab"
+  },
+  {
+   "path": "DISKC/SW7.T",
+   "size": 759,
+   "sha256": "c9c00a8a327aaa0625732ae38d6c2a7ebc32d96a21683dea1de9768cc5945650"
+  },
+  {
+   "path": "DISKC/SW8.T",
+   "size": 758,
+   "sha256": "dcf35f2207e5d455edb297ffd751cd92a95c2274eac03beb89fdb37e8c9c3350"
+  },
+  {
+   "path": "DISKC/SW9.T",
+   "size": 105,
+   "sha256": "29a4c0099a2fcf57e7f5e8ad99926f6aaab6c3680192001268fe425ae40180f0"
+  },
+  {
+   "path": "DISKC/SWB1.CMP",
+   "size": 19466,
+   "sha256": "2aeef46abe44336327d6679497748a75af8bd138d6ee073fd876f722375e8716"
+  },
+  {
+   "path": "DISKC/SWL1.T",
+   "size": 993,
+   "sha256": "1169a89377fa6fa47bbf93d5b1880c5f70bd0aedbca41381f02faef7a81095eb"
+  },
+  {
+   "path": "DISKC/SWL2.T",
+   "size": 672,
+   "sha256": "8e18af9722e5c4321e55ae0b6281aeda55b089e494ec7e5823fd9baad40b8b05"
+  },
+  {
+   "path": "DISKC/SWL3.T",
+   "size": 743,
+   "sha256": "92029253a6810d21afd8fbdc9fdbeb0e26a51e2c7a9b4464693904b4fcb8e2e1"
+  },
+  {
+   "path": "DISKC/SWL4.T",
+   "size": 678,
+   "sha256": "c615707c3d23789e0aac2896258f22e7c16b52deaf1acb270d0614422eaf11c5"
+  },
+  {
+   "path": "DISKC/SWL5.T",
+   "size": 930,
+   "sha256": "5d95298e51647964157a3e26c80bc62281ebe58b3a39a1212dbbcff2f0ee94c9"
+  },
+  {
+   "path": "DISKC/SWL6.T",
+   "size": 756,
+   "sha256": "bb772c13faaa799d32b5c252fbf8fc3828323c610c0730bed22b29d21adea4dc"
+  },
+  {
+   "path": "DISKC/TAV.PIV",
+   "size": 23646,
+   "sha256": "466c92eac2ddb68f0eb98689db6ad36017683b29b23638c7b5c84fef4f6f3b42"
+  },
+  {
+   "path": "DISKC/WA1.CMP",
+   "size": 14933,
+   "sha256": "9893811f390fd6d7eec8fc943d8c7bd2d95d3df1cdf0a4d07eb6e9bb98e7ec35"
+  },
+  {
+   "path": "DISKC/WA1.T",
+   "size": 407,
+   "sha256": "388ea4621929bceb99b1d23bbd95530a72e31822b3592f971ef2d2ff60a8ad19"
+  },
+  {
+   "path": "DISKC/WA2.T",
+   "size": 633,
+   "sha256": "7efdfdf2e8d53264ba56e1a089b193c208adf559495376e0108f4118e3ec127c"
+  },
+  {
+   "path": "DISKC/WA3.T",
+   "size": 706,
+   "sha256": "ace6c13aa8ae464c25439e1b15fc6f2f25e5951b02d681354427e8ab0e088b2e"
+  },
+  {
+   "path": "DISKC/WA4.T",
+   "size": 740,
+   "sha256": "f2d432ed854bc9da3d6e06f70b7c72f52b19cf24f9d4d180d67c95e8cc5973cc"
+  },
+  {
+   "path": "DISKC/WA5.T",
+   "size": 1002,
+   "sha256": "ad4698ae3a1aa0e533230b7ce76876e92f2468c6c88686e872ce7b596104ced8"
+  },
+  {
+   "path": "DISKC/WA6.T",
+   "size": 1296,
+   "sha256": "c56dc853bb8a0572faf904c58ed66577e6cfb0f17bbc1ad0b450cd50f089fdce"
+  },
+  {
+   "path": "DISKC/WA7.T",
+   "size": 554,
+   "sha256": "289e0e01c6297e94e1fc2792cdbd7caa3f771b6d6f1038d182167c9280996fcc"
+  },
+  {
+   "path": "DISKC/WA8.T",
+   "size": 721,
+   "sha256": "ea77beaff196d7098331a050df6bd8a7a88631eb644baa9fd09b924e5fd0ec07"
+  },
+  {
+   "path": "DISKC/WAB1.CMP",
+   "size": 20932,
+   "sha256": "eb6013adc550014bb6c220119e6ce702a960e55644565a049f46044ae93ff584"
+  },
+  {
+   "path": "DISKC/WAL1.T",
+   "size": 503,
+   "sha256": "c1618140b2337755231a6a44db7f3f03d892e0962948d7d8fde55cc3a06de3a4"
+  },
+  {
+   "path": "DISKC/WAL2.T",
+   "size": 854,
+   "sha256": "0c413f25233c27ac69af896c56c2bfee5872ad20d5ad758b910b200f02151726"
+  },
+  {
+   "path": "DISKC/WAL3.T",
+   "size": 609,
+   "sha256": "8d7c165ccd2522e12f9d097686e2f545672fb737166f2f9efb867d2346ceb3c5"
+  },
+  {
+   "path": "DISKC/WAL4.T",
+   "size": 611,
+   "sha256": "800beaf201b63215356e64dec292fb9c59037d1922dc7fdbd011e6403be76fc5"
+  },
+  {
+   "path": "DISKC/WAL5.T",
+   "size": 763,
+   "sha256": "7cbedb0297426a8432daaf5c53ff2397f349920e60426ef431e569d54359d2d0"
+  },
+  {
+   "path": "DISKC/WAL6.T",
+   "size": 1140,
+   "sha256": "9ab47846fee0ae4e2ea299010aba60818a8f657de4d3f49ad9ed3e1268c6d6a9"
+  },
+  {
+   "path": "DISKC/WATERDEE.PIV",
+   "size": 23799,
+   "sha256": "286f83aedae5e660eef103ace17b18e9bbfedb8e94a377230f545073a19b3169"
+  },
+  {
+   "path": "DISKC/WI1.C",
+   "size": 8907,
+   "sha256": "41afa18225536f9793f5f2061a4ec30684e07fc5bf77f739af889e06c4229627"
+  },
+  {
+   "path": "DISKC/WI1.P",
+   "size": 20900,
+   "sha256": "134168ade4635c9fa6f66954fb91fcf7571c6e4db422b4c5a2f61eb0753317fb"
+  },
+  {
+   "path": "DISKC/WI2.P",
+   "size": 16238,
+   "sha256": "5ff02cd3b6b7e07e736684f3b238b5b7b167b4370eab467e1a815911aab3513f"
+  },
+  {
+   "path": "SAMPLES/BALAND",
+   "size": 6202,
+   "sha256": "e8ebfd0affc2ca1f54f4e4f63a891f70baa02d4eb93f5e7a70ddda39571b735f"
+  },
+  {
+   "path": "SAMPLES/BALSHAKE",
+   "size": 3926,
+   "sha256": "94743cbf1c6051015970e8f00ecb484c32497b6dcdcc61a83d92d55b7f6d611c"
+  },
+  {
+   "path": "SAMPLES/BEAST1",
+   "size": 6666,
+   "sha256": "052f4822693e8319b260085d2572d26fdca2e278ac51e096c579ed5e84a04474"
+  },
+  {
+   "path": "SAMPLES/BLOODSP",
+   "size": 7810,
+   "sha256": "559692c904caeef629855e8b9f9026adfb52496977b3241951f856229345cc5f"
+  },
+  {
+   "path": "SAMPLES/BONFIRE2",
+   "size": 5800,
+   "sha256": "989d335d4ebdf9d885c207a7c674767f21d3fc13e5a855e507f3a9f9835bc94d"
+  },
+  {
+   "path": "SAMPLES/CAMEL3B",
+   "size": 8220,
+   "sha256": "c6aaacb0dcc177687d06225a76248ecbb170c7d5d0bb7846de634f3d5a7e736a"
+  },
+  {
+   "path": "SAMPLES/CAMEL4",
+   "size": 9120,
+   "sha256": "19eb3be88849718bf521ab57e845fdc9b17f9ad41567b405dcd4e30f114364fc"
+  },
+  {
+   "path": "SAMPLES/CAMEL7",
+   "size": 8590,
+   "sha256": "a226579f20daf10cbc4a1ffb983872ed0b1a54c8cd21c579eb66a81f2c33803b"
+  },
+  {
+   "path": "SAMPLES/CHEAP1B",
+   "size": 7518,
+   "sha256": "39120aef0e9ac023c584acabe6e40ed4530c66c37d0d319c4813cdfe42d02edd"
+  },
+  {
+   "path": "SAMPLES/CHEAP2B",
+   "size": 5552,
+   "sha256": "0fa8919d1848ca89da1177b48fe644c0c9dfdb0ad8e73a5e3950ecaf99cf6ce9"
+  },
+  {
+   "path": "SAMPLES/CHOMPS",
+   "size": 9788,
+   "sha256": "f66e00609122ee6f317f8d880bd74b812ef0f5b69852308b985557fb3240c8d3"
+  },
+  {
+   "path": "SAMPLES/CHOMPS2",
+   "size": 9788,
+   "sha256": "f66e00609122ee6f317f8d880bd74b812ef0f5b69852308b985557fb3240c8d3"
+  },
+  {
+   "path": "SAMPLES/DAGMUF3",
+   "size": 2584,
+   "sha256": "c83fe0fb6d1019b1ab2c051721a6c3f3d9181112bfcebc25c86f24b140ba9ad6"
+  },
+  {
+   "path": "SAMPLES/DRAGNR",
+   "size": 8508,
+   "sha256": "2daf8fb289c7d333a6cb8b6c40706e0a08dc1474d64166a4ab03a30c3864efc1"
+  },
+  {
+   "path": "SAMPLES/DRAGRU",
+   "size": 5482,
+   "sha256": "880e00f5eba8872d62be2055a42564ad0f2ee3f60c5cc718fc8c9de596a89f8a"
+  },
+  {
+   "path": "SAMPLES/FEMSCR",
+   "size": 4214,
+   "sha256": "d8a5516be65eb2975260e207401070ba694ff373113a8dfb28a0f9a02021e645"
+  },
+  {
+   "path": "SAMPLES/GRNT1",
+   "size": 2776,
+   "sha256": "7d78b08f6d90bb187c3ac998c2e062ac30fb34891cf52ec8e0270c5558405130"
+  },
+  {
+   "path": "SAMPLES/GRNT3",
+   "size": 3770,
+   "sha256": "a813a6a74c3ef6c946bed35e5157207df41cef9d7c315989a1516c00d24531b3"
+  },
+  {
+   "path": "SAMPLES/GRNT3B",
+   "size": 5652,
+   "sha256": "b5c23e0fb7f06f3eda30a980d2a676e10701d9bcad65aba2b928a4c2f44670dd"
+  },
+  {
+   "path": "SAMPLES/HEADCHOP",
+   "size": 1126,
+   "sha256": "5cd80a7a333e9206cb4844d5e28021366f87503bddfb6c7009e165a72dd737e7"
+  },
+  {
+   "path": "SAMPLES/HEDLAND",
+   "size": 1602,
+   "sha256": "5159d6bfcf6073d79347521cdc42bac3aaa6240e310e229e749dacdc71a858a6"
+  },
+  {
+   "path": "SAMPLES/HIT3",
+   "size": 1856,
+   "sha256": "63b0adb603ced8cae2d671644882f4571dfc0b5deec08b50e3250beab370ff8b"
+  },
+  {
+   "path": "SAMPLES/KSTEP",
+   "size": 2614,
+   "sha256": "bb1a06d92ccdf183bdd1ffb8575e6e3dac1d4bab203382505c3a29f093845360"
+  },
+  {
+   "path": "SAMPLES/LION1C1",
+   "size": 5894,
+   "sha256": "3196ea8ac8a601bc8da67a5ac28fa72688700c870c8d8334121fafabc14cf9f0"
+  },
+  {
+   "path": "SAMPLES/LION2C1",
+   "size": 8264,
+   "sha256": "9bcdce829df8c707c9617c9d4faa624e9e2c3c81523249fa9223b157777ea2a9"
+  },
+  {
+   "path": "SAMPLES/MUD2",
+   "size": 8770,
+   "sha256": "42122240db58b2f2597b6060478134eb9b7b97049718f5d2908912d5387f22e5"
+  },
+  {
+   "path": "SAMPLES/MUDFAL",
+   "size": 4666,
+   "sha256": "854e8532e584bb4174218304c0ae864bc3ab1b67f3dc9097aaa4734b5b453174"
+  },
+  {
+   "path": "SAMPLES/MUDHIT",
+   "size": 5134,
+   "sha256": "257ced99a879811677b9766e4fafe9d92f420a077649efad4836de3523b66e37"
+  },
+  {
+   "path": "SAMPLES/MUDVOX",
+   "size": 6424,
+   "sha256": "19f5338295dc92f4c33337f7f761c1ff1d23333fbccd6315744a7ec37c3a8483"
+  },
+  {
+   "path": "SAMPLES/NEWKRUSH",
+   "size": 3012,
+   "sha256": "db659dc108d1e82b3de1d572469193e7eb02da47dc406acfabe82ba29241b261"
+  },
+  {
+   "path": "SAMPLES/NITLAND",
+   "size": 2994,
+   "sha256": "fe30030c9e795b436173bc69d61ffc6081e3b3184c33fc5b37f4274cfe656bba"
+  },
+  {
+   "path": "SAMPLES/POPHED12",
+   "size": 3752,
+   "sha256": "05771c7c7d013d06a89f3ed9222dc206a531292a619d15658f9a6e7d2b939dec"
+  },
+  {
+   "path": "SAMPLES/RATGOUG",
+   "size": 4090,
+   "sha256": "7d93ec1811e895ba87b5edd9aeb6791e22a771daf84788da9c4f81a6c219dea1"
+  },
+  {
+   "path": "SAMPLES/RATLEAP",
+   "size": 5286,
+   "sha256": "e44a8dd981fce601bb657a7c7c93dfcf2fb675c319032a6eff46aafb8575c5f9"
+  },
+  {
+   "path": "SAMPLES/RATMPAL",
+   "size": 11334,
+   "sha256": "5d2bebcfdab339d8b48d012713be17269dca377e2a95bd17acafe119a867c54d"
+  },
+  {
+   "path": "SAMPLES/RATSCR",
+   "size": 10014,
+   "sha256": "1b54e3e2a8491bf96ac0ab34fc380b87e744e2d04a6d21b77f63d2b4690f0954"
+  },
+  {
+   "path": "SAMPLES/RATSKU",
+   "size": 6706,
+   "sha256": "e4089b476409ef08a94d236264474fb492a561a4c50634d78a4cfd889ee50094"
+  },
+  {
+   "path": "SAMPLES/RJGRUNT",
+   "size": 5328,
+   "sha256": "9258cf090f584450d7e9fad7801ef282440e52bf224fa3be894fef698eb8f48b"
+  },
+  {
+   "path": "SAMPLES/RJGRUNT1",
+   "size": 5496,
+   "sha256": "273bc195a3202fbf05aaec45bcd43f81575b630a5bcdcbcee138db045aa505cc"
+  },
+  {
+   "path": "SAMPLES/RJGRUNT2",
+   "size": 6358,
+   "sha256": "f1a4c8378c41c70013356482a4f101409609756058ae2b5102f3a6c75c33bb75"
+  },
+  {
+   "path": "SAMPLES/RJGRUNT3",
+   "size": 6762,
+   "sha256": "65006bb9d3bf5888e785eef359cf2bd1249d2b83cd8656749d43f27ff0366f53"
+  },
+  {
+   "path": "SAMPLES/RJGRUNT4",
+   "size": 7072,
+   "sha256": "1ceb851eadbf195e44b4e43e09484bcdf2967ec8bc6ab8940d80cb8da06b504e"
+  },
+  {
+   "path": "SAMPLES/SCRAPE",
+   "size": 2960,
+   "sha256": "46958a7e760a8d802d18524eba78a6d5731bfbf4e021ffcb4710ff7565e8b2e1"
+  },
+  {
+   "path": "SAMPLES/SLICE3",
+   "size": 3968,
+   "sha256": "bfeb310ac61989bc2aaf619e4c1a344a6e66f9f55b29ae8038b1cc4a63beaabe"
+  },
+  {
+   "path": "SAMPLES/SPEAR1",
+   "size": 3764,
+   "sha256": "2d07751ff7709750466fa33658eea66f83d9cd937c237179d2d8bcb124158599"
+  },
+  {
+   "path": "SAMPLES/STRETCH",
+   "size": 2274,
+   "sha256": "9298fd7c71c91d700d4aa23afb14971d4181efd561d270b33ec1d0b42ea4d6fa"
+  },
+  {
+   "path": "SAMPLES/SWISH",
+   "size": 2070,
+   "sha256": "f4e6ce68a6b9b0522908f68b0a97b52894c82d622f7ec2a41bdef8d062767732"
+  },
+  {
+   "path": "SAMPLES/SWORDCL",
+   "size": 3118,
+   "sha256": "c7ae319c69eba5f11c0b5b1529a8279e3da52308224f5d76bd919b89055f5eb7"
+  },
+  {
+   "path": "SAMPLES/WIPCRAK",
+   "size": 2576,
+   "sha256": "22174aa4e12b6b3d7ebe65e4f86e7239a222e2df833ee12d5d0825909108c906"
+  }
+ ]
+}
