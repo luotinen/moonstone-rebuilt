@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+* K11: Math the Wizard's stat gift and Mythral's messages read their tables wrongly (endurance never rose from
+  Math, and his line could be a long list of garbage). Fixed.
+* Docs: K4 is a safeguard, not the cure for the dragon fight hang reported on GOG.
+
 ## 0.1.0 – first public release
 
 * Setup from the GOG DOS version (`Setup.bat`), checked by checksum; no game files included.

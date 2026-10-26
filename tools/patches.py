@@ -19,7 +19,7 @@ PATCHES = {
                   ((0x1000, 0x2427), b'\x83\x3e\x89\x89\x31', b'\x83\x3e\x89\x89\x2d')],  # strongest: new  -> full
     },
     'K4': {
-        'title': 'Object slot leak in fights (dragon fight hang, probably also the crash after the Guardian or dragon, K3). '
+        'title': 'Object slot leak in fights (a safeguard: in play a fight uses about 8-9 of the 10 animation slots). '
                  'New fight objects (fire, hit effects, daggers) are made at 1000:3E89: a game object slot (20 at DS:6F08) and '
                  'an animation slot (10 at DS:947E, call 981F). When the animation slots are full, 981F returns AX=1, which '
                  'was ignored: the game slot stayed taken for the rest of the fight, and with all 20 gone the next object '
@@ -30,6 +30,21 @@ PATCHES = {
                                                                                     # call 981F / ret
                                      bytes.fromhex('885535e874593401' '8805c3'))],  # mov [di+35h],dl / call 981F /
     },                                                                              # xor al,1 / mov [di],al / ret
+    'K11': {
+        'title': 'Math and Mythral read their stat tables wrongly (confirmed in play for Math: only strength ever rose, '
+                 'and twice Math printed a long list of game data). Math (1000:B9C2, also used when the Guardian wins at '
+                 '0FF8) steps through the 4-byte table at DS:E33B (stat field, message) 8 bytes per index, and the caller '
+                 'reads the message at [si+ax+4]: strength 5/16, constitution 3/16, endurance never, 8/16 a field that is '
+                 'not a stat, and never the right message. Mythral (1000:BBD5) searches only 2 of the 3 entries of '
+                 'DS:DE04 / DE1C (stat field, message record) and takes [si+4] instead of [si+2]. Now Math gives strength '
+                 '5/16, endurance 5/16, constitution 6/16 with the matching line, and Mythral the right message for every '
+                 'stat, gain and loss',
+        'bytes': [((0x1000, 0xb9e2), b'\xd1\xe0', b'\x90\x90'),                         # shl ax,1 -> nop nop (index *4)
+                  ((0x1000, 0xb972), b'\x03\xf0\xff\x74\x04', b'\x90\x90\xff\x74\x02'),  # add si,ax / push [si+4]
+                                                                                    #   -> nop nop / push [si+2]
+                  ((0x1000, 0xbbd5), b'\xb9\x02\x00', b'\xb9\x03\x00'),               # mov cx,2 -> mov cx,3
+                  ((0x1000, 0xbbe7), b'\x8b\x74\x04', b'\x8b\x74\x02')],              # mov si,[si+4] -> [si+2]
+    },
     'D6': {
         'title': 'Save state before every fight (Moonstone Rebuilt only). Every fight (lairs, dragon, Guardian, knights) '
                  'starts in the routine at 1000:0307; its first instruction (mov word [7841h],0) becomes int 66h, '

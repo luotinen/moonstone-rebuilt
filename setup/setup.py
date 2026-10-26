@@ -5,7 +5,7 @@ Only files from the user's installation are used; nothing of the original game i
    against setup/gog-dos-1.json (SHA-256).
 2. Copies the game files here: DISKA, DISKB, DISKC, SAMPLES, MS.EXE.
 3. Keeps the original MAIN.EXE, INTR.EXE and sound files in _fixes/original and builds the fixed ones in
-   _fixes/fixed (MAIN.EXE: K1 K2 K4 D6 D7, INTR.EXE: K9, sound files: K10).
+   _fixes/fixed (MAIN.EXE: K1 K2 K4 K11 D6 D7, INTR.EXE: K9, sound files: K10).
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf (AdLib).
 5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat).
@@ -21,7 +21,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'D6', 'D7']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K11', 'D6', 'D7']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
