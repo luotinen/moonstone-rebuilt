@@ -53,6 +53,14 @@ PATCHES = {
                   ((0x1000, 0xbbd5), b'\xb9\x02\x00', b'\xb9\x03\x00'),               # mov cx,2 -> mov cx,3
                   ((0x1000, 0xbbe7), b'\x8b\x74\x04', b'\x8b\x74\x02')],              # mov si,[si+4] -> [si+2]
     },
+    'K17': {
+        'title': 'Ratmen disease removed (user decision; widely taken for a bug). A ratman\'s bite set the disease '
+                 '(knight +60h, 1000:42AD), and at every periodic update (each moon phase, four days; 1000:1229) a '
+                 'diseased knight lost a life point, without any message. Now the bite does not infect, and the '
+                 'update skips the loss also for a knight infected in an older save',
+        'bytes': [((0x1000, 0x42ad), b'\xc6\x45\x60\x01', b'\xc6\x45\x60\x00'),   # mov byte [di+60h],1 -> 0
+                  ((0x1000, 0x122d), b'\x74\x04', b'\xeb\x04')],                     # je -> jmp: no life lost
+    },
     'D6': {
         'title': 'Save state before every fight (Moonstone Rebuilt only). Every fight (lairs, dragon, Guardian, knights) '
                  'starts in the routine at 1000:0307; its first instruction (mov word [7841h],0) becomes int 66h, '

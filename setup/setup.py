@@ -6,9 +6,10 @@ Only files from the user's installation are used; nothing of the original game i
 2. Copies the game files here: DISKA, DISKB, DISKC, SAMPLES, MS.EXE.
 3. Builds the original programs, only unpacked (the packed ones fail in DOSBox-X's lowest 64 KB, and LOADFIX would
    leave too little memory), and keeps the original sound files, in _fixes/original; builds the fixed ones in
-   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K11 D6 D7 D9, INTR.EXE: K9, sound files: K10).
+   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K11 K17 D6 D7 D9, INTR.EXE: K9, sound files: K10).
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
-   SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf (AdLib).
+   SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf: on the first setup the best music available (MT-32 if
+   the ROMs are in mt32-roms, else General MIDI if soundfonts/default.sf2 exists, else AdLib); later runs keep the choice.
 5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat).
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
 It can be run again at any time; saves (save/) and the MT-32 ROMs and SoundFont are left alone.
@@ -22,7 +23,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K11', 'D6', 'D7', 'D9']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K11', 'K17', 'D6', 'D7', 'D9']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -114,11 +115,21 @@ def main(arg=None):
     write(os.path.join(HERE, 'SAVEHOOK.COM'), make_savehook())
     if not os.path.exists(os.path.join(HERE, 'MOON.CFG')):
         write(os.path.join(HERE, 'MOON.CFG'), b'SOUND=SOUNDBLASTER\r\nYGUARD=11234\r\n')
-    if not os.path.exists(os.path.join(HERE, 'music.conf')):
-        copy(os.path.join(music, 'profiles', 'adlib.conf'), os.path.join(HERE, 'music.conf'))
-    for disk in ('DISKA', 'DISKB'):                            # music in use: AdLib unless a Music_*.bat changed it
-        for path in glob.glob(os.path.join(music, 'adlib', disk, '*.BIN')):
+    music_conf = os.path.join(HERE, 'music.conf')
+    if not os.path.exists(music_conf):                         # first setup: the best music available
+        if glob.glob(os.path.join(HERE, 'mt32-roms', '*CONTROL.ROM')):
+            chosen = 'mt32'                                    # the device the music was written for
+        elif os.path.exists(os.path.join(HERE, 'soundfonts', 'default.sf2')):
+            chosen = 'gm'
+        else:
+            chosen = 'adlib'
+        copy(os.path.join(music, 'profiles', f'{chosen}.conf'), music_conf)
+    conf = open(music_conf).read()                             # music in use, also if a Music_*.bat chose it
+    chosen = 'mt32' if '= mt32' in conf else 'gm' if '= fluidsynth' in conf else 'adlib'
+    for disk in ('DISKA', 'DISKB'):
+        for path in glob.glob(os.path.join(music, chosen, disk, '*.BIN')):
             copy(path, os.path.join(HERE, disk, os.path.basename(path)))
+    say(f'  music: {dict(gm="General MIDI", mt32="MT-32", adlib="AdLib")[chosen]}')
     os.makedirs(os.path.join(HERE, 'save'), exist_ok=True)
     say('  music sets, SAVEHOOK.COM and settings ready')
 

@@ -21,10 +21,11 @@ your game files into this folder and patches the copies; your GOG installation i
 |---|---|
 | **Your own Amiga Moonstone disk 1** as an ADF image | Richard Joseph's Amiga intro and ending music instead of the DOS tunes. See [Amiga music](#amiga-music-optional). |
 | **VLC media player** | Needed once, to turn the Amiga music into WAV files. Not needed for playing. <https://www.videolan.org/> |
-| **Roland MT-32 ROMs** (`MT32_CONTROL.ROM`, `MT32_PCM.ROM`, or the CM-32L ones) | The best DOS music. Put them in `mt32-roms`. They are Roland's copyright; obtain them legally. |
-| **A General MIDI SoundFont** (e.g. the freely distributable *GeneralUser GS*) | General MIDI music. Save it as `soundfonts\default.sf2`. |
+| **Roland MT-32 ROMs** (`MT32_CONTROL.ROM`, `MT32_PCM.ROM`, or the CM-32L ones) | The best DOS music. Put them in `mt32-roms`, then run `Music_MT32.bat`. Tested with MT-32 v1.07 (SHA-1 of `MT32_CONTROL.ROM`: `b083518fffb7f66b03c23b7eb4f868e62dc5a987`). They are Roland's copyright; obtain them legally. |
+| **A General MIDI SoundFont** (e.g. the freely distributable *GeneralUser GS*, from <https://www.schristiancollins.com/generaluser.php>) | General MIDI music. Save it as `soundfonts\default.sf2`, then run `Music_GM.bat`. Tested with GeneralUser GS 2.0.3 (rename `GeneralUser-GS.sf2` to `default.sf2`); the GM profile uses the reverb and chorus settings its author recommends for DOSBox-X. |
 
-Without the MT-32 ROMs or a SoundFont the game uses the original AdLib music.
+The setup picks the music for you: MT-32 if the ROMs are there (the music was written for it), else General MIDI if
+a SoundFont is there, else the original AdLib music. Put the files in place before running `Setup.bat`, or switch later with the `Music_*.bat` files.
 
 ## Installation
 
@@ -110,7 +111,8 @@ skip the intro.
 
 All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
 
-* **Bug fixes:** the game no longer ends when Q is pressed by accident (Game Over is now on Esc); Math the Wizard
+* **Bug fixes:** the hidden ratmen disease that took a life point every four days is gone; the game no longer ends
+  when Q is pressed by accident (Game Over is now on Esc); Math the Wizard
   and Mythral raise the right stats and say the right thing; fights can no longer run
   out of object slots; the sound effects play at their real speed; a sound that never played now
   plays; ratmen grow stronger with the moon as the manual says.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 – No ratmen disease, better music defaults
+
+* K17: the ratmen disease is removed (it silently took a life point every four days).
+* General MIDI: reverb and chorus settings recommended for GeneralUser GS; tested with GeneralUser GS 2.0.3.
+* MT-32: tested with ROM version 1.07 (README gives the control ROM's SHA-1); volume lowered to 50%.
+* Setup picks the best music available on a new install: MT-32 (ROMs), General MIDI (SoundFont) or AdLib.
+* Setup no longer puts the AdLib tunes back when run again after GM or MT-32 was chosen.
+
 ## 0.3.0 – Game Over on Esc, player 2 on W A S D
 
 * K5: Game Over moved from the Q key (next to the second player's W and A) to Esc.
