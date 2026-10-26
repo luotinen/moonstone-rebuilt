@@ -106,8 +106,7 @@ skip the intro.
 
 All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
 
-* **Bug fixes:** fights no longer run out of object slots (the cause of the dragon fight hang, and probably of the
-  crash after the Guardian or the dragon); the sound effects play at their real speed; a sound that never played now
+* **Bug fixes:** fights can no longer run out of object slots; the sound effects play at their real speed; a sound that never played now
   plays; ratmen grow stronger with the moon as the manual says.
 * **Improvements:** automatic saves before every fight and turn; the intro and ending can be skipped; the intro
   works in DOSBox-X; MT-32, General MIDI or AdLib music; optional Amiga intro and ending music; DOSBox-X settings

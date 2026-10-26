@@ -11,7 +11,7 @@ not yet confirmed in play.
 |---|---|---|
 | K1 | **A sound that never played.** The sample name table lists `cheap2b` twice (DS:8721, entries 8 and 9); the list is alphabetical, so entry 8 is meant to be `cheap1b`, and CHEAP1B never played. | from the code |
 | K2 | **Ratmen and the moon.** The manual says ratmen grow stronger as the moon waxes, but the game made them strong at full moon and strongest at new moon (1000:23FE). Now: strongest at full moon (12 hit points, bite 8, claw 5), strong at ¾ moon (7 / 6 / 3), normal otherwise. | from the code |
-| K4 | **Object slots run out in fights** (the dragon fight hang reported on GOG). Fight objects such as fire, hit effects and daggers need a game slot (20) and an animation slot (only 10). When the animation slots were full, the game slot stayed taken for the rest of the fight (1000:3E89); with all 20 gone, the next object was written past the table (DS:76B0) over the fight's own data. The dragon fight makes the most objects when it is fought from a distance (fire breath, daggers). Now a slot that gets no animation slot is freed at once (1000:3EA5, 10 bytes). Probably also the cause of K3, the crash after killing the Guardian or the dragon. | from the code |
+| K4 | **Object slots can run out in fights.** Fight objects such as fire, hit effects and daggers need a game slot (20) and an animation slot (only 10). When the animation slots were full, the game slot stayed taken for the rest of the fight (1000:3E89); with all 20 gone, the next object was written past the table (DS:76B0) over the fight's own data. The dragon fight makes the most objects when it is fought from a distance (fire breath, daggers). Now a slot that gets no animation slot is freed at once (1000:3EA5, 10 bytes). In play the limit is hard to reach (a dragon fight with fire and three daggers in the air uses about 8–9 of the 10 animation slots), so this is probably **not** the cause of the dragon fight hang reported on GOG; that cause is still open. | tested: no side effects |
 | K10 | **Sound effects at the wrong speed.** The DOS sound files are the Amiga version's samples byte for byte, but every DOS file says 16,129 Hz, while the Amiga plays them at 4,766–22,655 Hz. Most sounds played too fast and too high (the dragon's grunts 3.4 times). Each file now carries its real rate (one byte per file; the rates come from the Amiga version, no Amiga files needed). | from the code |
 
 ## Improvements
@@ -38,7 +38,8 @@ invulnerability, the computer knights' extra experience, and winning past the 15
 
 | ID | Bug |
 |---|---|
-| K3 | Crash after killing the Guardian or the dragon (reported). Probably the same cause as K4; to be confirmed. |
+| – | Dragon fight hang about a second into the fight (reported on GOG many times). Not reproduced here; K4 is probably not its cause. |
+| K3 | Crash after killing the Guardian or the dragon (reported). Not reproduced. |
 | K5 | Unexpected *Game Over* in mid-game (reported). |
 | K6 | The dragon can be kept in a constant hit state with the upward thrust. |
 | K7 | Crash when two trolls do an overhead chop at the same time (reported on the Amiga). |
