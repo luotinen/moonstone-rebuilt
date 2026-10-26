@@ -30,6 +30,14 @@ PATCHES = {
                                                                                     # call 981F / ret
                                      bytes.fromhex('885535e874593401' '8805c3'))],  # mov [di+35h],dl / call 981F /
     },                                                                              # xor al,1 / mov [di],al / ret
+    'K5': {
+        'title': 'Quit key moved from Q to Esc. On the map the turn loop (1000:A594) checks Q (scan code 10h) with the '
+                 'key check at 8288 and goes straight to GAME OVER, without asking, during any knight\'s turn. Q is '
+                 'next to W and A, the second player\'s movement keys, so the game could end by accident (the '
+                 '"unexpected Game Over" reports). Esc (01h) is far from the movement keys; MAIN uses it only in the '
+                 'menu before a game',
+        'bytes': [((0x1000, 0xa594), b'\xb8\x10\x00', b'\xb8\x01\x00')],   # mov ax,10h (Q) -> mov ax,01h (Esc)
+    },
     'K11': {
         'title': 'Math and Mythral read their stat tables wrongly (confirmed in play for Math: only strength ever rose, '
                  'and twice Math printed a long list of game data). Math (1000:B9C2, also used when the Guardian wins at '
@@ -59,6 +67,12 @@ PATCHES = {
                  'instruction and, unless the knight is computer-controlled, has DOSBox-X autosave the state. '
                  'Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0xa63f), b'\x8b\x36\xe8\x77', b'\xcd\x65\x90\x90')],
+    },
+    'D9': {
+        'title': 'Player 2 moves with W, A, S, D (Moonstone Rebuilt; user request). The keyboard routine at 1000:83C0 '
+                 'reads player 2 as Tab (fire), W (up), X (down), A (left) and D (right); down becomes S (scan code '
+                 '1Fh), which the game does not use for anything else',
+        'bytes': [((0x1000, 0x8403), b'\xb8\x2d\x00', b'\xb8\x1f\x00')],   # mov ax,2Dh (X) -> mov ax,1Fh (S)
     },
 }
 

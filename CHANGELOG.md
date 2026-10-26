@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 – Game Over on Esc, player 2 on W A S D
+
+* K5: Game Over moved from the Q key (next to the second player's W and A) to Esc.
+* `Fixes_Off.bat` works again: original mode used the packed programs with `LOADFIX`, which left too little memory
+  (*Insufficient memory*); it now uses the original programs only unpacked.
+* README: a knight can carry at most 150 gold; the rest is lost without a warning.
+* D9: player 2 moves with W, A, S, D (down was X).
+* FIXES: K5, K10, K11 and D9 confirmed in play.
+
+## 0.2.0 – Math and Mythral fix
 
 * K11: Math the Wizard's stat gift and Mythral's messages read their tables wrongly (endurance never rose from
   Math, and his line could be a long list of garbage). Fixed.

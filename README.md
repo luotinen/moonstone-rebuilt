@@ -63,6 +63,7 @@ skip the intro.
 
 * **Start:** `Start.bat`.
 * **Skip the intro or the ending:** Enter, Space or Esc.
+* **Gold:** a knight can carry at most 150 gold. Anything above that is lost, and the game does not warn you.
 * **Controls:** the arrow keys move; Enter + a direction attacks (when the knight faces right):
 
   | Direction + Enter | Move |
@@ -76,8 +77,11 @@ skip the intro.
   | back | backward thrust |
   | back + up | dagger throw |
 
-  Second player: W, A, D and X plus Tab or left Shift.
-* **Quit:** Ctrl+F9 (asks first) or close the window.
+  Second player: W, A, S and D (up, left, down, right) plus Tab. The original used X for down; Moonstone Rebuilt
+  changes it to S (D9).
+* **Give up (Game Over):** Esc on the map. In the original game this was Q, next to the second player's keys, so a
+  game could end by accident; Moonstone Rebuilt moves it to Esc (fix K5). It does not ask first.
+* **Quit DOSBox-X:** Ctrl+F9 (asks first) or close the window.
 
 ### Saving and loading
 * **Your own saves:** F11+S saves and F11+L loads, using the slot chosen under *Capture → Select save slot*
@@ -98,7 +102,7 @@ skip the intro.
 |---|---|
 | `Music_AdLib.bat` / `Music_GM.bat` / `Music_MT32.bat` | Music version. If the ROMs or the SoundFont are missing, `Start.bat` falls back to AdLib. |
 | `SoundCard_SoundBlaster.bat` / `SoundCard_AdLib.bat` | Sound effects as digitised samples (Sound Blaster, default) or on the AdLib synthesiser. |
-| `Fixes_On.bat` / `Fixes_Off.bat` | All fixes (default) or the original programs and sound files. Saves do not carry over between the two. In original mode there are no automatic saves. |
+| `Fixes_On.bat` / `Fixes_Off.bat` | All fixes (default) or the original game: the original programs (only unpacked, so that they run in DOSBox-X) and sound files. Saves do not carry over between the two. In original mode there are no automatic saves. |
 | `AmigaMusic_On.bat` / `AmigaMusic_Off.bat` | Amiga intro and ending music on or off (after it has been set up). |
 | `moonstone-dosbox-x.conf` | DOSBox-X settings: window size, shader, speed, saves. |
 
@@ -106,7 +110,8 @@ skip the intro.
 
 All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
 
-* **Bug fixes:** Math the Wizard and Mythral raise the right stats and say the right thing; fights can no longer run
+* **Bug fixes:** the game no longer ends when Q is pressed by accident (Game Over is now on Esc); Math the Wizard
+  and Mythral raise the right stats and say the right thing; fights can no longer run
   out of object slots; the sound effects play at their real speed; a sound that never played now
   plays; ratmen grow stronger with the moon as the manual says.
 * **Improvements:** automatic saves before every fight and turn; the intro and ending can be skipped; the intro

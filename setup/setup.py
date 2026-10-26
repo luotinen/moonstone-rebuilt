@@ -4,8 +4,9 @@ Only files from the user's installation are used; nothing of the original game i
 1. Finds the GOG installation (argument, GOG Galaxy registry entry or common folders) and checks every game file
    against setup/gog-dos-1.json (SHA-256).
 2. Copies the game files here: DISKA, DISKB, DISKC, SAMPLES, MS.EXE.
-3. Keeps the original MAIN.EXE, INTR.EXE and sound files in _fixes/original and builds the fixed ones in
-   _fixes/fixed (MAIN.EXE: K1 K2 K4 K11 D6 D7, INTR.EXE: K9, sound files: K10).
+3. Builds the original programs, only unpacked (the packed ones fail in DOSBox-X's lowest 64 KB, and LOADFIX would
+   leave too little memory), and keeps the original sound files, in _fixes/original; builds the fixed ones in
+   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K11 D6 D7 D9, INTR.EXE: K9, sound files: K10).
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf (AdLib).
 5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat).
@@ -21,7 +22,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K11', 'D6', 'D7']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K11', 'D6', 'D7', 'D9']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -87,10 +88,12 @@ def main(arg=None):
 
     original, fixed = os.path.join(HERE, '_fixes', 'original'), os.path.join(HERE, '_fixes', 'fixed')
     from make_voc_rates import FILES as samples, fix_rate
-    for name in ['MAIN.EXE', 'INTR.EXE'] + samples:              # 3. originals and fixes
+    for name in samples:                                         # 3. originals and fixes
         copy(os.path.join(gog, name), os.path.join(original, name))
     from make_main_exe import make_main_exe
     from make_intr_exe import make_intr_exe
+    write(os.path.join(original, 'MAIN.EXE'), make_main_exe(gog))
+    write(os.path.join(original, 'INTR.EXE'), make_intr_exe(gog))
     say('  building MAIN.EXE (unpacking takes a moment) ...')
     write(os.path.join(fixed, 'MAIN.EXE'), make_main_exe(gog, MAIN_FIXES))
     write(os.path.join(fixed, 'INTR.EXE'), make_intr_exe(gog, INTR_FIXES))
