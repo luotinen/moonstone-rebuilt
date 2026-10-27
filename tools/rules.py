@@ -11,7 +11,7 @@ this tool writes into SAVEHOOK.COM. The int 63h sites are in HOOKS below. Withou
 normal fixed one: SAVEHOOK.COM always carries the rules code, but the normal MAIN.EXE never calls it.
 
 The knights. Record +20h is the knight: 0-3 for a human player's knight (the order on the selection screen; it also
-gives the start corner and home village), 4 for a computer knight. The INI sections [Knight1]-[Knight4] are 0-3 and
+gives the start corner and home village, which home_village can change), 4 for a computer knight. The INI sections [Knight1]-[Knight4] are 0-3 and
 [Black] is every computer-controlled knight (they wear black)."""
 import sys, os, struct, configparser, shutil
 
@@ -28,6 +28,27 @@ ITEMS = [('healing_potions', 0x00), ('gems_of_seeing', 0x02), ('rings_of_protect
          ('talismans_of_the_wyrm', 0x08), ('scrolls_of_haste', 0x0a), ('scrolls_of_the_hawk', 0x0c),
          ('scrolls_of_acquisition', 0x0e), ('scrolls_of_the_wyrm', 0x10), ('scrolls_of_protection', 0x12)]
 SHARPNESS_ITEM, KEYS, MOONSTONES = 0x04, 0x14, 0x16
+# Home villages: the places 15h-18h (table DS:0498: id, x, y) belong to the knights +20h = 0-3 and are near their
+# start corners. A knight starts (and respawns or reincarnates) at the start corner of its home village.
+HOME_VILLAGES = {'north_west': 0, 'north_east': 1, 'south_west': 2, 'south_east': 3}
+SPAWNS = [(10, 10), (300, 5), (26, 180), (300, 185)]     # start corners (x, y in pixels) set at 1000:0157
+KNIGHT_NAMES = ['Sir Godber', 'Sir Richard', 'Sir Jeffrey', 'Sir Edward']   # +20h = 0-3 (checked in play)
+# Saves. DOSBox-X takes the save states; SAVEHOOK.COM only triggers the automatic ones (see make_savehook.py), so
+# manual saves cannot be stopped from inside DOS. Instead, in the modes that forbid them, SAVEHOOK keeps a token in
+# memory and in a file (SAVEHOOK.CHK, which save states do not restore) and compares the two at every turn, fight and
+# reward roll: a state loaded from a manual save has an older token, and the game stops there.
+SAVE_MODES = {'autosave_and_manual': 0, 'autosave_only': 1, 'manual_only': 2, 'none': 3}
+SAVE_CHECKED = (SAVE_MODES['autosave_only'], SAVE_MODES['none'])
+# The dragon's hoard (K18): grows = cleared at a new game, +1 magic item and 0-9 gold for every knight the dragon
+# beats (the fixed game); reset = cleared, no growth; keep = never cleared (the original, a speedrun habit)
+HOARD_MODES = {'grows': 0, 'reset': 1, 'keep': 2}
+# Practice keys (D14-D15): for the keys 1-9 and 0, the lair (1-24, the order of DS:0A6A) whose monsters and count
+# the practice fight uses, or the Black Knight
+PRACTICE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+PRACTICE_DEFAULTS = [1, 4, 10, 2, 22, 20, 8, 13, 18, 'black_knight']
+TARGETS = {'nearest': 0, 'first': 1}
+# practice flags (G_PRACTICE_FLAGS)
+TEAM_KNIGHT_HITS, COOP_KNIGHT_HITS, COOP_DAGGER_HITS, TARGET_FIRST = 1, 2, 4, 8
 
 # Colours. A knight is identified only by record +20h (0-3 human, 4 computer: home village, start corner, turn
 # order); its colour is only drawing, chosen from +20h in four places: the fight palette (1000:481A, 3 Amiga RGB
@@ -141,7 +162,21 @@ G_SWORD = G_ARMOUR_HP + 8                     # word: damage bonus of the long s
 G_REST, G_VILLAGE, G_MAX_LIVES = G_SWORD + 2, G_SWORD + 3, G_SWORD + 4    # bytes
 G_RING = G_SWORD + 6                          # word: max HP per Ring of Protection
 G_COLOURS = G_RING + 2                        # 5 bytes: map icon colour (0-4) for knight +20h = 0-4
-TABLE_SIZE = G_COLOURS + 6
+G_HOMES = G_COLOURS + 5                       # 5 bytes: home village (0-3) for knight +20h = 0-4 (4: none, FFh)
+G_VILLAGE_ANY = G_HOMES + 5                   # byte: 1 = the druids heal in every village
+G_SAVE_MODE = G_VILLAGE_ANY + 1               # byte: SAVE_MODES
+G_FATE = G_SAVE_MODE + 1                      # byte: 1 = prevent savescumming (fixed outcomes)
+G_SELLING = G_FATE + 1                        # byte: 1 = the merchant buys back daggers, weapons and armour
+G_MAX_GOLD = G_SELLING + 1                    # word: max_gold (the sale's gold is capped like the game's)
+G_SELL = G_MAX_GOLD + 2                       # 6 words: what the merchant pays (SELL_ITEMS order)
+G_HOARD = G_SELL + 12                         # byte: HOARD_MODES
+G_PRACTICE = G_HOARD + 1                      # 10 bytes: the lair of each practice key (0-23), FFh = Black Knight
+G_PRACTICE_FLAGS = G_PRACTICE + 10            # byte: the flags above
+G_TARGET_MARGIN = G_PRACTICE_FLAGS + 1        # byte: a monster keeps its knight unless another is this much nearer
+TABLE_SIZE = G_TARGET_MARGIN + 1
+# Selling at the merchant (item screen mode 5): half the shop price, rounded down. The long sword and padded armour
+# are what a knight gets back and are not bought; the Sword of Sharpness is a magic item and not sold here.
+SELL_ITEMS = ['dagger', 'broadsword', 'claymore', 'chain_mail', 'plate_mail', 'battle_armour']
 
 # int 63h sites: (address, original bytes, kind). The kind names the handler in make_savehook.py.
 # The lives kinds keep the instruction's 8-bit operand after the int (cd 63 nn 90): the handler reads it
@@ -159,7 +194,16 @@ HOOKS = [
     (0x122f, '806c3101', 'lives_si'),                   # ratmen disease
     (0x08d4, '8b4420', 'colour_si'), (0xa417, '8b4420', 'colour_si'),   # map icons: mov ax,[si+20h]
     (0xa3cd, '8b4520', 'colour_di'),                    # map icon of the knight whose turn it is: mov ax,[di+20h]
-]
+    (0x0732, '3d15007506837d200075c63d16007506837d200175bb3d17007506837d200275b03d18007506837d200375a5', 'place'),
+    (0xcc0f, '268b5e12268b4e10', 'sell'),               # item screen click: mov bx,es:[bp+12h] / mov cx,es:[bp+10h]
+]                                                       # map places: villages 15h-18h react only to their knight
+# Reward rolls (only patched for prevent_savescumming or the checked save modes): call rel16 -> int 63h / nop. The
+# handler sets the game's random state (DS:E22F) from a stream of its own, one per kind, that advances only at these
+# rolls, then does the call. So after loading a state the same rolls give the same results however the time in between
+# was spent. (address, original call, stream): tavern dice (each die), Math, Mythral (his random ability), curses.
+FATE_HOOKS = [(0xb413, 'e84c0b', 0), (0xb8ec, 'e89306', 1), (0xbb74, 'e84bfe', 2), (0xcd1b, 'e864f2', 3),
+              (0xcd67, 'e818f2', 3)]
+FATE_STREAMS = 4
 
 def hook_bytes(where, old, kind):
     """The replacement for a hook site and the return address that the handler sees."""
@@ -169,6 +213,12 @@ def hook_bytes(where, old, kind):
         return new.ljust(len(old), b'\x90'), where + 5
     if kind == 'village':                               # int 63h / jmp 1138
         return b'\xcd\x63\xeb\x06'.ljust(len(old), b'\x90'), where + 2
+    if kind == 'place':                                 # int 63h / jne 0703 (skip the place) / jmp 075E (it reacts)
+        return b'\xcd\x63\x75\xcd\xeb\x26'.ljust(len(old), b'\x90'), where + 2
+    if kind == 'sell':                                  # int 63h / jnz CC16 (go on) / jmp CFE3 (sound, redraw, ret)
+        return b'\xcd\x63\x75\x03\xe9\xcd\x03\x90', where + 2
+    if kind == 'fate':                                  # int 63h / nop: the handler does the call
+        return b'\xcd\x63\x90', where + 2
     if kind.startswith('lives'):
         return b'\xcd\x63' + old[3:4] + b'\x90', where + 2    # handler reads the operand at the return address
     return b'\xcd\x63'.ljust(len(old), b'\x90'), where + 2
@@ -197,7 +247,7 @@ def _choice(table):
     conv.allowed = list(table)
     return conv
 
-_onoff = _choice({'on': 1, 'off': 0})
+_onoff = _choice({'on': 1, 'off': 0, 'true': 1, 'false': 0})
 
 # Allowed values (all checked before anything is written). Values above the game's own limits are allowed (user
 # decision); the bounds only keep each value inside what its storage and the screens can hold:
@@ -228,7 +278,7 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'healer_price': (0, 127), 'move_damage': (0, 100), 'max_daggers': (1, 99), 'frog_days': (0, 100),
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
-                'monster_damage': (0, 127)}
+                'monster_damage': (0, 127), 'target_margin': (0, 200)}
 
 def read_ini(path):
     cp = configparser.ConfigParser(inline_comment_prefixes=(';',))
@@ -250,6 +300,9 @@ def read_ini(path):
     r['village_any'] = _get(cp, g, 'village_heal_where', _choice({'home': 0, 'any': 1}))
     r['rest_heal'] = _get(cp, g, 'rest_heal', _choice({'none': 0, 'full': 1}))
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
+    r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
+    r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
+    r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
     r['xp_per_stat'] = [_get(cp, g, f'xp_per_stat_{n}_player{"s" if n > 1 else ""}', int, *rb['xp_per_stat'])
                         for n in (1, 2, 3, 4)]
     w = 'Weapons'
@@ -277,6 +330,22 @@ def read_ini(path):
     if r['gold_max'] < r['gold_min']:
         raise RulesError(f'[{t}] gold_max = {r["gold_max"]}: must be at least gold_min ({r["gold_min"]})')
     r['items'] = [_get(cp, t, name, float, *rb['chance']) for name in TREASURE_ITEMS]
+    r['hoard'] = _get(cp, t, 'dragon_hoard', _choice(HOARD_MODES))
+    pr = 'Practice'
+    def lair_or_knight(raw):
+        if raw.lower() == 'black_knight':
+            return 'black_knight'
+        n = int(raw)
+        if not 1 <= n <= 24:
+            raise ValueError(raw)
+        return n
+    lair_or_knight.allowed = ['a lair 1-24', 'black_knight']
+    r['practice'] = [_get(cp, pr, f'key{k}', lair_or_knight) for k in PRACTICE_KEYS]
+    r['practice_flags'] = (TEAM_KNIGHT_HITS * _get(cp, pr, 'team_knight_hits', _onoff) +
+                           COOP_KNIGHT_HITS * _get(cp, pr, 'coop_knight_hits', _onoff) +
+                           COOP_DAGGER_HITS * _get(cp, pr, 'coop_dagger_hits', _onoff) +
+                           TARGET_FIRST * _get(cp, pr, 'monster_target', _choice(TARGETS)))
+    r['target_margin'] = _get(cp, pr, 'target_switch_margin', int, *rb['target_margin'])
     y = 'Mythral'
     r['mythral_up_to'] = [_get(cp, y, f'band{n}_up_to', int, *rb['donation']) for n in range(1, MYTHRAL_BANDS)]
     r['mythral'] = [_get(cp, y, f'band{n}_chance', float, *rb['chance']) for n in range(1, MYTHRAL_BANDS + 1)]
@@ -307,6 +376,8 @@ def read_ini(path):
         k['armour'] = _get(cp, sec, 'armour', _choice(ARMOURS))
         k['mode'] = _get(cp, sec, 'mode', _choice(MODES))
         k['colour'] = _get(cp, sec, 'colour', _colour)
+        if sec != 'Black':
+            k['home'] = _get(cp, sec, 'home_village', _choice(HOME_VILLAGES))
         r['knights'].append(k)
     b = 'Black'
     r['ai_xp_per_moon_phase'] = _get(cp, b, 'xp_per_moon_phase', int, *rb['xp_per_moon_phase'])
@@ -314,18 +385,22 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'max_gold', 'max_lives',
-                 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'xp_per_stat_1_player',
+                 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'merchant_selling',
+                 'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
              w: set(WEAPONS), a: {f'{name}_hp' for name in ARMOURS} | {'ring_of_protection_hp'},
              c: {name for name, _ in MOVES} | {'max_daggers'},
              p: {name for name, *_ in SHOP} | {f'temple_{name}' for name, _ in TEMPLE}
                 | {'healer_full_heal', 'healer_life_point'},
              m: {'frog_days', 'irritation_after_visit', 'irritation_drop_per_day'} | {f'{n}_chance' for n, _ in MATH},
-             t: {f'lair_{name}' for name in LAIR_TYPES} | {'gold_min', 'gold_max'} | set(TREASURE_ITEMS),
+             t: {f'lair_{name}' for name in LAIR_TYPES} | {'gold_min', 'gold_max', 'dragon_hoard'} | set(TREASURE_ITEMS),
              y: {f'band{n}_up_to' for n in range(1, MYTHRAL_BANDS)}
                 | {f'band{n}_chance' for n in range(1, MYTHRAL_BANDS + 1)},
              mo: monster_keys,
-             **{sec: knight_keys for sec in SECTIONS[:-1]},
+             'Practice': {f'key{k}' for k in PRACTICE_KEYS} | {'team_knight_hits', 'coop_knight_hits', 'coop_dagger_hits', 'monster_target',
+                            'target_switch_margin'},
+             **{sec: knight_keys | {'home_village'} for sec in SECTIONS[:-1]},
              b: knight_keys | {'xp_per_moon_phase', 'math_visit_per_moon_phase', 'duel_win_xp'}}
     for sec in cp.sections():                            # a misspelt name would otherwise be ignored silently
         if sec not in known:
@@ -365,6 +440,20 @@ def table(r=None):
     struct.pack_into('<h', t, G_RING, r['ring_hp'] if r else 20)
     for i, k in enumerate(knights):
         t[G_COLOURS + i] = colour_words(k['colour'] or DEFAULT_COLOURS[i])[3]
+        t[G_HOMES + i] = 0xff if i == 4 else k['home'] if r else i
+    t[G_VILLAGE_ANY] = r['village_any'] if r else 0
+    t[G_SAVE_MODE] = r['save_mode'] if r else 0
+    t[G_FATE] = r['fate'] if r else 0
+    t[G_SELLING] = r['selling'] if r else 0
+    struct.pack_into('<H', t, G_MAX_GOLD, r['max_gold'] if r else 150)
+    prices = r['shop'] if r else {'dagger': 2, 'broadsword': 10, 'claymore': 25, 'chain_mail': 30, 'plate_mail': 50,
+                                  'battle_armour': 75}
+    struct.pack_into('<6H', t, G_SELL, *(prices[name] // 2 for name in SELL_ITEMS))
+    t[G_HOARD] = r['hoard'] if r else HOARD_MODES['grows']
+    for n, choice in enumerate(r['practice'] if r else PRACTICE_DEFAULTS):
+        t[G_PRACTICE + n] = 0xff if choice == 'black_knight' else choice - 1
+    t[G_PRACTICE_FLAGS] = r['practice_flags'] if r else 0
+    t[G_TARGET_MARGIN] = r['target_margin'] if r else 20
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------
@@ -429,9 +518,10 @@ def main_patches(r, img):
     imm(0x10b1, 1, m); out.append((0x10b2, b'\x74', b'\x7d'))     # cmp 5 / je -> jge (a start above the cap)
     imm(0xbce4, 1, m); out.append((0xbce5, b'\x74', b'\x7d'))
     imm(0xccbc, 1, m + 1); imm(0xccc2, 1, m); imm(0xada6, 1, m)
-    if r['village_any']:                                 # villages 15h-18h react only to their own knight (+20h)
-        for site in (0x073b, 0x0746, 0x0751, 0x075c):    # jne (skip the place) -> nop nop
-            out.append((site, bytes(img[site:site + 2]), b'\x90\x90'))
+    if r['fate'] or r['save_mode'] in SAVE_CHECKED:     # reward rolls (village_any and homes: the place hook)
+        for where, old, _ in FATE_HOOKS:
+            new, _ = hook_bytes(where, old, 'fate')
+            out.append((where, bytes.fromhex(old), new))
     imm(0x1164, 1, r['moon_days'] - 1, True)             # moon phase: cmp [898Bh],3 / jle (counter 1-4)
     imm(0xcd1f, 2, roll_threshold(r['hawk_curse']), True)          # Hawk: roll <= 15 -> cursed
     imm(0xcd6b, 2, roll_threshold(r['protection_curse']), True)    # Protection: roll <= 10 -> cursed
@@ -562,8 +652,11 @@ def install(game):
     if not os.path.exists(ini):
         shutil.copyfile(os.path.join(game, 'custom_rules-default.ini'), ini)
     exe, hook = build(game, read_ini(ini))
+    from make_savehook import make_savehook
     os.makedirs(os.path.join(game, '_fixes', 'rules'), exist_ok=True)
+    # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here
     for name, data in ((os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), ('SAVEHOOK.COM', hook),
+                       (os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), make_savehook()),
                        ('CUSTOM_RULES.FLG', b'custom rules\r\n')):
         open(os.path.join(game, name), 'wb').write(data)
     if os.path.exists(os.path.join(game, 'ORIGINAL.FLG')):

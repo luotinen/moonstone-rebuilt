@@ -80,6 +80,30 @@ PATCHES = {
         'bytes': [((0x1000, 0x42ad), b'\xc6\x45\x60\x01', b'\xc6\x45\x60\x00'),   # mov byte [di+60h],1 -> 0
                   ((0x1000, 0x122d), b'\x74\x04', b'\xeb\x04')],                     # je -> jmp: no life lost
     },
+    'K18': {
+        'title': 'The dragon\'s hoard grew with every new game (B14 in the user\'s research list; confirmed in the emulator). '
+                 'The new-game reset (1000:1C19, also run by every practice) rolls four magic items and gold into the '
+                 'dragon\'s item table (DS:6EE8) and gold (6E26h+32h) on top of what is there; nothing else clears them, '
+                 'so after five new games in one session the hoard held 25 items and 133 gold. Its mov dx,0 before the '
+                 'rolls (1000:1DBE) becomes int 63h: SAVEHOOK.COM clears the table and the gold, then sets dx = 0. '
+                 'User decision: instead the hoard grows with the dragon\'s victories. Every time it beats a knight '
+                 '(1000:0D23, before it loots the loser: a lost fight, or a computer knight, frog or knight without '
+                 'lives robbed) the hoard gets at a 50 % chance one more magic item (rolled as the game rolls them, '
+                 'DS:E365) and always 0-9 gold. '
+                 'custom_rules.ini can choose reset only, or keep the original (no reset). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x1dbe), b'\xba\x00\x00', b'\xcd\x63\x90'),
+                  ((0x1000, 0x0d23), b'\xbe\x26\x6e', b'\xcd\x63\x90')],
+    },
+    'K19': {
+        'title': 'Moonstone names on the item screen (B10 in the user\'s research list; confirmed in the emulator). The '
+                 'names follow the phase in which each Moonstone doubles the damage (1000:2DB9): bits 1 and 8 at half '
+                 'moon, 2 at full moon, 4 at new moon. The item screen (1000:C6F6) named bits 1 and 8 "New moon '
+                 'Moonstone" and bit 4 "Half Moonstone"; their text numbers swap (1Ch new moon, 20h half; 1Eh full is '
+                 'right)',
+        'bytes': [((0x1000, 0xc709), b'\x1c', b'\x20'),     # bit 1: half
+                  ((0x1000, 0xc747), b'\x20', b'\x1c'),     # bit 4: new moon
+                  ((0x1000, 0xc766), b'\x1c', b'\x20')],    # bit 8: half
+    },
     'D6': {
         'title': 'Save state before every fight (Moonstone Rebuilt only). Every fight (lairs, dragon, Guardian, knights) '
                  'starts in the routine at 1000:0307; its first instruction (mov word [7841h],0) becomes int 66h, '
@@ -100,6 +124,78 @@ PATCHES = {
                  'reads player 2 as Tab (fire), W (up), X (down), A (left) and D (right); down becomes S (scan code '
                  '1Fh), which the game does not use for anything else',
         'bytes': [((0x1000, 0x8403), b'\xb8\x2d\x00', b'\xb8\x1f\x00')],   # mov ax,2Dh (X) -> mov ax,1Fh (S)
+    },
+    'D11': {
+        'title': 'Practice against the computer with one player (Moonstone Rebuilt; user request). Practice '
+                 '(1000:00E7) saves the chosen number of players in [0940h], forces two and always sets up two human '
+                 'knights: 6C9Eh (controller 2, the first player\'s keys) and 6D00h (controller 1, the second '
+                 'player\'s). The set-up of 6D00h (1000:011D: type 6, controller 1, +20h = 2) and InitPractice\'s '
+                 'controller (1000:2031) become int 63h, which SAVEHOOK.COM handles: with one player chosen the '
+                 'second knight is a computer knight as the game makes them at 1000:1C75 (type 8, controller 4, '
+                 '+20h = 4: black), otherwise as before. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x011d), b'\xc6\x44\x35\x06\xc6\x44\x09\x01\xc7\x44\x20\x02\x00',
+                   b'\xcd\x63' + b'\x90' * 11),
+                  ((0x1000, 0x2031), b'\xc6\x45\x09\x01', b'\xcd\x63\x90\x90')],
+    },
+    'D12': {
+        'title': 'Practice with 3 or 4 players: two teams (Moonstone Rebuilt; user request; a prototype). With 3 '
+                 'players chosen and a controller on joystick A, or 4 and controllers on joysticks A and B, practice '
+                 'adds knights 6D62h (joystick A) and 6DC4h (joystick B): team 1 = player 1 (arrows) + joystick A, '
+                 'team 2 = player 2 (W A S D) + joystick B, in the colours of players 1 and 2; otherwise practice is '
+                 'as before. In this mode the keys and the joysticks are four separate inputs (1000:83C0 otherwise '
+                 'ORs joystick A into player 1 and B into player 2), teammates do not hurt each other, and the fight '
+                 'ends when one team has no knight left. All sites become int 63h (SAVEHOOK.COM): InitPractice after '
+                 'the second knight (2038, it adds the others through the game\'s own 1F76 and 2998), the fight loop\'s '
+                 'end check (036F), a knight\'s hit (4273), the joystick ORs (83EE, 8420), the input pick (0A8F) and '
+                 'the end of practice (014B). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x203b), b'\xc7\x06\x1c\x09\x06\x00', b'\xcd\x63' + b'\x90' * 4),
+                  ((0x1000, 0x036f), b'\x80\x3e\x7d\x89\x00', b'\xcd\x63\x90\x90\x90'),
+                  ((0x1000, 0x4273), b'\x8b\x75\x0e\x33\xc0', b'\xcd\x63\x90\x90\x90'),
+                  ((0x1000, 0x83ee), b'\x5b\x0b\xd8', b'\xcd\x63\x90'),
+                  ((0x1000, 0x8420), b'\x5a\x5b\x0b\xc2', b'\xcd\x63\x90\x90'),
+                  ((0x1000, 0x0a8f), b'\x80\x7d\x09\x01\x74\x02\x8b\xc3', b'\xcd\x63' + b'\x90' * 6),
+                  ((0x1000, 0x014b), b'\x8b\x16\x40\x09', b'\xcd\x63\x90\x90')],
+    },
+    'D13': {
+        'title': 'Four colours in the 3-4 player practice (Moonstone Rebuilt; user request; with D12). The game sets only '
+                 'palette entries 0-31 of its 256-colour screen. The interpreter\'s two blitter calls (1000:9AFB, '
+                 '9B07) note when knight 6D62h or 6DC4h is drawn; after the bitplanes are converted to bytes '
+                 '(1000:5EDD) that frame\'s knight colours move up by 26: 6-8 to 32-34 (6D62h, drawn from KN*.OB) and '
+                 '9-11 to 35-37 (6DC4h, HE*.OB). Entries 32-37 are written after the palette write (1000:5B3E) and '
+                 'each fade step (5BAD in, 5C21 out), from the fight palette words of knights +20h = 1 and 3 '
+                 '(1000:4838, 484E; custom rules colour them), scaled with the fade. Only while D12\'s mode is on. '
+                 'Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x9afb), b'\xe8\xd6\xc2', b'\xcd\x63\x90'),
+                  ((0x1000, 0x9b07), b'\xe8\xca\xc2', b'\xcd\x63\x90'),
+                  ((0x1000, 0x5edd), b'\x5f\x5e\x1f', b'\xcd\x63\x90'),
+                  ((0x1000, 0x5b3e), b'\xba\xc8\x03', b'\xcd\x63\x90'),
+                  ((0x1000, 0x5bad), b'\x81\xc5\xc0\x00', b'\xcd\x63\x90\x90'),
+                  ((0x1000, 0x5c21), b'\x81\xc5\xc0\x00', b'\xcd\x63\x90\x90')],
+    },
+    'D14': {
+        'title': 'Practice choices (Moonstone Rebuilt; user request; with D11-D13). In the first menu, Space on Practice '
+                 'starts the 3-4 player practice as two teams in their keyboard players\' colours; Enter starts it as '
+                 'everyone against everyone, in four colours, until one knight is left. With 1 player chosen, the keys '
+                 '1-9 start a practice against the monsters of one lair through the game\'s own lair fight (as many '
+                 'at once as the lair sends): 1 ratmen x10, 2 ratmen x14, 3 wasteland troggs x10, 4 axe troggs x10, 5 '
+                 'war beasts x9, 6 spear troggs x5, 7 Baloks x3, 8 mudmen x5, 9 trolls x6; 0 (or Enter) the Black '
+                 'Knight. The menu stores its input at 1000:1299 and practice calls InitPractice at 1000:0142; both '
+                 'become int 63h (SAVEHOOK.COM keeps the choice and calls 1000:055E and 1F2C with that lair\'s '
+                 'record). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x1299), b'\x89\x1e\xe2\x77', b'\xcd\x63\x90\x90'),
+                  ((0x1000, 0x0142), b'\xe8\xb5\x1e', b'\xcd\x63\x90')],
+    },
+    'D15': {
+        'title': 'Co-op practice (Moonstone Rebuilt; user request; with D12-D14). With 2-4 players chosen, the practice '
+                 'keys 1-9 put all the knights on the same side against that lair\'s monsters (with 3-4 players as many '
+                 'knights as D12 finds controllers for). They cannot hurt each other (daggers still can), the fight '
+                 'goes on while a knight stands and monsters are left, and every monster goes for the knight nearest '
+                 'to it. A monster\'s update starts by taking the knight that entered the fight as its opponent '
+                 '(1000:2DF7 and 2FC3, mov ax,[0978h] / mov [77EAh],ax); both become int 63h, and SAVEHOOK.COM picks '
+                 'the nearest knight standing (switching only when another is clearly nearer). Needs SAVEHOOK.COM '
+                 'resident',
+        'bytes': [((0x1000, 0x2df7), b'\xa1\x78\x09\xa3\xea\x77', b'\xcd\x63' + b'\x90' * 4),
+                  ((0x1000, 0x2fc3), b'\xa1\x78\x09\xa3\xea\x77', b'\xcd\x63' + b'\x90' * 4)],
     },
 }
 

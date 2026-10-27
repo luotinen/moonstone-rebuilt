@@ -54,7 +54,7 @@ The menu has these options *(manual p. 14)*:
 
 * **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer.
 * **Gore:** turns the bloody deaths on or off.
-* **Practice:** two players fight each other straight away, without the map.
+* **Practice:** two players fight each other straight away, without the map. [Moonstone Rebuilt: with 1 player chosen, you fight a Black Knight played by the computer, D11; with 3 or 4 and game controllers, everyone against everyone (Enter) or two teams (Space), D12-D14; with 1 player the keys 1-9 start a practice against the monsters of a lair (with 2-4 players all knights together, D15) and 0 against the Black Knight, D14.]
 * **Select knight:** pick a knight and type a name, then press Enter (or fire).
 
 Every knight starts with *(manual p. 14; same in the code, `1000:1FAE`)*:
@@ -85,7 +85,7 @@ On the map *(manual p. 6)*:
   hit points come back once a day whether the knight walked or not; E only gives up the rest of the turn.]
 * **Esc:** ends the whole game with Game Over, without asking. [Original: Q, next to player 2's keys; Rebuilt: Esc, K5.]
 
-A joystick works through DOSBox-X.
+A joystick works too: player 1 on the first, player 2 on the second, fire = the first two buttons. J on the first menu calibrates it. [Moonstone Rebuilt: any modern controller works through DOSBox-X; see the README, *Game controllers*.]
 
 ## 4. Your knight
 

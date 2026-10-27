@@ -22,4 +22,5 @@
 /mt32-roms/*.ROM
 /mt32-roms/*.rom
 /soundfonts/*.sf2
+/moonstone.map
 __pycache__/

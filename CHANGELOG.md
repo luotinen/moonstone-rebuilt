@@ -14,6 +14,29 @@
   chances, and the hit points and damage of every monster, the Guardian and the dragon. Tables that the game
   could roll on forever are refused. A ring from Math now adds the configured ring hit points.
 * Custom rules: any colour per knight as `#RGB`; on the map it shows as the nearest of the five named colours.
+* Custom rules: a home village per knight (start, respawn, healing); `save_mode` (automatic and manual saves, only
+  automatic, only manual or none) and `prevent_savescumming`. The knight sections now come right after `[Rules]`.
+  `Custom_rules_off.bat` also puts the normal `SAVEHOOK.COM` back.
+* D11: Practice with 1 player chosen is now against a computer-played Black Knight (2 or more: two players, as
+  before).
+* D16: practice settings in `custom_rules.ini` (`[Practice]`): each key's lair (its monsters and their number) or the
+  Black Knight; knights' and daggers' hits on knights; how monsters pick their knight. Against monsters, thrown daggers
+  no longer hit knights, and with 2-4 knights their strength and hit points are added up for the monster count.
+* D15: co-op practice: with 2-4 players the practice keys put all the knights on the same side against the
+  monsters; every monster goes for its nearest knight.
+* D14: 3-4 player practice: Enter = everyone against everyone, Space = teams (same colour per team). 1 player:
+  the keys 1-9 start a practice against the monsters of a lair, 0 the Black Knight.
+* K18: the dragon's hoard no longer grows with every new game or practice in the same session; instead it gets one
+  magic item at a 50 % chance and 0-9 gold for every knight the dragon beats. Custom rules: `dragon_hoard` (grows, reset, keep).
+* K19: the Moonstones' names on the item screen match their moon phases (half and new moon were swapped).
+* D12 (prototype): Practice with 3 or 4 players and one or two game controllers is a team fight (keyboard player 1
+  + controller 1 against keyboard player 2 + controller 2); without the controllers, the normal practice.
+* D13: in that practice every knight has its own colour (the controller knights use new palette entries 32-37).
+* Controllers: DOSBox-X keeps key and controller bindings in `moonstone.map` in the game folder; the README shows how
+  to add the D-pad and turn round an inverted axis in the mapper.
+* README: how to play with game controllers (two players with `joysticktype = 2axis`, the J calibration).
+* Custom rules: `merchant_selling`: the merchant buys daggers, weapons and armour for half their price; the long
+  sword and padded armour come back for free.
 * A clean `custom_rules.ini` comes with the release, ready to edit; `custom_rules-default.ini` is the copy that
   `Custom_rules_reset.bat` restores from.
 * K16: duel loot no longer duplicates the Sword of Sharpness. A computer winner moves the right armour hit points,
