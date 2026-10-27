@@ -63,6 +63,8 @@ skip the intro.
 ## Playing
 
 * **Start:** `Start.bat`.
+* **Rules:** [GUIDE.md](GUIDE.md) is a player's guide written for Moonstone Rebuilt: the manual's topics plus the
+  rules the manual leaves out, with notes where the manual and the game disagree.
 * **Skip the intro or the ending:** Enter, Space or Esc.
 * **Gold:** a knight can carry at most 150 gold. Anything above that is lost, and the game does not warn you.
 * **Controls:** the arrow keys move; Enter + a direction attacks (when the knight faces right):

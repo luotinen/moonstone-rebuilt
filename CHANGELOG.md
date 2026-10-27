@@ -4,6 +4,8 @@
 
 * K16: duel loot no longer duplicates the Sword of Sharpness. A computer winner moves the right armour hit points,
   and its stat raise after a duel stops at 5 like a player's. `SAVEHOOK.COM` has a third handler (int 62h).
+* GUIDE.md: a new player's guide covering the manual's topics in new text, the rules the manual leaves out, and
+  the places where the manual and the game disagree.
 
 ## 0.4.0 – No ratmen disease, better music defaults
 
