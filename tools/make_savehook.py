@@ -1,5 +1,5 @@
 """Build SAVEHOOK.COM, the resident helper for D6 and D7 (DOSBox-X save state right before every fight and at the
-start of every human player's turn on the map).
+start of every human player's turn on the map) and for K16 (code that does not fit in MAIN.EXE).
 
 DOSBox-X has no way for a DOS program to ask for a save state, but its autosave can use a separate slot range per
 running program ("autosave = 1 -1 PRETURN:91-95 PREFIGHT:96-100": check every second, never save for other
@@ -8,7 +8,7 @@ program name from the memory block of the current PSP, and only re-reads it when
 names need slot ranges of their own, because DOSBox-X keeps one rotation counter per name: two names in the same
 slots would overwrite each other's newest saves.
 
-SAVEHOOK.COM installs two interrupt handlers and stays resident. The patches in patches.py replace an instruction in
+SAVEHOOK.COM installs three interrupt handlers and stays resident. The patches in patches.py replace an instruction in
 MAIN.EXE with an interrupt:
 * D6, int 66h: the first instruction of the fight routine (1000:0307, mov word [7841h],0); every fight starts there.
 * D7, int 65h: the instruction after the turn set-up (1000:a63f, mov si,[77e8h], the record of the knight whose turn
@@ -22,12 +22,16 @@ The handler:
    check: one fight or turn then fills two slots with the same moment. The game cannot see the pause (its clocks,
    the CMOS clock included, follow emulated time), so this is not avoided,
 4. restores the old name and runs the child again, so the name is MAIN again.
+K16, int 62h: the weapon pick on the duel loot screen (1000:ce99) moved only the weapon number. Taking the Sword of
+Sharpness (weapon 19h) left the sword item with the loser, so both knights had the sword. The handler also moves the
+item (item table +4) when the weapon is 19h, then does the replaced compare and store (the better weapon is kept).
 
 MAIN.EXE may use all free memory, so SAVEHOOK keeps a small block of its own and frees it for the child.
 Usage: python -I tools/make_savehook.py <output SAVEHOOK.COM>"""
 import sys, struct
 
-FIGHT_INT, TURN_INT = 0x66, 0x65
+FIGHT_INT, TURN_INT, LOOT_INT = 0x66, 0x65, 0x62   # MAIN.EXE uses none of these
+SHARPNESS = 0x19                         # weapon number of the Sword of Sharpness
 FIGHT_NAME = b'PREFIGHT'                 # program names that the autosave setting matches (8 characters at most)
 TURN_NAME = b'PRETURN'
 COMPUTER = 4                             # knight record +20h: control type 4 = computer
@@ -107,6 +111,21 @@ def make_savehook():
     a.b(0x2e, 0xc7, 0x06); a.word('name_ptr'); a.word('turn_name')    # mov word cs:[name_ptr], turn_name
     a.near(0xe9, 'save_state')                               # jmp save_state
 
+    # --- int 62h: weapon pick on the duel loot screen (resident); si = winner, di = loser, bp = loser's weapon ---
+    a.label('loot_handler')
+    a.b(0x83, 0xfd, SHARPNESS)                               # cmp bp, 19h
+    a.short(0x75, 'loot_weapon')                             # jne loot_weapon
+    a.b(0x53)                                                # push bx
+    a.b(0x8b, 0x5c, 0x44, 0xc7, 0x47, 0x04, 0x01, 0x00)      # mov bx, [si+44h] / mov word [bx+4], 1   winner's item
+    a.b(0x8b, 0x5d, 0x44, 0xc7, 0x47, 0x04, 0x00, 0x00)      # mov bx, [di+44h] / mov word [bx+4], 0   loser's item
+    a.b(0x5b)                                                # pop bx
+    a.label('loot_weapon')
+    a.b(0x3b, 0x6c, 0x40)                                    # cmp bp, [si+40h]      (replaced MAIN instructions)
+    a.short(0x7c, 'loot_done')                               # jl loot_done
+    a.b(0x89, 0x6c, 0x40)                                    # mov [si+40h], bp
+    a.label('loot_done')
+    a.b(0xcf)                                                # iret
+
     a.label('mcb')                                           # es = memory block of the current PSP
     a.b(0xb4, 0x62, 0xcd, 0x21)                              # mov ah, 62h / int 21h
     a.b(0x4b, 0x8e, 0xc3, 0xc3)                              # dec bx / mov es, bx / ret
@@ -180,11 +199,13 @@ def make_savehook():
     a.short(0x74, 'quit')                                    # je quit     already installed: run as the child
     # The vectors are taken over without checking them: DOSBox-X points int 66h at a BIOS IRET stub by default
     # (bios.cpp, "war2d"), so a non-zero vector does not mean another program uses it. Nothing else in this
-    # setup uses 65h or 66h, and the patched MAIN.EXE must always reach these handlers.
+    # setup uses 62h, 65h or 66h, and the patched MAIN.EXE must always reach these handlers.
     a.b(0xba); a.word('fight_handler')                       # mov dx, fight_handler
     a.b(0xb8, FIGHT_INT, 0x25, 0xcd, 0x21)                   # mov ax, 2566h / int 21h
     a.b(0xba); a.word('turn_handler')                        # mov dx, turn_handler
     a.b(0xb8, TURN_INT, 0x25, 0xcd, 0x21)                    # mov ax, 2565h / int 21h
+    a.b(0xba); a.word('loot_handler')                        # mov dx, loot_handler
+    a.b(0xb8, LOOT_INT, 0x25, 0xcd, 0x21)                    # mov ax, 2562h / int 21h
     for seg in ('tail_seg', 'fcb1_seg', 'fcb2_seg'):
         a.b(0x8c, 0x0e); a.word(seg)                         # mov [seg], cs
     a.b(0x8e, 0x06, 0x2c, 0x00, 0xb4, 0x49, 0xcd, 0x21)      # mov es, [2Ch] / mov ah, 49h / int 21h   free env

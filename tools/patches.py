@@ -53,6 +53,25 @@ PATCHES = {
                   ((0x1000, 0xbbd5), b'\xb9\x02\x00', b'\xb9\x03\x00'),               # mov cx,2 -> mov cx,3
                   ((0x1000, 0xbbe7), b'\x8b\x74\x04', b'\x8b\x74\x02')],              # mov si,[si+4] -> [si+2]
     },
+    'K16': {
+        'title': 'Duel looting. (1) The weapon pick on the loot screen (1000:ce91) moved only the weapon number, so a '
+                 'knight who took the Sword of Sharpness got it without the sword item, and the loser kept the item '
+                 'and was re-armed with it: two swords. The compare and store after the long-sword check become '
+                 'int 62h, which SAVEHOOK.COM handles: it also moves the item when the weapon is 19h (needs '
+                 'SAVEHOOK.COM resident, like D6). (2) The automatic loot of a computer winner (1000:0b8e) moved the '
+                 'hit points of the old armour of the winner instead of the armour taken; push/pop ax go. (3) When '
+                 'the loser has no lives left, the sword is now set as the weapon of the winner (1000:0c4b), not of '
+                 'the loser. (4) The stat raise of a computer knight after a duel win (1000:04bd) had no cap; it now '
+                 'stops at 5 like the human level-up (1000:d58b) and keeps the XP when the stat is already 5',
+        'bytes': [((0x1000, 0xce99), b'\x3b\x6c\x40\x7c\x03', b'\xcd\x62\xeb\x04\x90'),   # int 62h / jmp cea1
+                  ((0x1000, 0x0b96), b'\x50', b'\x90'),                                     # push ax -> nop
+                  ((0x1000, 0x0b9d), b'\x58', b'\x90'),                                     # pop ax -> nop
+                  ((0x1000, 0x0c4b), b'\xc7\x45\x40', b'\xc7\x44\x40'),                     # [di+40h] -> [si+40h]
+                  ((0x1000, 0x04bd), bytes.fromhex('2503003d02007e03b802008bd8fe402e83fb0175048344380a'),
+                                     bytes.fromhex('2503003c0314ff8bd880782e057d18fe402e4b75048344380a'))],
+        # and ax,3 / cmp al,3 / adc al,-1 (3 -> 2) / mov bx,ax / cmp byte [bx+si+2Eh],5 / jge 04e6 (no raise, no XP
+        # spent) / inc byte [bx+si+2Eh] / dec bx / jnz 04d6 / add word [si+38h],10 (CON: +10 HP)
+    },
     'K17': {
         'title': 'Ratmen disease removed (user decision; widely taken for a bug). A ratman\'s bite set the disease '
                  '(knight +60h, 1000:42AD), and at every periodic update (each moon phase, four days; 1000:1229) a '

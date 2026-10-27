@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+* K16: duel loot no longer duplicates the Sword of Sharpness. A computer winner moves the right armour hit points,
+  and its stat raise after a duel stops at 5 like a player's. `SAVEHOOK.COM` has a third handler (int 62h).
+
 ## 0.4.0 – No ratmen disease, better music defaults
 
 * K17: the ratmen disease is removed (it silently took a life point every four days).

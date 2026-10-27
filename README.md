@@ -111,7 +111,8 @@ skip the intro.
 
 All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
 
-* **Bug fixes:** the hidden ratmen disease that took a life point every four days is gone; the game no longer ends
+* **Bug fixes:** the hidden ratmen disease that took a life point every four days is gone; duel loot no longer
+  duplicates the Sword of Sharpness; the game no longer ends
   when Q is pressed by accident (Game Over is now on Esc); Math the Wizard
   and Mythral raise the right stats and say the right thing; fights can no longer run
   out of object slots; the sound effects play at their real speed; a sound that never played now
@@ -140,7 +141,7 @@ The original difficulty and rules are kept.
 | *DOSBox-X was not found* | Install DOSBox-X to `C:\DOSBox-X` or add it to the `PATH`. |
 | No music | Normal on the map and in fights: the game only has music in the intro, the ending and five places. If it is silent there too, run `Music_AdLib.bat`. |
 | No sound effects as samples | Run `SoundCard_SoundBlaster.bat`. |
-| The game freezes at the first fight or turn | `SAVEHOOK.COM` is not running; run `Setup.bat` again. As a workaround, `Fixes_Off.bat`. |
+| The game freezes at the first fight or turn, or when taking a weapon after a duel | `SAVEHOOK.COM` is not running; run `Setup.bat` again. As a workaround, `Fixes_Off.bat`. |
 
 ## Credits and legal
 
