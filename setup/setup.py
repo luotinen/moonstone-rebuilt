@@ -10,7 +10,8 @@ Only files from the user's installation are used; nothing of the original game i
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf: on the first setup the best music available (MT-32 if
    the ROMs are in mt32-roms, else General MIDI if soundfonts/default.sf2 exists, else AdLib); later runs keep the choice.
-5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat).
+5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat); applies the game rules in
+   custom_rules.ini (tools/rules.py) again if CUSTOM_RULES.FLG exists (Custom_rules_on.bat).
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
 It can be run again at any time; saves (save/) and the MT-32 ROMs and SoundFont are left alone.
 Usage: python -I setup/setup.py [GOG Moonstone folder]"""
@@ -137,6 +138,13 @@ def main(arg=None):
     for name in ['MAIN.EXE', 'INTR.EXE'] + samples:
         copy(os.path.join(use, name), os.path.join(HERE, name))
     say('  installed: ' + ('original programs (Fixes_Off.bat)' if use == original else 'fixed programs'))
+    if os.path.exists(os.path.join(HERE, 'CUSTOM_RULES.FLG')):   # custom rules (D10), if Custom_rules_on.bat is in use
+        import rules
+        try:
+            rules.install(HERE)
+            say('  custom rules from custom_rules.ini: on' + (' (with Fixes_On.bat)' if use == original else ''))
+        except rules.RulesError as e:
+            say(f'  custom rules not applied, custom_rules.ini: {e}')
 
     disk1 = os.path.join(HERE, 'amiga', 'Moonstone_Disk1.adf')  # 6. optional Amiga music
     if os.path.exists(disk1):

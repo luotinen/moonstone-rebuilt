@@ -107,7 +107,20 @@ skip the intro.
 | `SoundCard_SoundBlaster.bat` / `SoundCard_AdLib.bat` | Sound effects as digitised samples (Sound Blaster, default) or on the AdLib synthesiser. |
 | `Fixes_On.bat` / `Fixes_Off.bat` | All fixes (default) or the original game: the original programs (only unpacked, so that they run in DOSBox-X) and sound files. Saves do not carry over between the two. In original mode there are no automatic saves. |
 | `AmigaMusic_On.bat` / `AmigaMusic_Off.bat` | Amiga intro and ending music on or off (after it has been set up). |
+| `Custom_rules_on.bat` / `Custom_rules_off.bat` / `Custom_rules_reset.bat` | Use the custom rules in `custom_rules.ini`, use the default rules (the normal game), or restore `custom_rules.ini` to the default state (`custom_rules-default.ini`) (D10). Restart DOSBox-X after a change. `Custom_rules_on.bat` needs Python. |
+| `custom_rules.ini` | The custom rules: each knight's starting abilities, life points, hit points, gold, weapon, armour and items, what happens when it dies, the computer knights' extras, and global rules (disease, curses, gold and life caps, home village, E key, moon, weapon damage, armour hit points). Every setting is explained in the file. |
 | `moonstone-dosbox-x.conf` | DOSBox-X settings: window size, shader, speed, saves. |
+
+### Custom rules (`custom_rules.ini`)
+
+`custom_rules.ini` changes the game without touching the fixes. It is made from `custom_rules-default.ini` (the normal game) the first time `Custom_rules_on.bat` runs; edit it, run `Custom_rules_on.bat` and restart DOSBox-X. `Custom_rules_off.bat` goes back to the default rules, and `Custom_rules_reset.bat` restores `custom_rules.ini` to the default state. The main settings:
+
+* **Per knight** (`[Knight1]`–`[Knight4]` in the order of the selection screen, `[Black]` for every knight the computer plays): strength, constitution, endurance, life points, extra hit points, gold, experience, daggers, weapon, armour, how many of each magic item, keys and Moonstones.
+* **Death mode per knight:** `permadeath` (the original), `reincarnation` (starts again from its starting values at its start), `respawn` (back at its start with full life points, keeps the rest) or `invulnerable` (never loses the last life point; a winner still takes items).
+* **Computer knights:** experience every moon phase, the free visit to Math the Wizard, experience for a duel win.
+* **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour adds (as in the game, armour does not reduce damage).
+
+The starting values apply to a new game; a running game or a save state keeps the knights it has. The custom rules work only with the fixes on (`Fixes_On.bat`).
 
 ## What is changed
 
@@ -119,7 +132,7 @@ All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
   and Mythral raise the right stats and say the right thing; fights can no longer run
   out of object slots; the sound effects play at their real speed; a sound that never played now
   plays; ratmen grow stronger with the moon as the manual says.
-* **Improvements:** automatic saves before every fight and turn; the intro and ending can be skipped; the intro
+* **Improvements:** optional custom rules in `custom_rules.ini` (starting values per knight, death modes, caps and more); automatic saves before every fight and turn; the intro and ending can be skipped; the intro
   works in DOSBox-X; MT-32, General MIDI or AdLib music; optional Amiga intro and ending music; DOSBox-X settings
   from the GOG community (speed, joystick, black screen); 4:3 picture with crisp pixels.
 
@@ -144,6 +157,8 @@ The original difficulty and rules are kept.
 | No music | Normal on the map and in fights: the game only has music in the intro, the ending and five places. If it is silent there too, run `Music_AdLib.bat`. |
 | No sound effects as samples | Run `SoundCard_SoundBlaster.bat`. |
 | The game freezes at the first fight or turn, or when taking a weapon after a duel | `SAVEHOOK.COM` is not running; run `Setup.bat` again. As a workaround, `Fixes_Off.bat`. |
+| *custom_rules.ini: ... must be ...* when running `Custom_rules_on.bat` | A value in `custom_rules.ini` is out of range or misspelt; the message names it. Nothing was changed. `Custom_rules_reset.bat` starts again from the defaults. |
+| The game freezes when a new game starts, after `Custom_rules_on.bat` | DOSBox-X was not restarted, so the old `SAVEHOOK.COM` is still running. Restart DOSBox-X. |
 
 ## Credits and legal
 

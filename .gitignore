@@ -17,6 +17,7 @@
 /save/
 *.FLG
 # Your own files
+/custom_rules.ini
 /amiga/*.adf
 /amiga/*.ADF
 /mt32-roms/*.ROM

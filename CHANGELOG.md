@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* D10: optional custom rules in `custom_rules.ini` (`Custom_rules_on.bat`, `Custom_rules_off.bat`, `Custom_rules_reset.bat`): starting values per knight, death modes (permadeath, reincarnation, respawn, invulnerable), the computer knights' extras, and global rules such as the ratmen disease, curses, gold and life caps, home village healing (optionally in any village) and a full heal with the E key. `SAVEHOOK.COM` has a fourth handler (int 61h).
 * K16: duel loot no longer duplicates the Sword of Sharpness. A computer winner moves the right armour hit points,
   and its stat raise after a duel stops at 5 like a player's. `SAVEHOOK.COM` has a third handler (int 62h).
 * GUIDE.md: a new player's guide covering the manual's topics in new text, the rules the manual leaves out, and

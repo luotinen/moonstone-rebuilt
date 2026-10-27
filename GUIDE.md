@@ -67,6 +67,8 @@ Every knight starts with *(manual p. 14; same in the code, `1000:1FAE`)*:
 
 Each knight starts in their own home village. Other knights cannot enter it.
 
+[Moonstone Rebuilt: `custom_rules.ini` can change these starting values for each knight, and much else; see the README, *Custom rules*. This guide describes the normal game.]
+
 ## 3. Controls
 
 The manual describes only a joystick. The DOS keys are:
