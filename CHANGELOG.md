@@ -2,7 +2,20 @@
 
 ## Unreleased
 
-* D10: optional custom rules in `custom_rules.ini` (`Custom_rules_on.bat`, `Custom_rules_off.bat`, `Custom_rules_reset.bat`): starting values per knight, death modes (permadeath, reincarnation, respawn, invulnerable), the computer knights' extras, and global rules such as the ratmen disease, curses, gold and life caps, home village healing (optionally in any village) and a full heal with the E key. `SAVEHOOK.COM` has a fourth handler (int 61h).
+* D10: optional custom rules in `custom_rules.ini` (`Custom_rules_on.bat`, `Custom_rules_off.bat`, `Custom_rules_reset.bat`): starting values per knight, death modes (permadeath, reincarnation, respawn, invulnerable), the computer knights' extras, and global rules such as the ratmen disease, curses, gold and life caps, home village healing (optionally in any village) and a full heal with the E key. `SAVEHOOK.COM` has a fourth handler (int 63h). Every value is checked against its bounds (listed in the file)
+  before anything is changed, and the maximum hit points stay at most 999.
+* Custom rules: the rules handler now uses int 63h. It used int 61h, which the game itself takes over for its sound
+  drivers (1000:5887), so the rules from the previous commit would have crashed once the sound was set up.
+* Custom rules: prices (shops, healer, High Temple, with the texts on screen), move and dagger damage, the most
+  daggers, ring hit points, Math the Wizard's frog days and irritation, and a colour per knight. Buying armour
+  now heals by the armour's configured hit points. The High Temple's text for selling a Scroll of Haste said
+  16 GP but paid 18; the text now shows the real price.
+* Custom rules: lair treasure, the treasure gold, the magic item chances, what Math the Wizard gives, Mythral's
+  chances, and the hit points and damage of every monster, the Guardian and the dragon. Tables that the game
+  could roll on forever are refused. A ring from Math now adds the configured ring hit points.
+* Custom rules: any colour per knight as `#RGB`; on the map it shows as the nearest of the five named colours.
+* A clean `custom_rules.ini` comes with the release, ready to edit; `custom_rules-default.ini` is the copy that
+  `Custom_rules_reset.bat` restores from.
 * K16: duel loot no longer duplicates the Sword of Sharpness. A computer winner moves the right armour hit points,
   and its stat raise after a duel stops at 5 like a player's. `SAVEHOOK.COM` has a third handler (int 62h).
 * GUIDE.md: a new player's guide covering the manual's topics in new text, the rules the manual leaves out, and

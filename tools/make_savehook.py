@@ -25,18 +25,18 @@ The handler:
 K16, int 62h: the weapon pick on the duel loot screen (1000:ce99) moved only the weapon number. Taking the Sword of
 Sharpness (weapon 19h) left the sword item with the loser, so both knights had the sword. The handler also moves the
 item (item table +4) when the weapon is 19h, then does the replaced compare and store (the better weapon is kept).
-Rules, int 61h: the custom game rules from custom_rules.ini (rules.py; only when they are on, CUSTOM_RULES.FLG).
+Rules, int 63h: the custom game rules from custom_rules.ini (rules.py; only when they are on, CUSTOM_RULES.FLG).
 rules.py writes the settings table into SAVEHOOK.COM and patches MAIN.EXE; see rules_code below. Without custom
-rules the table holds the normal game's values and the normal MAIN.EXE never calls int 61h.
+rules the table holds the normal game's values and the normal MAIN.EXE never calls int 63h.
 
 MAIN.EXE may use all free memory, so SAVEHOOK keeps a small block of its own and frees it for the child.
 Usage: python -I tools/make_savehook.py <output SAVEHOOK.COM>   (the normal game; rules.py builds it with rules)"""
 import sys, os, struct
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rules import (HOOKS, SECTIONS, SECTION_SIZE, MODES, VILLAGE, G_ARMOUR_HP, G_SWORD, G_REST,
-                   G_VILLAGE, G_MAX_LIVES, hook_bytes, table as rules_default_table)
+                   G_VILLAGE, G_MAX_LIVES, G_RING, G_COLOURS, MAX_HP, hook_bytes, table as rules_default_table)
 
-FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x61   # MAIN.EXE uses none of these
+FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x63   # MAIN.EXE uses none of these
 SHARPNESS = 0x19                         # weapon number of the Sword of Sharpness
 FIGHT_NAME = b'PREFIGHT'                 # program names that the autosave setting matches (8 characters at most)
 TURN_NAME = b'PRETURN'
@@ -80,7 +80,7 @@ class Asm:
         return bytes(self.code)
 
 def rules_code(a):
-    """int 61h: the custom game rules from custom_rules.ini (rules.py). The MAIN.EXE sites are in rules.HOOKS; the
+    """int 63h: the custom game rules from custom_rules.ini (rules.py). The MAIN.EXE sites are in rules.HOOKS; the
     handler finds the job by the return address. All jobs run with bp = frame ([bp+2] return IP, [bp+4] CS,
     [bp+6] flags) and bx saved at [bp-2]; they end at rules_done, or at rules_flags to return the arithmetic flags of
     their last instruction (the game code after the site may test them)."""
@@ -125,13 +125,14 @@ def rules_code(a):
     a.b(0x2e, 0x8b, 0x9f); a.word('section_ptrs')            # mov bx, cs:[bx+section_ptrs]
     a.b(0x58, 0xf8, 0xc3)                                    # pop ax / clc / ret
 
-    # calc_hp: si = record, bx = block -> ax = max HP, as 1000:028D plus the HP bonus (at least 1)
+    # calc_hp: si = record, bx = block -> ax = max HP, as 1000:028D plus the HP bonus (1-999)
     a.label('calc_hp')
     a.b(0x51, 0x52)                                          # push cx / push dx
     a.b(0x8a, 0x44, 0x2f, 0x32, 0xe4)                        # mov al, [si+2Fh] / xor ah, ah     constitution
     a.b(0xb9, 0x0a, 0x00, 0xf7, 0xe1, 0x8b, 0xc8)            # mov cx, 10 / mul cx / mov cx, ax
     a.b(0x57, 0x8b, 0x7c, 0x44, 0x8b, 0x45, 0x06, 0x5f)      # push di / mov di, [si+44h] / mov ax, [di+6] / pop di
-    a.b(0xba, 0x14, 0x00, 0xf7, 0xe2, 0x03, 0xc8)            # mov dx, 20 / mul dx / add cx, ax   rings
+    a.b(0x2e, 0x8b, 0x16); a.word('rules_table', G_RING)     # mov dx, cs:[ring_hp]
+    a.b(0xf7, 0xe2, 0x03, 0xc8)                              # mul dx / add cx, ax                 rings
     a.b(0x8b, 0x44, 0x42, 0x2d, 0x1b, 0x00)                  # mov ax, [si+42h] / sub ax, 1Bh    armour 0-3
     a.b(0x3d, 0x03, 0x00)                                    # cmp ax, 3
     a.short(0x77, 'calc_base')                               # ja calc_base
@@ -145,6 +146,10 @@ def rules_code(a):
     a.short(0x7d, 'calc_end')                                # jge calc_end
     a.b(0xb8, 0x01, 0x00)                                    # mov ax, 1
     a.label('calc_end')
+    a.b(0x3d, MAX_HP & 0xff, MAX_HP >> 8)                    # cmp ax, 999
+    a.short(0x7e, 'calc_ok')                                 # jle calc_ok
+    a.b(0xb8, MAX_HP & 0xff, MAX_HP >> 8)                    # mov ax, 999
+    a.label('calc_ok')
     a.b(0x5a, 0x59, 0xc3)                                    # pop dx / pop cx / ret
 
     # start_knight: si = record, di = its item table, bx = block: the starting values (clobbers ax, cx)
@@ -191,7 +196,9 @@ def rules_code(a):
     a.b(0x5f, 0x5e, 0x59, 0x58)                              # pop di si cx ax
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
-    # max_hp (1000:02D5): replaces add bx,10 of the max HP formula, si = record
+    # max_hp (1000:02D5): replaces add bx,10 of the max HP formula, si = record. The result is capped at 999: the
+    # item screen prints "current/max" into a small buffer (rules.MAX_HP), and abilities and rings can keep growing
+    # during a game
     a.label('rules_max_hp')
     a.b(0x50, 0xb8, 0x0a, 0x00)                              # push ax / mov ax, 10
     a.b(0x83, 0x7c, 0x42, 0x1b)                              # cmp word [si+42h], 1Bh
@@ -203,6 +210,10 @@ def rules_code(a):
     a.b(0x2e, 0x03, 0x47, 0x0e)                              # add ax, cs:[bx+0Eh]
     a.label('max_hp_add')
     a.b(0x01, 0x46, 0xfe, 0x58)                              # add [bp-2], ax (the saved bx) / pop ax
+    a.b(0x81, 0x7e, 0xfe, MAX_HP & 0xff, MAX_HP >> 8)        # cmp word [bp-2], 999
+    a.short(0x7e, 'max_hp_done')                             # jle max_hp_done
+    a.b(0xc7, 0x46, 0xfe, MAX_HP & 0xff, MAX_HP >> 8)        # mov word [bp-2], 999
+    a.label('max_hp_done')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
     # damage (1000:2D86): replaces mov cl,[si+2Eh] / add ax,cx; si = attacker, ax = base damage
@@ -285,6 +296,23 @@ def rules_code(a):
     a.label('rest_end')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
+    # colour (1000:08D6, A419, A3CF): replaces mov ax,[si+20h] / mov ax,[di+20h] where the map icon is chosen:
+    # ax = the colour picked for that knight (the icon sprite number is ax + an offset)
+    a.label('rules_colour_di')
+    a.b(0x8b, 0x5d, 0x20)                                    # mov bx, [di+20h]
+    a.short(0xeb, 'colour')                                  # jmp colour
+    a.label('rules_colour_si')
+    a.b(0x8b, 0x5c, 0x20)                                    # mov bx, [si+20h]
+    a.label('colour')
+    a.b(0x83, 0xfb, 0x04)                                    # cmp bx, 4
+    a.short(0x77, 'colour_end')                              # ja colour_end     not a knight: unchanged
+    a.b(0x2e, 0x8a, 0x87); a.word('rules_table', G_COLOURS)  # mov al, cs:[bx+colours]
+    a.b(0x32, 0xe4)                                          # xor ah, ah
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('colour_end')
+    a.b(0x8b, 0xc3)                                          # mov ax, bx
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
     # village (1000:1130): the home village druids, si = record
     a.label('rules_village')
     a.b(0x50, 0x2e, 0xa0); a.word('rules_table', G_MAX_LIVES)       # push ax / mov al, cs:[max_lives]
@@ -310,7 +338,7 @@ def rules_code(a):
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
 def rules_data(a, table):
-    """The int 61h tables: the sites (return address, job) and the settings from rules.py."""
+    """The int 63h tables: the sites (return address, job) and the settings from rules.py."""
     a.label('hooks')
     for where, old, kind in HOOKS:
         _, ret = hook_bytes(where, old, kind)
@@ -454,7 +482,7 @@ def make_savehook(rules_table=None):
     a.short(0x74, 'quit')                                    # je quit     already installed: run as the child
     # The vectors are taken over without checking them: DOSBox-X points int 66h at a BIOS IRET stub by default
     # (bios.cpp, "war2d"), so a non-zero vector does not mean another program uses it. Nothing else in this
-    # setup uses 61h, 62h, 65h or 66h, and the patched MAIN.EXE must always reach these handlers.
+    # setup uses 62h, 63h, 65h or 66h, and the patched MAIN.EXE must always reach these handlers.
     a.b(0xba); a.word('fight_handler')                       # mov dx, fight_handler
     a.b(0xb8, FIGHT_INT, 0x25, 0xcd, 0x21)                   # mov ax, 2566h / int 21h
     a.b(0xba); a.word('turn_handler')                        # mov dx, turn_handler
@@ -462,7 +490,7 @@ def make_savehook(rules_table=None):
     a.b(0xba); a.word('loot_handler')                        # mov dx, loot_handler
     a.b(0xb8, LOOT_INT, 0x25, 0xcd, 0x21)                    # mov ax, 2562h / int 21h
     a.b(0xba); a.word('rules_handler')                       # mov dx, rules_handler
-    a.b(0xb8, RULES_INT, 0x25, 0xcd, 0x21)                   # mov ax, 2561h / int 21h
+    a.b(0xb8, RULES_INT, 0x25, 0xcd, 0x21)                   # mov ax, 2563h / int 21h
     for seg in ('tail_seg', 'fcb1_seg', 'fcb2_seg'):
         a.b(0x8c, 0x0e); a.word(seg)                         # mov [seg], cs
     a.b(0x8e, 0x06, 0x2c, 0x00, 0xb4, 0x49, 0xcd, 0x21)      # mov es, [2Ch] / mov ah, 49h / int 21h   free env

@@ -113,12 +113,15 @@ skip the intro.
 
 ### Custom rules (`custom_rules.ini`)
 
-`custom_rules.ini` changes the game without touching the fixes. It is made from `custom_rules-default.ini` (the normal game) the first time `Custom_rules_on.bat` runs; edit it, run `Custom_rules_on.bat` and restart DOSBox-X. `Custom_rules_off.bat` goes back to the default rules, and `Custom_rules_reset.bat` restores `custom_rules.ini` to the default state. The main settings:
+`custom_rules.ini` changes the game without touching the fixes. It comes with the normal game's values: edit it, run `Custom_rules_on.bat` and restart DOSBox-X. `Custom_rules_off.bat` goes back to the default rules, and `Custom_rules_reset.bat` restores `custom_rules.ini` to the default state from `custom_rules-default.ini` (leave that file as it is). Every setting lists its allowed values; values above the normal game's limits are allowed, and the bounds only keep the game from breaking. `Custom_rules_on.bat` checks every value before it changes anything. Keep a copy of your `custom_rules.ini` when you install a newer Moonstone Rebuilt over this folder. The main settings:
 
-* **Per knight** (`[Knight1]`–`[Knight4]` in the order of the selection screen, `[Black]` for every knight the computer plays): strength, constitution, endurance, life points, extra hit points, gold, experience, daggers, weapon, armour, how many of each magic item, keys and Moonstones.
+* **Per knight** (`[Knight1]`–`[Knight4]` in the order of the selection screen, `[Black]` for every knight the computer plays): strength, constitution, endurance, life points, extra hit points, gold, experience, daggers, weapon, armour, how many of each magic item, keys and Moonstones, and its colour: blue, orange, green, red, black or any colour as `#RGB` (e.g. `#80F`). The colour is only how the knight is drawn, so any combination works; on the map a `#RGB` knight shows as the nearest of the five named colours, and the selection screen keeps the original portraits.
 * **Death mode per knight:** `permadeath` (the original), `reincarnation` (starts again from its starting values at its start), `respawn` (back at its start with full life points, keeps the rest) or `invulnerable` (never loses the last life point; a winner still takes items).
 * **Computer knights:** experience every moon phase, the free visit to Math the Wizard, experience for a duel win.
-* **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour adds (as in the game, armour does not reduce damage).
+* **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
+* **Treasure, Math and Mythral:** what the lairs hold (gold, magic items or both), the gold amount, the chance of each magic item (lairs, Math, the dragon's hoard and the High Temple's stock), what Math the Wizard gives and his frog days and irritation, and Mythral's chance of success for each size of donation. Tables the game could roll on forever (for example only one kind of magic item) are refused.
+* **Monsters:** the hit points and damage of every monster, the ratmen by moon phase, the Guardian and the dragon, and the least damage the dragon does against Talismans of the Wyrm.
+* **Prices:** the weapon and armour shops (the computer knights pay the same), the healer and every High Temple item. The prices on screen follow; selling at the temple pays half, as in the game.
 
 The starting values apply to a new game; a running game or a save state keeps the knights it has. The custom rules work only with the fixes on (`Fixes_On.bat`).
 
@@ -157,7 +160,7 @@ The original difficulty and rules are kept.
 | No music | Normal on the map and in fights: the game only has music in the intro, the ending and five places. If it is silent there too, run `Music_AdLib.bat`. |
 | No sound effects as samples | Run `SoundCard_SoundBlaster.bat`. |
 | The game freezes at the first fight or turn, or when taking a weapon after a duel | `SAVEHOOK.COM` is not running; run `Setup.bat` again. As a workaround, `Fixes_Off.bat`. |
-| *custom_rules.ini: ... must be ...* when running `Custom_rules_on.bat` | A value in `custom_rules.ini` is out of range or misspelt; the message names it. Nothing was changed. `Custom_rules_reset.bat` starts again from the defaults. |
+| *custom_rules.ini: ... must be ...* when running `Custom_rules_on.bat` | A value in `custom_rules.ini` is out of bounds, misspelt or missing; the message names it and its allowed values. Nothing was changed. `Custom_rules_reset.bat` starts again from the defaults. |
 | The game freezes when a new game starts, after `Custom_rules_on.bat` | DOSBox-X was not restarted, so the old `SAVEHOOK.COM` is still running. Restart DOSBox-X. |
 
 ## Credits and legal
