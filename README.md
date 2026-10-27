@@ -104,7 +104,7 @@ skip the intro.
   | 4 | axe troggs, 10 | 9 | trolls, 6 |
   | 5 | war beasts, 9 | 0 | the Black Knight |
 
-  Two controllers need `joysticktype = 2axis` (see *Game controllers*).
+  Two controllers: see *Game controllers*.
 * **Give up (Game Over):** Esc on the map. In the original game this was Q, next to the second player's keys, so a
   game could end by accident; Moonstone Rebuilt moves it to Esc (fix K5). It does not ask first.
 * **Quit DOSBox-X:** Ctrl+F9 (asks first) or close the window.
@@ -114,29 +114,29 @@ skip the intro.
 The DOS game reads the PC joystick port, and DOSBox-X turns a modern USB or Bluetooth controller (Xbox, PlayStation,
 most generic gamepads) into that joystick. Nothing needs installing:
 
-1. Connect the controller **before** `Start.bat`; DOSBox-X looks for controllers only when it starts.
-2. Player 1 moves with the left stick and attacks with the first or second button (A or B on an Xbox pad; cross or
-   circle on a PlayStation pad). The keyboard keeps working alongside.
-3. If the knight drifts or ignores a direction, calibrate: on the game's first menu press **J**, then follow the
-   two screens (stick to the top left + button, stick to the bottom right + button).
-4. **Two controllers, one per player** (also for 3-4 player practice): in `moonstone-dosbox-x.conf`, section
-   `[joystick]`, set `joysticktype = 2axis`. With one controller and the default (`auto`), the controller's right stick and its third
-   and fourth buttons (X and Y) act as player 2's joystick.
+1. Run the script for your controllers, once:
+   * `Controller_PlayStation.bat`: PlayStation pads (tested with PS3 pads; their stick reports up and down reversed,
+     which this turns round).
+   * `Controller_Standard.bat`: Xbox and most other pads.
 
-**D-pad and inverted axes.** DOS games see only the sticks (two axes and two buttons per controller), so the D-pad
-works once it is bound in DOSBox-X's mapper, and a stick that moves the wrong way (some PlayStation pads report up and
-down reversed) is turned round there too. Once per controller:
+   Both turn the D-pad on as well as the left stick and give each player a controller of their own (player 1 the
+   first, player 2 the second; also for 3-4 player practice). `Controller_Default.bat` goes back to DOSBox-X's own
+   bindings, with one controller for both players (its right stick and its third and fourth buttons are player 2).
+2. Connect the controllers **before** `Start.bat`; DOSBox-X looks for controllers only when it starts.
+3. Each player moves with the left stick or the D-pad and attacks with the first or second button (A or B on an Xbox
+   pad; cross or circle on a PlayStation pad). The keyboard keeps working alongside.
+4. If the knight drifts or ignores a direction, calibrate: on the game's first menu press **J**, then follow the
+   two screens (stick to the top left + button, stick to the bottom right + button). If up and down are the wrong
+   way round, run the other of the two scripts.
 
-1. Start the game, press **F11+M** (*Main → Mapper editor*).
-2. In the joystick part, click the **up** arrow of joystick 1. To turn up and down round: click **Del** (the old stick
-   binding), then **Add** and push the stick **down**. To add the D-pad: **Add** and press the D-pad **up**.
-3. Do the same for **down** (stick up, D-pad down), and for **left** and **right** only **Add** the D-pad.
-4. With a second controller, the same for joystick 2.
-5. Click **Save**, then **Exit**. The bindings stay in `moonstone.map` in the game folder.
+The scripts copy a file from `controllers` to `moonstone.map` (DOSBox-X's bindings) and set `joysticktype` in
+`moonstone-dosbox-x.conf`; a `moonstone.map` of your own is kept as `moonstone.map.bak`.
 
-The other buttons (Space for the inventory, E to end the turn) can be bound to keys the same way: click the key, then
-*Add* and press the controller button. If the stick still drifts, raise `joy1deadzone1` (default 0.25) under
-`[joystick]`.
+**Your own bindings.** DOS games see only the sticks (two axes and two buttons per controller); everything else is
+bound in DOSBox-X's mapper: start the game, press **F11+M** (*Main → Mapper editor*), click an arrow of joystick 1
+or 2 or a key, then **Add** and press the controller's button or direction (**Del** removes the selected binding).
+Click **Save**, then **Exit**; the bindings stay in `moonstone.map`. This way the other buttons can do Space (the
+inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1` (default 0.25) under `[joystick]`.
 
 ### Saving and loading
 * **Your own saves:** F11+S saves and F11+L loads, using the slot chosen under *Capture → Select save slot*

@@ -3,3 +3,4 @@
 *.ps1 text eol=crlf
 *.conf text eol=crlf
 *.txt text eol=crlf
+*.map text eol=crlf

@@ -23,4 +23,5 @@
 /mt32-roms/*.rom
 /soundfonts/*.sf2
 /moonstone.map
+/moonstone.map.bak
 __pycache__/

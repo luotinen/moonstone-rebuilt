@@ -19,6 +19,8 @@
   `Custom_rules_off.bat` also puts the normal `SAVEHOOK.COM` back.
 * D11: Practice with 1 player chosen is now against a computer-played Black Knight (2 or more: two players, as
   before).
+* Game controllers: `Controller_PlayStation.bat` and `Controller_Standard.bat` set up one pad per player with the
+  D-pad on (PlayStation: the stick's up and down turned round); `Controller_Default.bat` goes back.
 * D16: practice settings in `custom_rules.ini` (`[Practice]`): each key's lair (its monsters and their number) or the
   Black Knight; knights' and daggers' hits on knights; how monsters pick their knight. Against monsters, thrown daggers
   no longer hit knights, and with 2-4 knights their strength and hit points are added up for the monster count.
