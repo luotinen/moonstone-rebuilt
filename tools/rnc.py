@@ -4,6 +4,8 @@ stream that is decoded from the end backwards, bit by bit, writing the output fr
 This is a translation of the unpacker in the Amiga 'program' file (file offset 65D6). Usage: python -I tools/rnc.py <in> <out>"""
 import sys, struct
 
+MAX_SIZE = 4 << 20                                         # the two modules unpack to about 0.2-0.3 MB
+
 LIT_BITS, LIT_ADD = (10, 3, 2, 2), (14, 7, 4, 1)          # program 6686 / 668A, indexed by d1 = 3..0
 LEN_BITS, LEN_ADD = (10, 2, 1, 0, 0), (10, 6, 4, 3, 2)     # 66C2 / 66C7
 OFF_BITS, OFF_ADD = (11, 4, 7), (0x120, 0, 0x20)           # 670E / 6712
@@ -14,6 +16,8 @@ class _Stream:
         self.buf, self.x = data[self.p], 0                 # the first byte read is a whole byte (with its end marker)
     def byte(self):
         self.p -= 1
+        if self.p < 12:
+            raise ValueError('the packed data ends too early')
         return self.d[self.p]
     def bit(self):                                         # lsl.b #1,d3 / bne / move.b -(a6),d3 / roxl.b #1,d3
         c = self.buf >> 7
@@ -38,6 +42,8 @@ def unrnc(data):
     size, packed = struct.unpack('>LL', data[4:12])
     if packed + 12 != len(data):
         raise ValueError('not the old 12-byte-header RNC format (standard ProPack files are not supported here)')
+    if size > MAX_SIZE or packed == 0:
+        raise ValueError(f'unpacked size {size} (packed {packed}) is not a music module')
     s = _Stream(data, 12 + packed)
     out = bytearray(size + 0x100)
     top = a3 = len(out)
@@ -50,6 +56,8 @@ def unrnc(data):
                     if d1 == 0 or n != (1 << LIT_BITS[d1]) - 1:
                         n += LIT_ADD[d1]
                         break
+            if a3 - (n + 1) < 0:
+                raise ValueError('the unpacked data would be larger than the header says')
             for _ in range(n + 1):
                 a3 -= 1; out[a3] = s.byte()
         if s.p <= 12:
@@ -68,6 +76,8 @@ def unrnc(data):
             d0 += 1
             offset = s.bits(OFF_BITS[d0] + 1) + OFF_ADD[d0]
         src = a3 + offset + length - 1 if offset else a3 + 1
+        if a3 - length < 0 or src > top:
+            raise ValueError('a match points outside the unpacked data')
         for _ in range(length):
             src -= 1; a3 -= 1; out[a3] = out[src]
     result = bytes(out[a3:top])

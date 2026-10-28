@@ -71,11 +71,12 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   # D14: the menu's keys and the practice set-up
                   (0x129b, 'menu_keys'), (0x0144, 'practice_init'),
                   # D15: every monster's opponent
-                  (0x2df9, 'target'), (0x2fc5, 'target')]
+                  (0x025e, 'pause'), (0x98ff, 'update')]
+WALK_IN_RET, PAUSE_RET = 0x9dca, 0x0278              # D15: script command 1000:9DB3's call returns here; 025C's ret
 STRENGTH, MAX_HP_FIELD = 0x2e, 0x3c                  # D15: the knight stats 1000:2830 uses for the monster numbers
 DAGGER = 0x1a                                        # D15: a thrown dagger's object type (+35h, 1000:3E4A)
 KEY_TABLE = 0x81e3                                   # D14: MAIN's key states (code segment), FFh = released (1000:8288)
-SPACE = 0x39                                         # scan code
+SPACE, ESC = 0x39, 0x01                              # scan codes
 MENU_OPTION, PRACTICE_OPTION, PLAYERS = 0x0704, 2, 0x091e
 # D14: practice keys with 1 player: (scan code, choice). Choices 1-9 are lairs (PRACTICE_LAIRS, numbered as the
 # table DS:0A6A, 0 = the first forest lair), 0 the Black Knight, and two more fights by their own set-up (SET_UPS)
@@ -92,7 +93,7 @@ COOP_KNIGHTS = [(0x6d00, 1, 2, 220), (0x6d62, 5, 1, 280), (0x6dc4, 6, 3, 190)]  
 KNIGHTS = (0x6c9e, 0x6d00, 0x6d62, 0x6dc4)
 ADD_STATE = 10                                       # practice_init states from here: adding the co-op knights
 TARGET_KEEP = 20                                     # a monster keeps its knight unless another is this much nearer
-MONSTER_SLOTS, SLOT_SIZE, DRAGON_RECORD = 0x6f08, 0x62, 0x6e26   # fight objects (1000:2A1E), and the dragon
+MONSTER_SLOTS, SLOT_SIZE, MONSTER_COUNT, DRAGON_RECORD = 0x6f08, 0x62, 20, 0x6e26   # fight objects (1000:2A1E), dragon
 DRAGON_HOARD, DRAGON_GOLD = 0x6ee8, 0x6e26 + 0x32   # K18: the dragon's 24-byte item table and its gold
 # D13: the knights drawn in the new colours: (record, its first knight-colour pixel, the game's fight palette words
 # for +20h = 1 and 3, which custom rules recolour); their pixels move up by 26: 6-8 -> 32-34, 9-11 -> 35-37
@@ -121,6 +122,7 @@ class Asm:
         for x in data:
             self.code += x if isinstance(x, (bytes, bytearray)) else bytes([x])
     def label(self, name):
+        assert name not in self.labels, f'label {name} defined twice'
         self.labels[name] = self.org + len(self.code)
     def word(self, label, add=0):                # 16-bit address of a label (+ add)
         self.fixups.append(('abs', len(self.code), label, add)); self.code += b'\0\0'
@@ -1090,23 +1092,53 @@ def rules_code(a):
     a.b(0xa3, (KNIGHTS[0] + MAX_HP_FIELD) & 0xff, (KNIGHTS[0] + MAX_HP_FIELD) >> 8)   # mov [6CDAh], ax
     a.b(0x58, 0xc3)                                          # pop ax / ret
 
-    # target (D15, 1000:2DF9 and 2FC5; replace mov ax,[0978h] / mov [77EAh],ax at the start of a monster's update,
-    # [77E8h] = the monster): in co-op the nearest knight standing (by x and depth), kept unless another is more
-    # than TARGET_KEEP nearer; it becomes the monster's opponent and, while this monster is handled, [0978h], which
-    # its moves read directly
-    a.label('rules_target')
+    # update (D15, 1000:98FD, replaces mov bx,[di+1Ah] before the fight's update pass calls an object's handler,
+    # si = the object): the monsters' moves read the knight they fight from [0978h] all over (1000:30EE, 310D, 32CE,
+    # ...), so in co-op [0978h] is set for each object: a monster gets the knight it goes for (pick_target), anything
+    # else the first knight standing (knight 1 while it stands)
+    a.label('rules_update')
+    a.b(0x8b, 0x5d, 0x1a, 0x89, 0x5e, 0xfe)                  # mov bx, [di+1Ah] / mov [bp-2], bx   as the game
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
-    a.short(0x74, 'tg_hero')                                 # je tg_hero
+    a.short(0x74, 'up_done')                                 # je up_done
+    a.b(0x50)                                                # push ax
+    a.near(0xe8, 'first_standing')                           # call first_standing   ax
+    a.b(0x81, 0xfe, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8)   # cmp si, 6E26h
+    a.short(0x74, 'up_monster')                              # je up_monster
+    a.b(0x81, 0xfe, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp si, 6F08h
+    a.short(0x72, 'up_set')                                  # jb up_set            a knight
+    end_slots = MONSTER_SLOTS + MONSTER_COUNT * SLOT_SIZE
+    a.b(0x81, 0xfe, end_slots & 0xff, end_slots >> 8)        # cmp si, 76B0h
+    a.short(0x73, 'up_set')                                  # jae up_set           not a fighter
+    a.label('up_monster')
     a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_PRACTICE_FLAGS); a.b(TARGET_FIRST)   # test flags, first
-    a.short(0x74, 'tg_coop')                                 # jz tg_coop        nearest (or: all go for knight 1)
-    a.label('tg_hero')
-    a.b(0xa1, 0x78, 0x09)                                    # mov ax, [0978h]
-    a.label('tg_set')
-    a.b(0xa3, 0x78, 0x09, 0xa3, 0xea, 0x77)                  # mov [0978h], ax / mov [77EAh], ax
+    a.short(0x75, 'up_set')                                  # jnz up_set           all go for the first knight
+    a.b(0x57, 0x8b, 0xfe)                                    # push di / mov di, si
+    a.near(0xe8, 'pick_target')                              # call pick_target
+    a.b(0x5f)                                                # pop di
+    a.label('up_set')
+    a.b(0xa3, 0x78, 0x09, 0x58)                              # mov [0978h], ax / pop ax
+    a.label('up_done')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
-    a.label('tg_coop')
-    a.b(0x51, 0x52, 0x56, 0x57)                              # push cx dx si di
-    a.b(0x8b, 0x3e, 0xe8, 0x77)                              # mov di, [77E8h]     the monster
+
+    # first_standing: ax = the first knight in knight_list standing; knight 1 if none is
+    a.label('first_standing')
+    a.b(0x53, 0x51, 0x33, 0xc9)                              # push bx cx / xor cx, cx
+    a.label('fs_loop')
+    a.b(0x8b, 0xd9, 0xd1, 0xe3)                              # mov bx, cx / shl bx, 1
+    a.b(0x2e, 0x8b, 0x87); a.word('knight_list')             # mov ax, cs:[bx+knight_list]
+    a.b(0x8b, 0xd8, 0x83, 0x7f, 0x38, 0x00)                  # mov bx, ax / cmp word [bx+38h], 0
+    a.short(0x7f, 'fs_found')                                # jg fs_found
+    a.b(0x41)                                                # inc cx
+    a.b(0x2e, 0x3a, 0x0e); a.word('coop')                    # cmp cl, cs:[coop]
+    a.short(0x72, 'fs_loop')                                 # jb fs_loop
+    a.b(0x2e, 0xa1); a.word('knight_list')                   # mov ax, cs:[knight_list]
+    a.label('fs_found')
+    a.b(0x59, 0x5b, 0xc3)                                    # pop cx bx / ret
+
+    # pick_target: di = a monster -> ax = the nearest knight standing (by x and depth), kept unless another is more
+    # than the target margin nearer; ax unchanged when no knight stands
+    a.label('pick_target')
+    a.b(0x53, 0x51, 0x52, 0x56)                              # push bx cx dx si
     a.b(0xbb, 0xff, 0xff, 0x33, 0xc9)                        # mov bx, 0FFFFh (best distance) / xor cx, cx (best)
     a.b(0x33, 0xd2)                                          # xor dx, dx          knight number
     a.label('tg_loop')
@@ -1114,25 +1146,28 @@ def rules_code(a):
     a.b(0x2e, 0x8b, 0xb4); a.word('knight_list')             # mov si, cs:[si+knight_list]
     a.b(0x83, 0x7c, 0x38, 0x00)                              # cmp word [si+38h], 0
     a.short(0x7e, 'tg_next')                                 # jle tg_next          down
+    a.b(0x50)                                                # push ax
     a.near(0xe8, 'distance')                                 # call distance        ax
     a.b(0x3b, 0xc3)                                          # cmp ax, bx
-    a.short(0x73, 'tg_next')                                 # jae tg_next
+    a.short(0x73, 'tg_far')                                  # jae tg_far
     a.b(0x8b, 0xd8, 0x8b, 0xce)                              # mov bx, ax / mov cx, si
+    a.label('tg_far')
+    a.b(0x58)                                                # pop ax
     a.label('tg_next')
     a.b(0x42)                                                # inc dx
     a.b(0x2e, 0x3a, 0x16); a.word('coop')                    # cmp dl, cs:[coop]
     a.short(0x72, 'tg_loop')                                 # jb tg_loop
-    a.b(0xe3); a.b(0x00); tg_none = len(a.code) - 1          # jcxz tg_none         nobody standing
-    # keep the last knight unless the best is TARGET_KEEP nearer
+    a.short(0xe3, 'tg_none')                                 # jcxz tg_none         nobody standing
+    # keep the last knight unless the best is clearly nearer
     a.b(0x8b, 0xc7, 0x3d, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8)   # mov ax, di / cmp ax, 6E26h
     a.short(0x75, 'tg_slot')                                 # jne tg_slot
-    a.b(0xb8, 0x14, 0x00)                                    # mov ax, 20          the dragon's place
+    a.b(0xb8, MONSTER_COUNT, 0x00)                           # mov ax, 20          the dragon's place
     a.short(0xeb, 'tg_index')                                # jmp tg_index
     a.label('tg_slot')
     a.b(0x2d, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)      # sub ax, 6F08h
     a.short(0x72, 'tg_pick')                                 # jb tg_pick           not a slot: no memory
     a.b(0x52, 0x33, 0xd2, 0xbe, SLOT_SIZE, 0x00, 0xf7, 0xf6, 0x5a)   # push dx / xor dx, dx / mov si, 62h / div si / pop dx
-    a.b(0x3d, 0x14, 0x00)                                    # cmp ax, 20
+    a.b(0x3d, MONSTER_COUNT, 0x00)                           # cmp ax, 20
     a.short(0x73, 'tg_pick')                                 # jae tg_pick
     a.label('tg_index')
     a.b(0xd1, 0xe0, 0x8b, 0xf0)                              # shl ax, 1 / mov si, ax
@@ -1156,12 +1191,9 @@ def rules_code(a):
     a.label('tg_last_down')
     a.b(0x5e)                                                # pop si
     a.label('tg_pick')
-    a.b(0x8b, 0xc1, 0x5f, 0x5e, 0x5a, 0x59)                  # mov ax, cx / pop di si dx cx
-    a.near(0xe9, 'tg_set')                                   # jmp tg_set
+    a.b(0x8b, 0xc1)                                          # mov ax, cx
     a.label('tg_none')
-    a.code[tg_none] = (a.labels['tg_none'] - (a.org + tg_none + 1)) & 0xff
-    a.b(0x5f, 0x5e, 0x5a, 0x59)                              # pop di si dx cx
-    a.near(0xe9, 'tg_hero')                                  # jmp tg_hero
+    a.b(0x5e, 0x5a, 0x59, 0x5b, 0xc3)                        # pop si dx cx bx / ret
     a.label('distance')                                      # ax = |x(si) - x(di)| + |depth(si) - depth(di)|
     a.b(0x52, 0x8b, 0x44, 0x02, 0x2b, 0x45, 0x02)            # push dx / mov ax, [si+2] / sub ax, [di+2]
     a.short(0x79, 'ds_x'); a.b(0xf7, 0xd8)                   # jns / neg ax
@@ -1171,9 +1203,45 @@ def rules_code(a):
     a.label('ds_z')
     a.b(0x03, 0xc2, 0x5a, 0xc3)                              # add ax, dx / pop dx / ret
 
+    # pause (1000:025C, replaces mov ax,6F08h): the routine toggles every monster's pause flag; the fight start and
+    # each knight's walk-in script (command 1000:9DB3) run it, so with an even number of knights the monsters stay
+    # paused. In co-op only knight 1's walk-in toggles; the others return at once (to the routine's ret)
+    a.label('rules_pause')
+    a.b(0xb8, 0x08, 0x6f)                                    # mov ax, 6F08h          as the game
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'pause_done')                              # je pause_done
+    a.b(0x81, 0x7e, 0x08, WALK_IN_RET & 0xff, WALK_IN_RET >> 8)   # cmp word [bp+8], 9DCAh   called by a script?
+    a.short(0x75, 'pause_done')                              # jne pause_done
+    a.b(0x81, 0xff, 0x9e, 0x6c)                              # cmp di, 6C9Eh          knight 1
+    a.short(0x74, 'pause_done')                              # je pause_done
+    a.b(0xc7, 0x46, 0x02, PAUSE_RET & 0xff, PAUSE_RET >> 8)  # mov word [bp+2], 0278h   skip the toggles
+    a.label('pause_done')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
     # practice_frame (1000:0371, the fight loop; replaces cmp byte [897Dh],0): while both teams have a knight
     # standing the fight goes on; when one has none, the game's own end (as 1000:0238) starts once
+    # In practice Esc ends the fight (the game has no key for it): the same end, and then nothing restarts it
     a.label('rules_practice_frame')
+    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION)   # cmp word [0704h], 2
+    a.short(0x75, 'pf_play')                                 # jne pf_play          not a practice
+    a.b(0x2e, 0x80, 0x3e); a.word('quitting'); a.b(0x00)     # cmp byte cs:[quitting], 0
+    a.short(0x75, 'pf_quit_cmp')                             # jne pf_quit_cmp      ending: leave it to the game
+    a.b(0x06, 0x8e, 0x46, 0x04)                              # push es / mov es, [bp+4]   MAIN's code segment
+    a.b(0x26, 0x80, 0x3e, (KEY_TABLE + ESC) & 0xff, (KEY_TABLE + ESC) >> 8, 0xff)   # cmp byte es:[81E4h], 0FFh
+    a.b(0x07)                                                # pop es
+    a.short(0x74, 'pf_play')                                 # je pf_play           Esc not pressed
+    a.b(0x2e, 0xc6, 0x06); a.word('quitting'); a.b(0x01)     # mov byte cs:[quitting], 1
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'pf_quit_end')                             # je pf_quit_end
+    a.b(0x50); a.near(0xe8, 'first_standing')                # push ax / call first_standing
+    a.b(0xa3, 0x79, 0x89, 0x58)                              # mov [8979h], ax / pop ax   (as a won co-op fight)
+    a.label('pf_quit_end')
+    a.b(0x80, 0x3e, 0x7d, 0x89, 0x00)                        # cmp byte [897Dh], 0
+    a.short(0x74, 'pf_quit_cmp')                             # je pf_quit_cmp       already ending
+    a.b(0xc6, 0x06, 0x7d, 0x89, 0x00, 0xc6, 0x06, 0x87, 0x89, 0x23)   # mov byte [897Dh], 0 / mov byte [8987h], 23h
+    a.label('pf_quit_cmp')
+    a.near(0xe9, 'pf_cmp')                                   # jmp pf_cmp
+    a.label('pf_play')
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
     a.short(0x74, 'pf_not_coop')                             # je pf_not_coop
     # co-op: [0978h] = a knight standing; while one stands and monsters are left the fight goes on; with none
@@ -1199,14 +1267,14 @@ def rules_code(a):
     a.b(0xc6, 0x06, 0x7d, 0x89, 0x00, 0xc6, 0x06, 0x87, 0x89, 0x23)   # mov byte [897Dh], 0 / mov byte [8987h], 23h
     a.short(0xeb, 'pfc_pop')                                 # jmp pfc_pop
     a.label('pfc_alive')
-    a.b(0x8b, 0x1e, 0x78, 0x09, 0x83, 0x7f, 0x38, 0x00)      # mov bx, [0978h] / cmp word [bx+38h], 0
-    a.short(0x7f, 'pfc_hero')                                # jg pfc_hero
-    a.b(0x89, 0x36, 0x78, 0x09)                              # mov [0978h], si      a knight standing
-    a.label('pfc_hero')
+    a.b(0x89, 0x36, 0x78, 0x09)                              # mov [0978h], si      the first knight standing
     a.b(0x83, 0x3e, 0x6a, 0x09, 0x00)                        # cmp word [096Ah], 0  monsters still to come
     a.short(0x7f, 'pfc_go')                                  # jg pfc_go
     a.b(0x83, 0x3e, 0x6e, 0x09, 0x00)                        # cmp word [096Eh], 0  monsters on screen
-    a.short(0x7e, 'pfc_pop')                                 # jle pfc_pop
+    a.short(0x7f, 'pfc_go')                                  # jg pfc_go
+    # won: the end looks at the knight in [8979h] (1000:0ABE gives a fallen one its HP back, and it stood up again)
+    a.b(0x89, 0x36, 0x79, 0x89)                              # mov [8979h], si      a knight standing
+    a.short(0xeb, 'pfc_pop')                                 # jmp pfc_pop
     a.label('pfc_go')
     a.b(0xc6, 0x06, 0x7d, 0x89, 0x01)                        # mov byte [897Dh], 1
     a.label('pfc_pop')
@@ -1379,6 +1447,7 @@ def rules_code(a):
     a.b(0x2e, 0xc6, 0x06); a.word('init_state'); a.b(0x00)   # mov byte cs:[init_state], 0
     a.b(0x2e, 0xc6, 0x06); a.word('coop'); a.b(0x00)         # mov byte cs:[coop], 0
     a.b(0x2e, 0xc6, 0x06); a.word('vs_monsters'); a.b(0x00)  # mov byte cs:[vs_monsters], 0
+    a.b(0x2e, 0xc6, 0x06); a.word('quitting'); a.b(0x00)     # mov byte cs:[quitting], 0
     a.b(0x8b, 0x16, CHOSEN_PLAYERS & 0xff, CHOSEN_PLAYERS >> 8)   # mov dx, [0940h]
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
@@ -1448,6 +1517,7 @@ def rules_data(a, table):
     a.label('rc_shift'); a.b(RECOLOUR_SHIFT)                 # D15: the shift of the frame being recoloured
     a.label('coop'); a.b(0)                                  # D15: knights in a co-op practice, 0 = none
     a.label('vs_monsters'); a.b(0)                           # D15: 1 = a practice against monsters
+    a.label('quitting'); a.b(0)                              # D15: 1 = Esc has ended this practice fight
     a.label('own_strength'); a.b(0)                          # D15: knight 1's own strength and max HP during combine
     a.label('own_max_hp'); a.b(0, 0)
     a.label('last_target'); a.b(bytes(2 * 21))               # D15: each monster's knight (20 slots, the dragon)

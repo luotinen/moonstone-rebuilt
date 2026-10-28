@@ -29,11 +29,11 @@ def find_modules(folder):
     for path in paths:
         try:
             adf = Adf(path)
-        except ValueError:
-            continue
-        files = {p.lower(): h for p, h in adf.walk()}
-        if all(name in files for name in MODULES):
-            return path, {MODULES[name]: unrnc(adf.read(files[name])) for name in MODULES}
+            files = {p.lower(): h for p, h in adf.walk()}
+            if all(name in files for name in MODULES):
+                return path, {MODULES[name]: unrnc(adf.read(files[name])) for name in MODULES}
+        except ValueError as e:                             # not a disk, or a damaged one: try the next image
+            print(f'  {os.path.basename(path)}: {e}')
     raise SystemExit(f'No Amiga Moonstone disk 1 (with music.cmp and vmusic.cmp) found in {folder}; expected {PREFERRED}')
 
 def render(vlc, mod_path, wav_path):

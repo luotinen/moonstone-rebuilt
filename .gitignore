@@ -25,3 +25,5 @@
 /moonstone.map
 /moonstone.map.bak
 __pycache__/
+# Setup.bat: the Python package unicorn, when Python does not have it
+/_python/

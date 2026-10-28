@@ -1,6 +1,6 @@
 """Byte patches for the uncompressed MAIN.EXE (see make_main_exe.py). Each patch names its address in the
 running program (segment:offset in the load-segment-1000h image, or DS:offset with DS = 223Bh), the original bytes
-it expects and the new bytes, so a patch can never be applied to the wrong file. Fix ids match FIXES.md (K1...)."""
+it expects and the new bytes, so a patch can never be applied to the wrong file. Fix ids match docs/remake.md (K1...)."""
 import struct
 
 LOAD_SEG, DS_SEG = 0x1000, 0x223b
@@ -190,12 +190,15 @@ PATCHES = {
                  'keys 1-9 put all the knights on the same side against that lair\'s monsters (with 3-4 players as many '
                  'knights as D12 finds controllers for). They cannot hurt each other (daggers still can), the fight '
                  'goes on while a knight stands and monsters are left, and every monster goes for the knight nearest '
-                 'to it. A monster\'s update starts by taking the knight that entered the fight as its opponent '
-                 '(1000:2DF7 and 2FC3, mov ax,[0978h] / mov [77EAh],ax); both become int 63h, and SAVEHOOK.COM picks '
-                 'the nearest knight standing (switching only when another is clearly nearer). Needs SAVEHOOK.COM '
-                 'resident',
-        'bytes': [((0x1000, 0x2df7), b'\xa1\x78\x09\xa3\xea\x77', b'\xcd\x63' + b'\x90' * 4),
-                  ((0x1000, 0x2fc3), b'\xa1\x78\x09\xa3\xea\x77', b'\xcd\x63' + b'\x90' * 4)],
+                 'to it. The monsters\' moves read the knight they fight from [0978h] (the knight that entered the '
+                 'fight) in many places; before the fight\'s update pass calls an object\'s handler (1000:98FD, mov '
+                 'bx,[di+1Ah], becomes int 63h) SAVEHOOK.COM sets [0978h] to the nearest knight standing for a monster '
+                 '(switching only when another is clearly nearer) and to the first knight standing for anything else. '
+                 'The fight start and each knight\'s walk-in script toggle every monster\'s pause flag (1000:025C, '
+                 'mov ax,6F08h, also int 63h); in co-op only knight 1\'s walk-in does, so an even number of knights no '
+                 'longer leaves the monsters frozen. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x025c), b'\xb8\x08\x6f', b'\xcd\x63\x90'),
+                  ((0x1000, 0x98fd), b'\x8b\x5d\x1a', b'\xcd\x63\x90')],
     },
 }
 
@@ -283,6 +286,8 @@ def apply_patches(exe, ids):
     for pid in ids:
         for where, old, new in PATCHES[pid]['bytes']:
             pos = header + image_offset(where)
+            if len(new) != len(old):
+                raise ValueError(f'{pid}: at {where} the new bytes are not as long as the old ones')
             if out[pos:pos + len(old)] != old:
                 raise ValueError(f'{pid}: expected {old!r} at {where}, found {bytes(out[pos:pos + len(old)])!r}')
             out[pos:pos + len(new)] = new

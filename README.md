@@ -14,7 +14,7 @@ your game files into this folder and patches the copies; your GOG installation i
 | **Moonstone: A Hard Days Knight, DOS version, from GOG.com** | The unchanged GOG release. The setup checks all 280 game files by checksum and stops if any is missing or different. Other releases (CD, floppy, other stores) are not supported yet. |
 | **Windows 10 or 11** | The scripts are Windows batch and PowerShell files. |
 | **DOSBox-X** | Tested with version 2026.10.01. `Start.bat` looks for `C:\DOSBox-X\dosbox-x.exe`, then `%ProgramFiles%\DOSBox-X`, then the `PATH`. Download: <https://dosbox-x.com/> |
-| **Python 3** | Only for the setup. On first run the setup installs the Python package `unicorn` with pip (needs an internet connection once). Download: <https://www.python.org/downloads/> and tick *Add python.exe to PATH*. |
+| **Python 3.8 or newer** | Only for the setup. If Python does not have the package `unicorn`, the setup installs it with pip into the `_python` folder here (needs an internet connection once). Download: <https://www.python.org/downloads/> and tick *Add python.exe to PATH*. |
 
 ### Optional
 | What | What it adds |
@@ -93,7 +93,7 @@ skip the intro.
   several at a time. With 2-4 players chosen all the knights fight on the same side (3-4 need one or two game
   controllers, as above): they cannot hurt each other, every monster goes for the knight nearest to it, and the
   fight goes on while one knight stands; the knights' strength and hit points are added up, so more monsters come
-  at a time. `custom_rules.ini`, `[Practice]`, can give each key another lair (the list is there) and set whether
+  at a time. Esc ends a practice fight. `custom_rules.ini`, `[Practice]`, can give each key another lair (the list is there) and set whether
   knights or daggers hurt each other:
 
   | Key | Monsters | Key | Monsters |
@@ -210,7 +210,8 @@ The original difficulty and rules are kept.
 |---|---|
 | *The GOG installation of Moonstone was not found* | Give the folder: `Setup.bat "path\to\Moonstone"`. |
 | *game files are missing or different* | Verify or reinstall the game in GOG Galaxy. Only the unchanged GOG DOS release works. |
-| *Python 3 is needed* | Install Python 3 with *Add python.exe to PATH* ticked, then run `Setup.bat` again. |
+| *Python 3.8 or newer is needed* | Install Python 3 with *Add python.exe to PATH* ticked, then run `Setup.bat` again. The setup tries the `py` launcher first and then `python`, and uses the first that starts. |
+| *custom_rules.ini: ... Nothing was changed* | `Setup.bat` checks the custom rules before it changes anything: correct the value it names (or run `Custom_rules_off.bat` or `Custom_rules_reset.bat`), then run `Setup.bat` again. |
 | *DOSBox-X was not found* | Install DOSBox-X to `C:\DOSBox-X` or add it to the `PATH`. |
 | No music | Normal on the map and in fights: the game only has music in the intro, the ending and five places. If it is silent there too, run `Music_AdLib.bat`. |
 | No sound effects as samples | Run `SoundCard_SoundBlaster.bat`. |

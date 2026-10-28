@@ -630,6 +630,8 @@ def price_text(text, value):
 def apply(img, patches):
     img = bytearray(img)
     for where, old, new in patches:
+        if len(new) != len(old):
+            raise ValueError(f'1000:{where:04X}: the new bytes are not as long as the old ones')
         if img[where:where + len(old)] != old:
             raise RulesError(f'MAIN.EXE: expected {old.hex()} at 1000:{where:04X}, found '
                              f'{img[where:where + len(old)].hex()} (is _fixes/fixed/MAIN.EXE the fixed build?)')
@@ -654,15 +656,16 @@ def install(game):
     exe, hook = build(game, read_ini(ini))
     from make_savehook import make_savehook
     os.makedirs(os.path.join(game, '_fixes', 'rules'), exist_ok=True)
-    # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here
-    for name, data in ((os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), ('SAVEHOOK.COM', hook),
-                       (os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), make_savehook()),
-                       ('CUSTOM_RULES.FLG', b'custom rules\r\n')):
+    # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here.
+    # The programs first, the flag last: if a write fails, the flag does not claim rules that are not in place
+    writes = [(os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), make_savehook()),
+              (os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), ('SAVEHOOK.COM', hook)]
+    on = not os.path.exists(os.path.join(game, 'ORIGINAL.FLG'))
+    if on:
+        writes.append(('MAIN.EXE', exe))
+    for name, data in writes + [('CUSTOM_RULES.FLG', b'custom rules\r\n')]:
         open(os.path.join(game, name), 'wb').write(data)
-    if os.path.exists(os.path.join(game, 'ORIGINAL.FLG')):
-        return False
-    open(os.path.join(game, 'MAIN.EXE'), 'wb').write(exe)
-    return True
+    return on
 
 if __name__ == '__main__':
     try:

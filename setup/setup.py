@@ -6,12 +6,14 @@ Only files from the user's installation are used; nothing of the original game i
 2. Copies the game files here: DISKA, DISKB, DISKC, SAMPLES, MS.EXE.
 3. Builds the original programs, only unpacked (the packed ones fail in DOSBox-X's lowest 64 KB, and LOADFIX would
    leave too little memory), and keeps the original sound files, in _fixes/original; builds the fixed ones in
-   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K11 K16 K17 K18 K19 D6 D7 D9 D11 D12 D13 D14 D15 D16, INTR.EXE: K9, sound files: K10).
+   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K11 K16 K17 K18 K19 D6 D7 D9 D11 D12 D13 D14 D15, INTR.EXE: K9, sound files: K10).
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf: on the first setup the best music available (MT-32 if
    the ROMs are in mt32-roms, else General MIDI if soundfonts/default.sf2 exists, else AdLib); later runs keep the choice.
 5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat); applies the game rules in
-   custom_rules.ini (tools/rules.py) again if CUSTOM_RULES.FLG exists (Custom_rules_on.bat).
+   custom_rules.ini (tools/rules.py) again if CUSTOM_RULES.FLG exists (Custom_rules_on.bat). custom_rules.ini is
+   checked right after the GOG files, so a bad value stops the setup before anything here changes; if the rules
+   still cannot be applied, custom rules are turned off (the default set stays installed) and the setup fails.
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
 It can be run again at any time; saves (save/) and the MT-32 ROMs and SoundFont are left alone.
 Usage: python -I setup/setup.py [GOG Moonstone folder]"""
@@ -19,6 +21,7 @@ import sys, os, json, hashlib, shutil, glob
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(HERE, 'tools'))
+sys.path.insert(1, os.path.join(HERE, '_python'))       # Setup.bat installs unicorn here if Python has none
 
 MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
@@ -82,6 +85,16 @@ def main(arg=None):
     say(f'GOG installation: {gog}')
     files = check_gog(gog)
     say(f'  {len(files)} game files checked')
+    rules_on = os.path.exists(os.path.join(HERE, 'CUSTOM_RULES.FLG'))
+    if rules_on:                                              # custom rules (D10) checked before anything changes
+        import rules
+        ini = os.path.join(HERE, 'custom_rules.ini')
+        try:
+            if os.path.exists(ini):
+                rules.table(rules.read_ini(ini))
+        except rules.RulesError as e:
+            raise SystemExit(f'custom_rules.ini: {e}\nNothing was changed. Correct custom_rules.ini (or use '
+                             'Custom_rules_off.bat or Custom_rules_reset.bat) and run Setup.bat again.')
 
     for f in files:                                           # 2. game files
         if f['path'] not in ('MAIN.EXE', 'INTR.EXE'):
@@ -138,13 +151,16 @@ def main(arg=None):
     for name in ['MAIN.EXE', 'INTR.EXE'] + samples:
         copy(os.path.join(use, name), os.path.join(HERE, name))
     say('  installed: ' + ('original programs (Fixes_Off.bat)' if use == original else 'fixed programs'))
-    if os.path.exists(os.path.join(HERE, 'CUSTOM_RULES.FLG')):   # custom rules (D10), if Custom_rules_on.bat is in use
-        import rules
+    if rules_on:                                              # custom rules (D10), if Custom_rules_on.bat is in use
         try:
             rules.install(HERE)
             say('  custom rules from custom_rules.ini: on' + (' (with Fixes_On.bat)' if use == original else ''))
-        except rules.RulesError as e:
-            say(f'  custom rules not applied, custom_rules.ini: {e}')
+        except rules.RulesError as e:                         # the default set stays in use, and nothing says otherwise
+            for name in ('CUSTOM_RULES.FLG', os.path.join('_fixes', 'rules', 'MAIN.EXE')):
+                if os.path.exists(os.path.join(HERE, name)):
+                    os.remove(os.path.join(HERE, name))
+            raise SystemExit(f'custom_rules.ini: {e}\nThe game is set up with the default rules (custom rules off). '
+                             'Correct custom_rules.ini and run Custom_rules_on.bat.')
 
     disk1 = os.path.join(HERE, 'amiga', 'Moonstone_Disk1.adf')  # 6. optional Amiga music
     if os.path.exists(disk1):

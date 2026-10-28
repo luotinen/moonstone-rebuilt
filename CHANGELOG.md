@@ -26,6 +26,20 @@
   no longer hit knights, and with 2-4 knights their strength and hit points are added up for the monster count.
 * D15: co-op practice: with 2-4 players the practice keys put all the knights on the same side against the
   monsters; every monster goes for its nearest knight.
+* Setup: Python is chosen by really starting it (the `py` launcher first, then `python`; 3.8 or newer), in
+  `Setup.bat`, `Custom_rules_on.bat` and `AmigaMusic_Setup.bat` (`tools\find_python.bat`). `unicorn` is installed into
+  `_python` here, which the setup sees (before, `pip install --user` put it where `python -I` does not look).
+  A bad `custom_rules.ini` stops the setup before anything changes; if the rules cannot be applied later, they are
+  turned off instead of leaving `CUSTOM_RULES.FLG` with the default programs.
+* The switch scripts (`Fixes_On.bat`, `Fixes_Off.bat`, `Music_*.bat`, `Custom_rules_*.bat`, `AmigaMusic_Off.bat`,
+  `Controller_*.bat`) check their files first and every copy, and change a flag or setting only after the copies
+  worked. `Music_GM.bat` and `Music_MT32.bat` refuse without the SoundFont or the MT-32 ROMs.
+* Amiga music: a damaged disk image or packed module gives an error instead of a hang (block bounds, loops in the
+  directory and file chains, unpacked size and match limits).
+* D15 fixes after the first play test: with 2 or 4 knights the monsters no longer stay frozen (each knight's
+  walk-in toggled their pause); every monster now really goes for its nearest knight (the ratmen and others
+  followed knight 1 only); a knight that fell no longer stands up again when the others win; Esc ends a practice
+  fight.
 * D14: 3-4 player practice: Enter = everyone against everyone, Space = teams (same colour per team). 1 player:
   the keys 1-9 start a practice against the monsters of a lair, 0 the Black Knight.
 * K18: the dragon's hoard no longer grows with every new game or practice in the same session; instead it gets one
