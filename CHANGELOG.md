@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 – Custom rules and co-op practice
 
 * D10: optional custom rules in `custom_rules.ini` (`Custom_rules_on.bat`, `Custom_rules_off.bat`, `Custom_rules_reset.bat`): starting values per knight, death modes (permadeath, reincarnation, respawn, invulnerable), the computer knights' extras, and global rules such as the ratmen disease, curses, gold and life caps, home village healing (optionally in any village) and a full heal with the E key. `SAVEHOOK.COM` has a fourth handler (int 63h). Every value is checked against its bounds (listed in the file)
   before anything is changed, and the maximum hit points stay at most 999.
@@ -59,9 +59,6 @@
   and its stat raise after a duel stops at 5 like a player's. `SAVEHOOK.COM` has a third handler (int 62h).
 * GUIDE.md: a new player's guide covering the manual's topics in new text, the rules the manual leaves out, and
   the places where the manual and the game disagree.
-
-## 0.4.0 – No ratmen disease, better music defaults
-
 * K17: the ratmen disease is removed (it silently took a life point every four days).
 * General MIDI: reverb and chorus settings recommended for GeneralUser GS; tested with GeneralUser GS 2.0.3.
 * MT-32: tested with ROM version 1.07 (README gives the control ROM's SHA-1); volume lowered to 50%.
