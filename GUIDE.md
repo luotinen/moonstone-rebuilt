@@ -54,7 +54,7 @@ The menu has these options *(manual p. 14)*:
 
 * **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer.
 * **Gore:** turns the bloody deaths on or off.
-* **Practice:** two players fight each other straight away, without the map. [Moonstone Rebuilt: with 1 player chosen, you fight a Black Knight played by the computer, D11; with 3 or 4 and game controllers, everyone against everyone (Enter) or two teams (Space), D12-D14; with 1 player the keys 1-9 start a practice against the monsters of a lair (with 2-4 players all knights together, D15) and 0 against the Black Knight, D14.]
+* **Practice:** two players fight each other straight away, without the map. [Moonstone Rebuilt: with 1 player chosen, you fight a Black Knight played by the computer, D11; with 3 or 4 and game controllers, everyone against everyone (Enter on Practice) or two teams (Space anywhere in the first menu), D12-D14; with 1 player the keys 1-9 start a practice against the monsters of a lair (with 2-4 players all knights together, D15) and 0 against the Black Knight, D14.]
 * **Select knight:** pick a knight and type a name, then press Enter (or fire).
 
 Every knight starts with *(manual p. 14; same in the code, `1000:1FAE`)*:
@@ -170,7 +170,10 @@ The moon matters for two things:
 * **Moonstones:** each of the four Moonstones belongs to one phase (full, new, waxing half or waning half). To win,
   the knight must reach Stonehenge while the moon is in that phase. During its phase the stone also helps in fights.
   [The manual says a Moonstone doubles the knight's hit points in its phase. In the code it doubles the damage of the
-  knight's attacks (`1000:2D73`).]
+  knight's attacks (`1000:2D73`). Stonehenge accepts both half-moon stones at either half moon (`1000:1053`).]
+* [Rebuilt: the original names one half-moon stone the new-moon stone (K19), shows the half and three-quarter moons
+  in each other's place (K20), and gives the new-moon stone's damage bonus at half moon and one half-moon stone's at
+  new moon (K24).]
 
 ## 6. The map
 

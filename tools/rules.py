@@ -11,7 +11,7 @@ this tool writes into SAVEHOOK.COM. The int 63h sites are in HOOKS below. Withou
 normal fixed one: SAVEHOOK.COM always carries the rules code, but the normal MAIN.EXE never calls it.
 
 The knights. Record +20h is the knight: 0-3 for a human player's knight (the order on the selection screen; it also
-gives the start corner and home village, which home_village can change), 4 for a computer knight. The INI sections [Knight1]-[Knight4] are 0-3 and
+gives the start corner and home village, which home_village can change), 4 for a computer knight. The INI sections [Knight1_blue]-[Knight4_red] are 0-3 and
 [Black] is every computer-controlled knight (they wear black)."""
 import sys, os, struct, configparser, shutil
 
@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from patches import PATCHES, image_offset
 
-SECTIONS = ['Knight1', 'Knight2', 'Knight3', 'Knight4', 'Black']
+SECTIONS = ['Knight1_blue', 'Knight2_orange', 'Knight3_green', 'Knight4_red', 'Black']
 WEAPONS = {'long_sword': 0x16, 'broadsword': 0x17, 'claymore': 0x18, 'sword_of_sharpness': 0x19}
 ARMOURS = {'padded': 0x1b, 'chain_mail': 0x1c, 'plate_mail': 0x1d, 'battle_armour': 0x1e}
 MODES = {'permadeath': 0, 'reincarnation': 1, 'respawn': 2, 'invulnerable': 3}
@@ -60,7 +60,7 @@ COLOURS = {'blue':   ((0x00a, 0x007, 0x004), (0x05d, 0x028, 0x016, 0x003), (0x03
            'green':  ((0x8c6, 0x593, 0x251), (0x0c5, 0x082, 0x061, 0x040), (0x4c3, 0x160), 2),
            'red':    ((0xf22, 0xb22, 0x700), (0xe00, 0x900, 0x600, 0x300), (0xf00, 0x800), 3),
            'black':  ((0x206, 0x103, 0x001), (0x206, 0x104, 0x103, 0x001), (0x027, 0x003), 4)}
-DEFAULT_COLOURS = ['blue', 'orange', 'green', 'red', 'black']        # [Knight1]..[Knight4], [Black]
+DEFAULT_COLOURS = ['blue', 'orange', 'green', 'red', 'black']        # [Knight1_blue]..[Knight4_red], [Black]
 # A custom colour '#RGB' (one hex digit per channel, as the game's words) is the brightest shade; the darker ones are
 # scaled from it. The map icon is a picture per colour, so it takes the named colour nearest to the fight shade.
 SHADES = ((1, 0.75, 0.5), (1, 0.7, 0.45, 0.2), (1, 0.55))     # fight, item screen, status panel
@@ -173,7 +173,15 @@ G_HOARD = G_SELL + 12                         # byte: HOARD_MODES
 G_PRACTICE = G_HOARD + 1                      # 10 bytes: the lair of each practice key (0-23), FFh = Black Knight
 G_PRACTICE_FLAGS = G_PRACTICE + 10            # byte: the flags above
 G_TARGET_MARGIN = G_PRACTICE_FLAGS + 1        # byte: a monster keeps its knight unless another is this much nearer
-TABLE_SIZE = G_TARGET_MARGIN + 1
+G_HIT_REST = G_TARGET_MARGIN + 1              # 2 bytes (K6): BIOS ticks after a hit on the dragon / the Guardian in
+                                              # which further hits do not count (0 = as the game: every hit counts)
+G_EXPLOIT_FIXES = G_HIT_REST + 2              # byte: fixes of exploits runs use, off in speedrun mode (bits below)
+TABLE_SIZE = G_EXPLOIT_FIXES + 1
+KEEP_DRAGON_TARGET = 1                        # K21: the dragon keeps its target when the map is drawn again
+NO_EXTRA_TURN = 2                             # K22: after an action that used up the turn, no input before its end
+POTION_LIFE = 4                               # K23: a potion gives no life to a knight without lives
+EXPLOIT_FIXES = KEEP_DRAGON_TARGET | NO_EXTRA_TURN | POTION_LIFE
+HIT_REST_DEFAULT = 8                          # K6: tenths of a second (0.8 s), until play tests set it
 # Selling at the merchant (item screen mode 5): half the shop price, rounded down. The long sword and padded armour
 # are what a knight gets back and are not bought; the Sword of Sharpness is a magic item and not sold here.
 SELL_ITEMS = ['dagger', 'broadsword', 'claymore', 'chain_mail', 'plate_mail', 'battle_armour']
@@ -278,7 +286,11 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'healer_price': (0, 127), 'move_damage': (0, 100), 'max_daggers': (1, 99), 'frog_days': (0, 100),
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
-                'monster_damage': (0, 127), 'target_margin': (0, 200)}
+                'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50)}
+
+def ticks(tenths):
+    """Tenths of a second -> BIOS ticks (18.2 a second), as SAVEHOOK.COM counts them."""
+    return (tenths * 182 + 50) // 100
 
 def read_ini(path):
     cp = configparser.ConfigParser(inline_comment_prefixes=(';',))
@@ -289,8 +301,17 @@ def read_ini(path):
     except configparser.Error as e:
         raise RulesError(f'the file cannot be read: {e}')
     rb = RULES_BOUNDS
-    r = {'knights': []}
     g = 'Rules'
+    # speedrun mode: everything else in the file is ignored; the default rules with the fixes, but the game's own
+    # behaviour wherever runs use it (the dragon's and the Guardian's hits, the dragon's hoard)
+    if cp.has_option(g, 'speedrun_mode') and _get(cp, g, 'speedrun_mode', _onoff):
+        default = os.path.join(os.path.dirname(os.path.abspath(path)), 'custom_rules-default.ini')
+        if os.path.abspath(path) == default:
+            raise RulesError('custom_rules-default.ini must have speedrun_mode = off')
+        r = read_ini(default)
+        r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0)
+        return r
+    r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
     r['hawk_curse'] = _get(cp, g, 'hawk_curse_chance', float, *rb['hawk_curse_chance'])
     r['protection_curse'] = _get(cp, g, 'protection_curse_chance', float, *rb['protection_curse_chance'])
@@ -367,10 +388,12 @@ def read_ini(path):
                    monster('dragon_second_attack_damage', 'monster_damage'))
     r['dragon_parts'] = (monster('dragon_parts_hp', 'monster_hp'), monster('dragon_parts_damage', 'monster_damage'))
     r['talisman_min'] = monster('talisman_min_damage', 'monster_damage')
+    r['hit_rest'] = tuple(ticks(monster(f'{who}_hit_recovery', 'hit_recovery')) for who in ('dragon', 'guardian'))
     check_treasure(r)
     for sec in SECTIONS:
         if not cp.has_section(sec):
-            raise RulesError(f'section [{sec}] is missing')
+            old = sec.split('_')[0]                          # [Knight1] became [Knight1_blue]
+            raise RulesError(f'section [{sec}] is missing' + (f' ([{old}] is now [{sec}])' if cp.has_section(old) else ''))
         k = {key: _get(cp, sec, key, int, lo, hi) for key, (lo, hi) in KNIGHT_BOUNDS.items()}
         k['weapon'] = _get(cp, sec, 'weapon', _choice(WEAPONS))
         k['armour'] = _get(cp, sec, 'armour', _choice(ARMOURS))
@@ -385,7 +408,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'max_gold', 'max_lives',
-                 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'speedrun_mode', 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
                  'merchant_selling',
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -454,6 +477,8 @@ def table(r=None):
         t[G_PRACTICE + n] = 0xff if choice == 'black_knight' else choice - 1
     t[G_PRACTICE_FLAGS] = r['practice_flags'] if r else 0
     t[G_TARGET_MARGIN] = r['target_margin'] if r else 20
+    t[G_HIT_REST:G_HIT_REST + 2] = bytes(r['hit_rest'] if r else (ticks(HIT_REST_DEFAULT),) * 2)
+    t[G_EXPLOIT_FIXES] = r['exploit_fixes'] if r else EXPLOIT_FIXES
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------
@@ -514,10 +539,12 @@ def main_patches(r, img):
         out.append((where, bytes.fromhex(old), new))
     for site in (0xb4cd, 0xb4d4, 0xba11, 0xba18, 0xcef6, 0xd060, 0xd068):   # gold cap 150: dice, Math, loot, sale
         imm(site, 2, r['max_gold'])
+    if r['speedrun']:                                    # K24 undone: the damage bonus as the game
+        out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes']]
     m = r['max_lives']                                   # life cap 5: Stonehenge, healer, potion, computer potion use
     imm(0x10b1, 1, m); out.append((0x10b2, b'\x74', b'\x7d'))     # cmp 5 / je -> jge (a start above the cap)
     imm(0xbce4, 1, m); out.append((0xbce5, b'\x74', b'\x7d'))
-    imm(0xccbc, 1, m + 1); imm(0xccc2, 1, m); imm(0xada6, 1, m)
+    imm(0xada6, 1, m)                                    # (the potion's cap: SAVEHOOK, K23)
     if r['fate'] or r['save_mode'] in SAVE_CHECKED:     # reward rolls (village_any and homes: the place hook)
         for where, old, _ in FATE_HOOKS:
             new, _ = hook_bytes(where, old, 'fate')

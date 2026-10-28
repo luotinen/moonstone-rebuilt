@@ -1,12 +1,12 @@
 """Build SAVEHOOK.COM, the resident helper for D6 and D7 (DOSBox-X save state right before every fight and at the
 start of every human player's turn on the map) and for K16 (code that does not fit in MAIN.EXE).
 
-DOSBox-X has no way for a DOS program to ask for a save state, but its autosave can use a separate slot range per
-running program ("autosave = 1 -1 PRETURN:91-95 PREFIGHT:96-100": check every second, never save for other
-programs, save into slots 91-95 while the program is PRETURN and 96-100 while it is PREFIGHT). DOSBox-X takes the
-program name from the memory block of the current PSP, and only re-reads it when a program starts or ends. The two
-names need slot ranges of their own, because DOSBox-X keeps one rotation counter per name: two names in the same
-slots would overwrite each other's newest saves.
+DOSBox-X has no way for a DOS program to ask for a save state, but its autosave can use a slot (or a slot range) per
+running program, for up to 9 programs ("autosave = 1 -1 TURN1:91 ... TURN4:94 FIGHT1:96 ... FIGHT5:100": check every
+second, never save for other programs, save into slot 96 while the program is FIGHT1). DOSBox-X takes the program
+name from the memory block of the current PSP, and only re-reads it when a program starts or ends. SAVEHOOK numbers
+the names in turn itself (number_name, the counters in SAVEHOOK.SLT): with one range per name (PREFIGHT:96-100, as
+before) a wait that spanned two checks filled two slots of the range.
 
 SAVEHOOK.COM installs four interrupt handlers and stays resident. The patches in patches.py replace an instruction in
 MAIN.EXE with an interrupt:
@@ -15,12 +15,12 @@ MAIN.EXE with an interrupt:
   begins); only for knights not controlled by the computer (record +20h <> 4), so computer turns do not pause.
 The handler:
 1. does the replaced instruction,
-2. renames MAIN's memory block to PREFIGHT or PRETURN and runs SAVEHOOK.COM again as a child, so DOSBox-X re-reads the name
-   (the child sees the handlers are installed and exits at once),
+2. renames MAIN's memory block to the next of FIGHT1-FIGHT5 or TURN1-TURN4 and runs SAVEHOOK.COM again as a child, so
+   DOSBox-X re-reads the name (the child sees the handlers are installed and exits at once),
 3. waits WAIT_TICKS BIOS ticks (about 1.1 s), during which DOSBox-X's once-a-second autosave check saves the state.
    Emulation stops while DOSBox-X writes a save, so the wait lasts longer in real time and often covers a second
-   check: one fight or turn then fills two slots with the same moment. The game cannot see the pause (its clocks,
-   the CMOS clock included, follow emulated time), so this is not avoided,
+   check. The game cannot see the pause (its clocks, the CMOS clock included, follow emulated time), so the second
+   save goes into the same slot (one slot per name),
 4. restores the old name and runs the child again, so the name is MAIN again.
 K16, int 62h: the weapon pick on the duel loot screen (1000:ce99) moved only the weapon number. Taking the Sword of
 Sharpness (weapon 19h) left the sword item with the loser, so both knights had the sword. The handler also moves the
@@ -43,18 +43,20 @@ from rules import (HOOKS, FATE_HOOKS, FATE_STREAMS, SECTIONS, SECTION_SIZE, MODE
                    G_ARMOUR_HP, G_SWORD, G_REST, G_VILLAGE, G_MAX_LIVES, G_RING, G_COLOURS, G_HOMES, G_VILLAGE_ANY,
                    G_SAVE_MODE, G_FATE, G_SELLING, G_MAX_GOLD, G_SELL, G_HOARD, HOARD_MODES, MAX_HP, hook_bytes,
                    G_PRACTICE, G_PRACTICE_FLAGS, G_TARGET_MARGIN, COOP_KNIGHT_HITS, TEAM_KNIGHT_HITS,
-                   COOP_DAGGER_HITS, TARGET_FIRST,
+                   COOP_DAGGER_HITS, TARGET_FIRST, G_HIT_REST, G_EXPLOIT_FIXES, KEEP_DRAGON_TARGET,
+                   NO_EXTRA_TURN, POTION_LIFE,
                    table as rules_default_table)
 
 FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x63   # MAIN.EXE uses none of these
 SHARPNESS = 0x19                         # weapon number of the Sword of Sharpness
-FIGHT_NAME = b'PREFIGHT'                 # program names that the autosave setting matches (8 characters at most)
-TURN_NAME = b'PRETURN'
+FIGHT_NAME, FIGHT_SLOTS = b'FIGHT', 5     # program names FIGHT1-FIGHT5 and TURN1-TURN4, one autosave slot each
+TURN_NAME, TURN_SLOTS = b'TURN', 4       # (moonstone-dosbox-x.conf: FIGHT1:96 ... FIGHT5:100, TURN1:91 ... TURN4:94)
 MODE_REINCARNATION, MODE_RESPAWN, MODE_INVULNERABLE = MODES['reincarnation'], MODES['respawn'], MODES['invulnerable']
 VILLAGE_FULL = VILLAGE['full']
 COMPUTER = 4                             # knight record +20h: control type 4 = computer
 AUTO_ONLY, MANUAL_ONLY, NO_SAVES = SAVE_MODES['autosave_only'], SAVE_MODES['manual_only'], SAVE_MODES['none']
 CHK_PATH = b'C:\\SAVEHOOK.CHK\0'        # the save check's token file (save states do not restore files)
+SLOT_PATH = b'C:\\SAVEHOOK.SLT\0'       # the next autosave number of each kind (a file, so loading a state keeps it)
 AUTO_NAME, NONE_NAME = b'LOADAUTO', b'NOSAVES'   # program names shown when a forbidden manual save was loaded
 RANDOM_STATE = 0xe22f                    # DS:E22F, the game's random number state (1000:BF62)
 CHOSEN_PLAYERS = 0x0940                  # DS:0940: the number of players chosen, kept during practice (1000:00EB)
@@ -71,7 +73,18 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   # D14: the menu's keys and the practice set-up
                   (0x129b, 'menu_keys'), (0x0144, 'practice_init'),
                   # D15: every monster's opponent
-                  (0x025e, 'pause'), (0x98ff, 'update')]
+                  (0x025e, 'pause'), (0x98ff, 'update'),
+                  # K6: hit recovery of the dragon and the Guardian; K20: the moon pictures
+                  (0x3863, 'dragon_rest'), (0x4f6c, 'guardian_rest'), (0x9055, 'moon_picture'),
+                  # K21: the dragon keeps its target
+                  (0xa80f, 'dragon_target'),
+                  # K22: no extra action at the end of a turn
+                  (0xa5ba, 'action_done'),
+                  # K23: the healing potion's life
+                  (0xccb8, 'potion_life')]
+MAP_LOOP, AFTER_ACTION = 0xa4b0, 0xa5bb             # K22: the map loop's start; its dragon and end-of-turn checks
+MAP_REDRAW_RET, TARGET_KEPT = 0xa72c, 0xa831       # K21: the map set-up's call of 1000:A78C returns here; A78C's ret
+MOON_HALF, MOON_THREE_QUARTER = 0x2e, 0x2f          # K20: phase values (= KI.CEL frames) whose pictures swap
 WALK_IN_RET, PAUSE_RET = 0x9dca, 0x0278              # D15: script command 1000:9DB3's call returns here; 025C's ret
 STRENGTH, MAX_HP_FIELD = 0x2e, 0x3c                  # D15: the knight stats 1000:2830 uses for the monster numbers
 DAGGER = 0x1a                                        # D15: a thrown dagger's object type (+35h, 1000:3E4A)
@@ -890,20 +903,19 @@ def rules_code(a):
         a.b(0x81, 0x46, 0x00, 0xc0, 0x00)                    # add word [bp], 0C0h    (the game's bp, replaced)
         a.near(0xe9, 'rules_done')                           # jmp rules_done
 
-    # menu_keys (D14, 1000:129B; replaces mov [77E2h],bx, the first menu's input): Space on Practice = teams;
-    # with 1 player the keys of PRACTICE_KEYS start a practice against that fight (0: the Black Knight); Enter
-    # (fire) clears both choices. The key states are MAIN's table in its code segment
+    # menu_keys (D14, 1000:129B; replaces mov [77E2h],bx, the first menu's input): anywhere in the first menu Space
+    # starts the practice in teams (with 1-2 players the normal practice: the Black Knight, or knight against knight)
+    # and the keys of PRACTICE_KEYS a practice against that fight (0: the Black Knight); Enter (fire) clears both
+    # choices. The key states are MAIN's table in its code segment
     a.label('rules_menu_keys')
     a.b(0x50, 0x56, 0x06)                                    # push ax si es
     a.b(0x8e, 0x46, 0x04)                                    # mov es, [bp+4]    MAIN's code segment
     a.b(0x8b, 0x5e, 0xfe)                                    # mov bx, [bp-2]    the input bits
     a.b(0x26, 0x80, 0x3e); a.b(struct.pack('<H', KEY_TABLE + SPACE)); a.b(0xff)   # cmp byte es:[Space], 0FFh
     a.short(0x73, 'mk_digits')                               # jae mk_digits     not held
-    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION)   # cmp word [0704h], 2
-    a.short(0x75, 'mk_digits')                               # jne mk_digits
     a.b(0x2e, 0xc6, 0x06); a.word('teams'); a.b(0x01)        # mov byte cs:[teams], 1
-    a.b(0x83, 0xcb, 0x10)                                    # or bx, 10h        as fire
-    a.short(0xeb, 'mk_store')                                # jmp mk_store
+    a.b(0x2e, 0xc6, 0x06); a.word('monster'); a.b(0x00)      # mov byte cs:[monster], 0
+    a.short(0xeb, 'mk_practice')                             # jmp mk_practice
     a.label('mk_digits')
     a.b(0xbe); a.word('practice_keys')                       # mov si, practice_keys
     a.label('mk_scan')
@@ -921,6 +933,8 @@ def rules_code(a):
     a.short(0xeb, 'mk_enter')                                # jmp mk_enter
     a.label('mk_digit')
     a.b(0x2e, 0x88, 0x3e); a.word('monster')                 # mov cs:[monster], bh
+    a.b(0x2e, 0xc6, 0x06); a.word('teams'); a.b(0x00)        # mov byte cs:[teams], 0
+    a.label('mk_practice')
     a.b(0x8b, 0x5e, 0xfe)                                    # mov bx, [bp-2]
     a.b(0xc7, 0x06, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION, 0x00)   # mov word [0704h], 2
     a.b(0x83, 0xcb, 0x10)                                    # or bx, 10h        as fire
@@ -1202,6 +1216,118 @@ def rules_code(a):
     a.short(0x79, 'ds_z'); a.b(0xf7, 0xd8)                   # jns / neg ax
     a.label('ds_z')
     a.b(0x03, 0xc2, 0x5a, 0xc3)                              # add ax, dx / pop dx / ret
+
+    # dragon_rest, guardian_rest (K6; 1000:3861 and 4F6A, replace cmp word [di/si+0Eh],0, the check whether the
+    # dragon or the Guardian was hit, which comes before anything else in its update): a hit restarts its hit
+    # reaction at once, so quick blows (the upward thrust under the dragon) kept it from ever fighting back. A hit
+    # within the table's ticks of the last counted one is dropped (as practice_hit drops one: the attacker's +0Ch
+    # too); the handler is not called every frame, so the time is BIOS ticks. Returns the flags of the compare
+    a.label('rules_dragon_rest')
+    a.b(0x8b, 0xdf, 0xb0, 0x00)                              # mov bx, di / mov al, 0
+    a.short(0xeb, 'hr_start')                                # jmp hr_start
+    a.label('rules_guardian_rest')
+    a.b(0x8b, 0xde, 0xb0, 0x01)                              # mov bx, si / mov al, 1
+    a.label('hr_start')
+    a.b(0x50, 0x51, 0x52, 0x56, 0x06)                        # push ax cx dx si es
+    a.b(0x83, 0x7f, 0x0e, 0x00)                              # cmp word [bx+0Eh], 0
+    a.short(0x74, 'hr_end')                                  # je hr_end            not hit
+    a.b(0x32, 0xe4, 0x8b, 0xf0)                              # xor ah, ah / mov si, ax
+    a.b(0x2e, 0x8a, 0x8c); a.word('rules_table', G_HIT_REST) # mov cl, cs:[si+hit_rest]
+    a.b(0x32, 0xed, 0xe3); a.b(0x00); hr_off = len(a.code) - 1   # xor ch, ch / jcxz hr_end   0: every hit
+    a.b(0x33, 0xd2, 0x8e, 0xc2, 0x26, 0x8b, 0x16, 0x6c, 0x04)   # xor dx, dx / mov es, dx / mov dx, es:[046Ch]
+    a.b(0xd1, 0xe6)                                          # shl si, 1
+    a.b(0x2e, 0x8b, 0x84); a.word('last_hit')                # mov ax, cs:[si+last_hit]
+    a.b(0x0b, 0xc0); a.short(0x74, 'hr_count')               # or ax, ax / jz hr_count   none yet
+    a.b(0xf7, 0xd8, 0x03, 0xc2)                              # neg ax / add ax, dx       ticks since
+    a.b(0x3b, 0xc1); a.short(0x72, 'hr_drop')                # cmp ax, cx / jb hr_drop
+    a.label('hr_count')
+    a.b(0x0b, 0xd2, 0x75, 0x01, 0x42)                        # or dx, dx / jnz +1 / inc dx   (0 = none)
+    a.b(0x2e, 0x89, 0x94); a.word('last_hit')                # mov cs:[si+last_hit], dx
+    a.short(0xeb, 'hr_end')                                  # jmp hr_end
+    a.label('hr_drop')
+    a.b(0x8b, 0x77, 0x0e, 0xc7, 0x47, 0x0e, 0x00, 0x00)      # mov si, [bx+0Eh] / mov word [bx+0Eh], 0
+    a.b(0x39, 0x5c, 0x0c); a.short(0x75, 'hr_end')           # cmp [si+0Ch], bx / jne hr_end
+    a.b(0xc7, 0x44, 0x0c, 0x00, 0x00)                        # mov word [si+0Ch], 0
+    a.label('hr_end')
+    a.code[hr_off] = (a.labels['hr_end'] - (a.org + hr_off + 1)) & 0xff
+    a.b(0x07, 0x5e, 0x5a, 0x59, 0x58)                        # pop es si dx cx ax
+    a.b(0x83, 0x7f, 0x0e, 0x00)                              # cmp word [bx+0Eh], 0   (replaced)
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+
+    # dragon_target (K21; 1000:A80D, replaces sub cx,cx before the dragon's random target roll): the map set-up
+    # (1000:A6E1, called again whenever the map is drawn anew, e.g. after the item screen) runs the dragon's set-up
+    # 1000:A78C, which rolls a new target each time, so leaving the item screen rerolled it. Called from there
+    # (not by the Scroll of the Wyrm, 1000:ADEE), the dragon keeps a target that still has lives
+    a.label('rules_dragon_target')
+    a.b(0x33, 0xc9)                                          # xor cx, cx            (replaced)
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_EXPLOIT_FIXES); a.b(KEEP_DRAGON_TARGET)   # test flags, keep
+    a.short(0x74, 'dt_end')                                  # jz dt_end             speedrun mode: as the game
+    a.b(0x81, 0x7e, 0x08, MAP_REDRAW_RET & 0xff, MAP_REDRAW_RET >> 8)   # cmp word [bp+8], A72Ch
+    a.short(0x75, 'dt_end')                                  # jne dt_end            the Wyrm: a new target
+    a.b(0x56, 0x8b, 0x36, (DRAGON_RECORD + 0x46) & 0xff, (DRAGON_RECORD + 0x46) >> 8)   # push si / mov si, [6E6Ch]
+    for rec in KNIGHTS:
+        a.b(0x81, 0xfe, rec & 0xff, rec >> 8)                # cmp si, record
+        a.short(0x74, 'dt_knight')                           # je dt_knight
+    a.short(0xeb, 'dt_pop')                                  # jmp dt_pop            no target yet
+    a.label('dt_knight')
+    a.b(0x80, 0x7c, 0x31, 0x00)                              # cmp byte [si+31h], 0  lives
+    a.short(0x7e, 'dt_pop')                                  # jle dt_pop
+    a.b(0xc7, 0x46, 0x02, TARGET_KEPT & 0xff, TARGET_KEPT >> 8)   # mov word [bp+2], A831h   ret: target kept
+    a.label('dt_pop')
+    a.b(0x5e)                                                # pop si
+    a.label('dt_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # action_done (K22; 1000:A5B8, replaces jmp A4B0 after a place's action, 1000:B000): the loop went back to its
+    # start and read the input again before the end-of-turn check (A5FB), so Enter pressed as the action ended
+    # (a fight, the city) started another action in the same turn. When the action used up the turn
+    # ([CC98h] >= [CCACh], as the fight end 1000:038D and the places set it), go on to the checks instead
+    a.label('rules_action_done')
+    a.b(0xc7, 0x46, 0x02, MAP_LOOP & 0xff, MAP_LOOP >> 8)     # mov word [bp+2], A4B0h   as the game
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_EXPLOIT_FIXES); a.b(NO_EXTRA_TURN)   # test flags, extra turn
+    a.short(0x74, 'ad_end')                                  # jz ad_end             speedrun mode: as the game
+    a.b(0x50, 0xa1, 0x98, 0xcc, 0x3b, 0x06, 0xac, 0xcc, 0x58)   # push ax / mov ax, [CC98h] / cmp ax, [CCACh] / pop ax
+    a.short(0x7c, 'ad_end')                                  # jl ad_end             steps left: on with the turn
+    a.b(0xc7, 0x46, 0x02, AFTER_ACTION & 0xff, AFTER_ACTION >> 8)   # mov word [bp+2], A5BBh
+    a.label('ad_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # potion_life (K23; 1000:CCB6-CCC2, the healing potion at full hit points: inc byte [si+31h], then lives 6 and
+    # above become 5, compared unsigned): a lost Guardian fight takes one life at the fight's end and two more in the
+    # Valley (1000:0FFF, no floor), and a lost fight leaves full hit points; a potion then took -2 (FEh) to -1 (FFh),
+    # which the unsigned compare made 5. Now a knight without lives gets none back, and the cap is max_lives (5 in the game)
+    a.label('rules_potion_life')
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_EXPLOIT_FIXES); a.b(POTION_LIFE)   # test flags, potion
+    a.short(0x75, 'pl_fixed')                                # jnz pl_fixed
+    a.b(0xfe, 0x44, 0x31, 0x80, 0x7c, 0x31, 0x06)            # inc byte [si+31h] / cmp byte [si+31h], 6   as the game
+    a.short(0x72, 'pl_end')                                  # jb pl_end
+    a.short(0xeb, 'pl_five')                                 # jmp pl_five
+    a.label('pl_fixed')
+    a.b(0x80, 0x7c, 0x31, 0x00)                              # cmp byte [si+31h], 0
+    a.short(0x7e, 'pl_end')                                  # jle pl_end           no lives: none back
+    a.b(0xfe, 0x44, 0x31, 0x50)                              # inc byte [si+31h] / push ax
+    a.b(0x2e, 0xa0); a.word('rules_table', G_MAX_LIVES)      # mov al, cs:[max_lives]
+    a.b(0x38, 0x44, 0x31); a.short(0x7e, 'pl_pop')           # cmp [si+31h], al / jle pl_pop
+    a.b(0x88, 0x44, 0x31)                                    # mov [si+31h], al      the cap
+    a.label('pl_pop')
+    a.b(0x58)                                                # pop ax
+    a.short(0xeb, 'pl_end')                                  # jmp pl_end
+    a.label('pl_five')
+    a.b(0xc6, 0x44, 0x31, 0x05)                              # mov byte [si+31h], 5
+    a.label('pl_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # moon_picture (K20; 1000:9053, replaces mov ax,[8989h] before the map's moon is drawn): the phase values 2Eh
+    # and 2Fh are drawn as each other's picture. The cycle DS:05A9 showed full, half, three-quarters, crescent, new;
+    # the half-moon Moonstones work at 2Eh (1000:1065, 2DBF), which now shows the half moon
+    a.label('rules_moon_picture')
+    a.b(0xa1, 0x89, 0x89)                                    # mov ax, [8989h]
+    a.b(0x3d, MOON_HALF, 0x00); a.short(0x74, 'mp_swap')     # cmp ax, 2Eh / je mp_swap
+    a.b(0x3d, MOON_THREE_QUARTER, 0x00); a.short(0x75, 'mp_end')   # cmp ax, 2Fh / jne mp_end
+    a.label('mp_swap')
+    a.b(0x35, MOON_HALF ^ MOON_THREE_QUARTER, 0x00)          # xor ax, 1    2Eh <-> 2Fh
+    a.label('mp_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
 
     # pause (1000:025C, replaces mov ax,6F08h): the routine toggles every monster's pause flag; the fight start and
     # each knight's walk-in script (command 1000:9DB3) run it, so with an even number of knights the monsters stay
@@ -1518,6 +1644,7 @@ def rules_data(a, table):
     a.label('coop'); a.b(0)                                  # D15: knights in a co-op practice, 0 = none
     a.label('vs_monsters'); a.b(0)                           # D15: 1 = a practice against monsters
     a.label('quitting'); a.b(0)                              # D15: 1 = Esc has ended this practice fight
+    a.label('last_hit'); a.b(bytes(4))                       # K6: BIOS ticks of the last counted hit (0 = none)
     a.label('own_strength'); a.b(0)                          # D15: knight 1's own strength and max HP during combine
     a.label('own_max_hp'); a.b(0, 0)
     a.label('last_target'); a.b(bytes(2 * 21))               # D15: each monster's knight (20 slots, the dragon)
@@ -1557,6 +1684,7 @@ def make_savehook(rules_table=None):
     a.b(0x26, 0x8a, 0x04, 0x88, 0x05, 0x46, 0x47)            # mov al, es:[si] / mov [di], al / inc si / inc di
     a.short(0xe2, 'save_name')                               # loop save_name
     a.b(0x8b, 0x36); a.word('name_ptr')                      # mov si, [name_ptr]
+    a.near(0xe8, 'number_name')                              # call number_name  FIGHT1-5 or TURN1-4, in turn
     a.near(0xe8, 'set_name')                                 # call set_name
     a.near(0xe8, 'refresh')                                  # call refresh      DOSBox-X now sees the new name
     a.near(0xe8, 'wait')                                     # call wait         autosave happens here
@@ -1599,6 +1727,43 @@ def make_savehook(rules_table=None):
     a.label('mcb')                                           # es = memory block of the current PSP
     a.b(0xb4, 0x62, 0xcd, 0x21)                              # mov ah, 62h / int 21h
     a.b(0x4b, 0x8e, 0xc3, 0xc3)                              # dec bx / mov es, bx / ret
+
+    # number_name: DS = CS, si = fight_name or turn_name: puts the next number into the name and counts on. Each
+    # numbered name has one autosave slot, so a wait that spans two of DOSBox-X's checks saves twice into the same
+    # slot instead of filling the next one. The counters live in SAVEHOOK.SLT (a missing file keeps the ones here)
+    a.label('number_name')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x57)                        # push ax bx cx dx di
+    a.b(0xb8, 0x00, 0x3d, 0xba); a.word('slot_path')         # mov ax, 3D00h / mov dx, slot_path
+    a.b(0xcd, 0x21)                                          # int 21h     open
+    a.short(0x72, 'nn_pick')                                 # jc nn_pick
+    a.b(0x8b, 0xd8, 0xb4, 0x3f, 0xb9, 0x02, 0x00, 0xba); a.word('slot_next')   # mov bx, ax / mov ah, 3Fh / mov cx, 2 / mov dx, slot_next
+    a.b(0xcd, 0x21, 0xb4, 0x3e, 0xcd, 0x21)                  # int 21h (read) / mov ah, 3Eh / int 21h (close)
+    a.label('nn_pick')
+    a.b(0x81, 0xfe); a.word('fight_name')                    # cmp si, fight_name
+    a.short(0x75, 'nn_turn')                                 # jne nn_turn
+    a.b(0xbb, 0x01, 0x00, 0xb1, FIGHT_SLOTS)                 # mov bx, 1 / mov cl, 5
+    a.b(0xbf); a.word('fight_name', len(FIGHT_NAME))         # mov di, fight_name + 5   the digit
+    a.short(0xeb, 'nn_have')                                 # jmp nn_have
+    a.label('nn_turn')
+    a.b(0x33, 0xdb, 0xb1, TURN_SLOTS)                        # xor bx, bx / mov cl, 4
+    a.b(0xbf); a.word('turn_name', len(TURN_NAME))           # mov di, turn_name + 4
+    a.label('nn_have')
+    a.b(0x8a, 0x87); a.word('slot_next')                     # mov al, [bx+slot_next]
+    a.b(0x3a, 0xc1); a.short(0x72, 'nn_in')                  # cmp al, cl / jb nn_in
+    a.b(0x32, 0xc0)                                          # xor al, al          (a damaged file)
+    a.label('nn_in')
+    a.b(0x8a, 0xe0, 0x80, 0xc4, 0x31, 0x88, 0x25)            # mov ah, al / add ah, '1' / mov [di], ah
+    a.b(0xfe, 0xc0, 0x3a, 0xc1); a.short(0x72, 'nn_next')    # inc al / cmp al, cl / jb nn_next
+    a.b(0x32, 0xc0)                                          # xor al, al          round again
+    a.label('nn_next')
+    a.b(0x88, 0x87); a.word('slot_next')                     # mov [bx+slot_next], al
+    a.b(0xb4, 0x3c, 0x33, 0xc9, 0xba); a.word('slot_path')   # mov ah, 3Ch / xor cx, cx / mov dx, slot_path
+    a.b(0xcd, 0x21)                                          # int 21h     create
+    a.short(0x72, 'nn_end')                                  # jc nn_end
+    a.b(0x8b, 0xd8, 0xb4, 0x40, 0xb9, 0x02, 0x00, 0xba); a.word('slot_next')   # mov bx, ax / mov ah, 40h / mov cx, 2 / mov dx, slot_next
+    a.b(0xcd, 0x21, 0xb4, 0x3e, 0xcd, 0x21)                  # int 21h (write) / mov ah, 3Eh / int 21h (close)
+    a.label('nn_end')
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x58, 0xc3)                  # pop di dx cx bx ax / ret
 
     a.label('set_name')                                      # copy 8 bytes ds:si -> es:0008
     a.b(0xbf, 0x08, 0x00, 0xb9, 0x08, 0x00)                  # mov di, 8 / mov cx, 8
@@ -1646,14 +1811,16 @@ def make_savehook(rules_table=None):
 
     # --- resident data ---
     a.label('old_name'); a.b(bytes(8))
-    a.label('fight_name'); a.b(FIGHT_NAME.ljust(8, b'\0'))
-    a.label('turn_name'); a.b(TURN_NAME.ljust(8, b'\0'))
+    a.label('fight_name'); a.b((FIGHT_NAME + b'1').ljust(8, b'\0'))   # the digit is number_name's
+    a.label('turn_name'); a.b((TURN_NAME + b'1').ljust(8, b'\0'))
+    a.label('slot_next'); a.b(0, 0)                          # next turn and fight number - 1 (SAVEHOOK.SLT)
     a.label('name_ptr'); a.b(0, 0)
     a.label('reserve'); a.b(0, 0)
     a.label('save_ss'); a.b(0, 0)
     a.label('save_sp'); a.b(0, 0)
     a.label('child_path'); a.b(CHILD_PATH)
     a.label('chk_path'); a.b(CHK_PATH)
+    a.label('slot_path'); a.b(SLOT_PATH)
     a.label('auto_name'); a.b(AUTO_NAME.ljust(8, b'\0'))
     a.label('none_name'); a.b(NONE_NAME.ljust(8, b'\0'))
     a.label('token'); a.b(bytes(4))

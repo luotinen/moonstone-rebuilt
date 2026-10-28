@@ -16,6 +16,8 @@
 /_music/amiga/
 /save/
 *.FLG
+/SAVEHOOK.CHK
+/SAVEHOOK.SLT
 # Your own files
 /amiga/*.adf
 /amiga/*.ADF

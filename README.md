@@ -86,9 +86,11 @@ skip the intro.
   (D11); with 2 players it is two players against each other, as in the original. With 3 or 4 players and one or
   two game controllers (D12-D14):
   * **Enter** on *Practice*: everyone against everyone until one knight is left, each in its own colour (blue,
-    green, orange, red; with custom rules the colours of `[Knight1]`, `[Knight3]`, `[Knight2]` and `[Knight4]`).
-  * **Space** on *Practice*: two teams, player 1 (arrows + Enter) with controller 1 against player 2 (W A S D +
-    Tab) with controller 2, each team in its keyboard player's colour; teammates cannot hurt each other.
+    green, orange, red; with custom rules the colours of `[Knight1_blue]`, `[Knight3_green]`, `[Knight2_orange]` and `[Knight4_red]`).
+  * **Space**, anywhere in the first menu: two teams, player 1 (arrows + Enter) with controller 1 against player 2
+    (W A S D + Tab) with controller 2 (with 3 players: 2 against 1), each team in its keyboard player's colour;
+    teammates cannot hurt each other. With 1 or 2 players Space starts the normal practice (the Black Knight, or
+    the two players against each other).
 * **Practice against monsters** (D14, D15): in the first menu press a number. The monsters come as in their lair,
   several at a time. With 2-4 players chosen all the knights fight on the same side (3-4 need one or two game
   controllers, as above): they cannot hurt each other, every monster goes for the knight nearest to it, and the
@@ -142,11 +144,12 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Your own saves:** F11+S saves and F11+L loads, using the slot chosen under *Capture → Select save slot*
   (slot 1 by default; there are 100).
 * **Automatic saves:** the game pauses for about a second and saves
-  * at the start of every human player's turn on the map: slots **91–95**, shown as `PRETURN`
-  * at the start of every fight: slots **96–100**, shown as `PREFIGHT`.
+  * at the start of every human player's turn on the map: slots **91–94**, shown as `TURN1`–`TURN4`
+  * at the start of every fight: slots **96–100**, shown as `FIGHT1`–`FIGHT5`.
 
-  Computer knights' turns are not saved. Both ranges rotate; one turn or fight often fills two slots with the same
-  moment, so each range holds roughly the last two or three.
+  Computer knights' turns are not saved. Each kind goes round its slots in turn and takes one slot each time, so
+  slots 91–94 hold the last four turns and 96–100 the last five fights (`SAVEHOOK.SLT` remembers which is next).
+  Slot 95 is not used (DOSBox-X allows nine names).
 * **Loading an automatic save:** *Capture → Select save slot* → go to the last page (slots 91–100) → pick the newest
   slot by its time → *Capture → Load state* (or F11+L). Before saving by hand again, select slot 1 (or another slot
   below 91), or the next automatic save will overwrite yours.
@@ -167,14 +170,15 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 
 `custom_rules.ini` changes the game without touching the fixes. It comes with the normal game's values: edit it, run `Custom_rules_on.bat` and restart DOSBox-X. `Custom_rules_off.bat` goes back to the default rules, and `Custom_rules_reset.bat` restores `custom_rules.ini` to the default state from `custom_rules-default.ini` (leave that file as it is). Every setting lists its allowed values; values above the normal game's limits are allowed, and the bounds only keep the game from breaking. `Custom_rules_on.bat` checks every value before it changes anything. Keep a copy of your `custom_rules.ini` when you install a newer Moonstone Rebuilt over this folder. The main settings:
 
-* **Per knight** (`[Knight1]`–`[Knight4]` in the order of the selection screen: Sir Godber, Sir Richard, Sir Jeffrey and Sir Edward; `[Black]` for every knight the computer plays): the home village (where the knight starts, respawns and is healed; two knights can share one), strength, constitution, endurance, life points, extra hit points, gold, experience, daggers, weapon, armour, how many of each magic item, keys and Moonstones, and its colour: blue, orange, green, red, black or any colour as `#RGB` (e.g. `#80F`). The colour is only how the knight is drawn, so any combination works; on the map a `#RGB` knight shows as the nearest of the five named colours, and the selection screen keeps the original portraits.
+* **Per knight** (`[Knight1_blue]`–`[Knight4_red]` in the order of the selection screen: Sir Godber, Sir Richard, Sir Jeffrey and Sir Edward; `[Black]` for every knight the computer plays): the home village (where the knight starts, respawns and is healed; two knights can share one), strength, constitution, endurance, life points, extra hit points, gold, experience, daggers, weapon, armour, how many of each magic item, keys and Moonstones, and its colour: blue, orange, green, red, black or any colour as `#RGB` (e.g. `#80F`). The colour is only how the knight is drawn, so any combination works; on the map a `#RGB` knight shows as the nearest of the five named colours, and the selection screen keeps the original portraits.
 * **Death mode per knight:** `permadeath` (the original), `reincarnation` (starts again from its starting values at its start), `respawn` (back at its start with full life points, keeps the rest) or `invulnerable` (never loses the last life point; a winner still takes items).
 * **Saves:** `save_mode` = `autosave_and_manual` (as before), `autosave_only`, `manual_only` or `none`. DOSBox-X still takes F11+S, but with `autosave_only` or `none` loading such a save stops the game at the next turn, fight or roll, with LOADAUTO or NOSAVES in the title bar. `prevent_savescumming = on`: loading a save does not change how the tavern dice, Math, Mythral and the scroll curses turn out.
 * **Computer knights:** experience every moon phase, the free visit to Math the Wizard, experience for a duel win.
 * **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
 * **Treasure, Math and Mythral:** the dragon's hoard (`grows` with its victories, `reset` each game, or `keep` as the original), what the lairs hold (gold, magic items or both), the gold amount, the chance of each magic item (lairs, Math, the dragon's hoard and the High Temple's stock), what Math the Wizard gives and his frog days and irritation, and Mythral's chance of success for each size of donation. Tables the game could roll on forever (for example only one kind of magic item) are refused.
 * **Practice:** what each practice key 1-0 starts (monster type or the Black Knight, the lair's ground, monsters to defeat, how many at once), whether knights' blows and daggers hurt other knights, and whether monsters go for the nearest knight or the first.
-* **Monsters:** the hit points and damage of every monster, the ratmen by moon phase, the Guardian and the dragon, and the least damage the dragon does against Talismans of the Wyrm.
+* **Speedrun mode** (`speedrun_mode = on`): every other setting in the file is ignored. The game runs with the default rules and all the fixes, except where runs rely on the game's own behaviour: every hit on the dragon and the Guardian counts, the dragon's target can be rerolled from the item screen, the extra-turn glitch, the healing potion after the Guardian, the Moonstone damage bonus as in the original, and the dragon's hoard kept from game to game. Records still need the unmodified game.
+* **Monsters:** the hit recovery of the dragon and the Guardian (fix K6: after a hit, further hits do not count for this long), the hit points and damage of every monster, the ratmen by moon phase, the Guardian and the dragon, and the least damage the dragon does against Talismans of the Wyrm.
 * **Prices:** the weapon and armour shops (the computer knights pay the same), the healer and every High Temple item. The prices on screen follow; selling at the temple pays half, as in the game.
 * **Selling at the merchant** (`merchant_selling = on`): click one of your daggers, your weapon or your armour on the merchant screen to sell it for half its price, rounded down. You get the long sword or padded armour back for free; armour takes its hit points with it, and chain mail and battle armour their extra movement. Magic items, the Sword of Sharpness included, are not bought there.
 
@@ -201,7 +205,6 @@ The original difficulty and rules are kept.
 * Some fixes are worked out from the game code and not yet confirmed in play; [FIXES.md](FIXES.md) says which.
 * The Amiga music starts with the intro program, so it is not in step with the DOS intro's pictures, and DOSBox-X's
   volume setting does not affect it.
-* An automatic save often takes two slots (DOSBox-X's save pauses the game's wait).
 * The mouse is turned off: the game does not use it, and a captured mouse disturbed the intro's keyboard handling.
 
 ## Troubleshooting

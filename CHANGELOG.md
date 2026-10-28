@@ -26,6 +26,9 @@
   no longer hit knights, and with 2-4 knights their strength and hit points are added up for the monster count.
 * D15: co-op practice: with 2-4 players the practice keys put all the knights on the same side against the
   monsters; every monster goes for its nearest knight.
+* Automatic saves take one slot each: turns go round slots 91-94 (`TURN1`-`TURN4`), fights round 96-100
+  (`FIGHT1`-`FIGHT5`), one slot per name; before, one save often filled two slots of its range. `SAVEHOOK.SLT`
+  keeps the next number, also when an older save is loaded.
 * Setup: Python is chosen by really starting it (the `py` launcher first, then `python`; 3.8 or newer), in
   `Setup.bat`, `Custom_rules_on.bat` and `AmigaMusic_Setup.bat` (`tools\find_python.bat`). `unicorn` is installed into
   `_python` here, which the setup sees (before, `pip install --user` put it where `python -I` does not look).
@@ -40,11 +43,27 @@
   walk-in toggled their pause); every monster now really goes for its nearest knight (the ratmen and others
   followed knight 1 only); a knight that fell no longer stands up again when the others win; Esc ends a practice
   fight.
-* D14: 3-4 player practice: Enter = everyone against everyone, Space = teams (same colour per team). 1 player:
+* D14: 3-4 player practice: Enter = everyone against everyone, Space = teams (same colour per team; Space works
+  anywhere in the first menu, and with 1-2 players starts the normal practice). 1 player:
   the keys 1-9 start a practice against the monsters of a lair, 0 the Black Knight.
 * K18: the dragon's hoard no longer grows with every new game or practice in the same session; instead it gets one
   magic item at a 50 % chance and 0-9 gold for every knight the dragon beats. Custom rules: `dragon_hoard` (grows, reset, keep).
-* K19: the Moonstones' names on the item screen match their moon phases (half and new moon were swapped).
+* K19: the Moonstones' names on the item screen match the phase Stonehenge accepts them in (one half-moon stone
+  was called the new-moon stone). An earlier version of this fix followed the damage bonus instead and named two
+  stones wrongly.
+* K24: a Moonstone doubles the damage in its own phase (the new-moon stone and one half-moon stone did it in each
+  other's phase).
+* K20: the moon pictures on the map go full, three-quarters, half, crescent, new (half and three-quarters were
+  swapped); the days do not change.
+* K6: the dragon and the Guardian can no longer be stun-locked: after a hit, further hits do not count for a short
+  time (`dragon_hit_recovery`, `guardian_hit_recovery` in `custom_rules.ini`).
+* K21: leaving the item screen no longer gives the dragon a new random target.
+* K22: the extra-turn glitch (Enter as a fight or visit ends started another one the same day) is gone.
+* K23: a knight with no lives left after losing to the Guardian no longer gets five lives from a healing potion.
+* Speedrun mode (`speedrun_mode = on` in `custom_rules.ini`): ignores every other setting and keeps the game's own
+  behaviour that runs rely on (no hit recovery, the dragon's target, the extra turn, the potion, the Moonstone damage
+  bonus, the dragon's hoard kept from game to game); all other fixes stay on.
+* D15: in co-op a ratman takes the damage of the knight that hit it.
 * D12 (prototype): Practice with 3 or 4 players and one or two game controllers is a team fight (keyboard player 1
   + controller 1 against keyboard player 2 + controller 2); without the controllers, the normal practice.
 * D13: in that practice every knight has its own colour (the controller knights use new palette entries 32-37).

@@ -95,14 +95,69 @@ PATCHES = {
                   ((0x1000, 0x0d23), b'\xbe\x26\x6e', b'\xcd\x63\x90')],
     },
     'K19': {
-        'title': 'Moonstone names on the item screen (B10 in the user\'s research list; confirmed in the emulator). The '
-                 'names follow the phase in which each Moonstone doubles the damage (1000:2DB9): bits 1 and 8 at half '
-                 'moon, 2 at full moon, 4 at new moon. The item screen (1000:C6F6) named bits 1 and 8 "New moon '
-                 'Moonstone" and bit 4 "Half Moonstone"; their text numbers swap (1Ch new moon, 20h half; 1Eh full is '
-                 'right)',
-        'bytes': [((0x1000, 0xc709), b'\x1c', b'\x20'),     # bit 1: half
-                  ((0x1000, 0xc747), b'\x20', b'\x1c'),     # bit 4: new moon
-                  ((0x1000, 0xc766), b'\x1c', b'\x20')],    # bit 8: half
+        'title': 'Moonstone names on the item screen (B10 in the user\'s research list, a speedrun report: "names a '
+                 'half-moon new-moon"). The names follow the druids\' check, which ends the game (1000:1053): bit 1 '
+                 'at new moon (31h), 2 at full moon (2Dh), 4 and 8 at half moon (2Eh); the icons agree (bits 4 and 8 '
+                 'share a picture). The item screen (1000:C6F6) named bit 8 "New moon Moonstone"; its text number '
+                 'becomes 20h, "Half Moonstone". (The first version followed the damage check 1000:2DB9 instead, '
+                 'which swaps bits 1 and 4 against the druids, and renamed bits 1 and 4 too)',
+        'bytes': [((0x1000, 0xc766), b'\x1c', b'\x20')],    # bit 8: half
+    },
+    'K6': {
+        'title': 'Hit recovery for the dragon and the Guardian (F5; the speedrun guide\'s dragon combo and Guardian '
+                 'stun-lock). Their update checks first whether they were hit (1000:3861 cmp word [di+0Eh],0; '
+                 '1000:4F6A cmp word [si+0Eh],0), and every hit restarts the hit reaction, so quick blows kept them '
+                 'from fighting back. Both become int 63h: a hit within the hit recovery time (custom rules '
+                 'dragon_hit_recovery, guardian_hit_recovery; default 0.8 s; 0 = as the game) of the last counted one '
+                 'is dropped. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x3861), b'\x83\x7d\x0e\x00', b'\xcd\x63\x90\x90'),
+                  ((0x1000, 0x4f6a), b'\x83\x7c\x0e\x00', b'\xcd\x63\x90\x90')],
+    },
+    'K21': {
+        'title': 'The dragon keeps its target (speedrun guide: "you can reroll the target of the dragon by entering '
+                 'your item menu then exiting"). The map set-up 1000:A6E1 runs again whenever the map is drawn anew, '
+                 'and calls the dragon\'s set-up 1000:A78C, which rolls a random target with lives each time '
+                 '(A80D-A82E, target in dragon +46h). Its sub cx,cx at A80D becomes int 63h: called from the map set-up '
+                 '(return A72Ch), the dragon keeps a target that still has lives. The Scroll of the Wyrm (1000:ADEE) '
+                 'still rolls a new one. Off in speedrun mode. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xa80d), b'\x2b\xc9', b'\xcd\x63')],
+    },
+    'K22': {
+        'title': 'No extra action at the end of a turn (speedrun guide: "the extra turn glitch", spamming Enter as the '
+                 'last action of a turn ends, e.g. to fight a lair or a Black Knight twice in one day). After a '
+                 'place\'s action (1000:B000: a fight, the city, a lair) the map loop jumped back to its start '
+                 '(A5B8 jmp A4B0) and read the input again before the end-of-turn check (A5FB), so a pressed Enter '
+                 'started another action. The jmp becomes int 63h: when the action used up the turn ([CC98h] >= '
+                 '[CCACh]), the loop goes on to its dragon and end-of-turn checks (A5BB). Off in speedrun mode. Needs '
+                 'SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xa5b8), b'\xe9\xf5\xfe', b'\xcd\x63\x90')],
+    },
+    'K23': {
+        'title': 'No lives back from a potion after the Guardian (speedrun guide: "when you lose life to the guardian '
+                 'you can restore your life back to 5"). A lost Guardian fight takes one life at the end of the fight '
+                 'and two more in the Valley (1000:0FFF, sub byte [si+31h],2, no floor), so lives can go below 0, and '
+                 'a lost fight restores full hit points. The healing potion at full hit points (1000:CCB6) adds a '
+                 'life and turns 6 and above into 5 with an unsigned compare: -2 became -1 = FFh, and then 5. The '
+                 'potion\'s life code (CCB6-CCC2) becomes int 63h: a knight without lives (0 or below) gets none, the '
+                 'cap is max_lives (custom rules; 5). Off in speedrun mode (then as the game, cap 5). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xccb6), bytes.fromhex('fe4431807c31067204c6443105'), b'\xcd\x63' + b'\x90' * 11)],
+    },
+    'K24': {
+        'title': 'Moonstone damage bonus at the right phase. In its phase a Moonstone doubles the knight\'s damage '
+                 '(1000:2DAB), but the check took bit 1 at half moon (2Eh) and bit 4 at new moon (31h), the other way '
+                 'round from Stonehenge (1000:1053), the names and the icons (K19): bit 1 is the new-moon stone, 4 a '
+                 'half-moon one. The two phase numbers swap. Speedrun mode puts them back',
+        'bytes': [((0x1000, 0x2dc1), b'\x2e', b'\x31'),     # bit 1: new moon
+                  ((0x1000, 0x2de2), b'\x31', b'\x2e')],    # bit 4: half moon
+    },
+    'K20': {
+        'title': 'Moon pictures in the right order (speedrun guide: "the half-moon is actually bigger than the 3/4"). '
+                 'The phase is also the picture (KI.CEL frames 2Dh-31h: full, three-quarters, half, crescent, new), '
+                 'and the cycle DS:05A9 goes 2Dh, 2Fh, 2Eh, 30h, 31h: the map showed full, half, three-quarters, '
+                 'crescent, new. The half-moon Moonstones work at 2Eh. The draw (1000:9053, mov ax,[8989h]) becomes '
+                 'int 63h, which swaps the pictures of 2Eh and 2Fh: the phases and their days stay, the half moon '
+                 'is drawn when the half-moon stones work. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x9053), b'\xa1\x89\x89', b'\xcd\x63\x90')],
     },
     'D6': {
         'title': 'Save state before every fight (Moonstone Rebuilt only). Every fight (lairs, dragon, Guardian, knights) '
@@ -198,7 +253,11 @@ PATCHES = {
                  'mov ax,6F08h, also int 63h); in co-op only knight 1\'s walk-in does, so an even number of knights no '
                  'longer leaves the monsters frozen. Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x025c), b'\xb8\x08\x6f', b'\xcd\x63\x90'),
-                  ((0x1000, 0x98fd), b'\x8b\x5d\x1a', b'\xcd\x63\x90')],
+                  ((0x1000, 0x98fd), b'\x8b\x5d\x1a', b'\xcd\x63\x90'),
+                  # a ratman hit by a knight took the damage of the knight in [0978h] (mov si,[0978h]), not of the
+                  # knight that hit it ([di+0Eh]): the same knight alone, but in co-op [0978h] is the ratman's target
+                  ((0x1000, 0x34a7), b'\x8b\x36\x78\x09', b'\x8b\x75\x0e\x90'),
+                  ((0x1000, 0x34c7), b'\x8b\x36\x78\x09', b'\x8b\x75\x0e\x90')],
     },
 }
 
