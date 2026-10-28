@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (in progress)
+## 0.5.0 – Dragon, Moonstone, team fight fixes
 
 * K6: the dragon and the Guardian can no longer be stun-locked: after a hit, further hits do not count for a short
   time (`dragon_hit_recovery`, `guardian_hit_recovery` in `custom_rules.ini`).
