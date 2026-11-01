@@ -240,6 +240,102 @@ PATCHES = {
         'bytes': [((0x1000, 0x1299), b'\x89\x1e\xe2\x77', b'\xcd\x63\x90\x90'),
                   ((0x1000, 0x0142), b'\xe8\xb5\x1e', b'\xcd\x63\x90')],
     },
+    'K25': {
+        'title': 'Instant kills in co-op (found in the user\'s play test, 31 Oct 2026): the monsters\' instant kills '
+                 '(troll, mudman, Balok, dragon...) call 1000:0AB2, which sets the HP of [8979h] to -1, the knight '
+                 'of a one-to-one fight. In co-op that is the first knight standing: it fell without a blow while '
+                 'the knight hit played its death, kept its HP and stood up again, and the monster went on '
+                 'attacking it. mov si,[8979h] becomes int 63h: in co-op the knight the monster fights ([0978h]). '
+                 'Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x0ab3), bytes.fromhex('8b367989'), bytes.fromhex('cd639090')),
+                  # the knight's handler never looked at its HP: a knight killed so got up again; in co-op a knight
+                  # down gets the death fall once and then stays (1000:3ED0)
+                  ((0x1000, 0x3ed0), bytes.fromhex('c70634780000'), bytes.fromhex('cd6390909090')),
+                  # the troll looked only at knight 1's HP and went idle once it was down (1000:55F9)
+                  ((0x1000, 0x55f9), bytes.fromhex('be9e6c837c3800'), bytes.fromhex('cd639090909090')),
+                  # the mudman held one knight and pulled another under or let another go: the knight it takes
+                  # hold of stays its knight (1000:52FE, 559C, 54DB)
+                  ((0x1000, 0x52fe), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x559c), bytes.fromhex('8b440c'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x54db), bytes.fromhex('8bc7'), bytes.fromhex('cd63'))],
+    },
+    'K28': {
+        'title': 'The Balok in co-op (found in the user\'s play test, 1 Nov 2026): its hold pauses the knight it '
+                 'touched (1000:37A7) but lets go of the knight it fights then ([0978h], 37FC), so with 2-4 knights '
+                 'the knight held could stay frozen and the fight stuck. mov ax,[0978h] at 1000:35AF and mov ax,di '
+                 'at 37A7 become int 63h: the knight it takes hold of stays its knight while the hold lasts, and '
+                 'its frames of the hold draw that knight in the knight\'s colours. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x35af), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x37a7), bytes.fromhex('8bc7'), bytes.fromhex('cd63')),
+                  # the spear trogg's frames of a fallen knight on its spear (1000:2F90)
+                  ((0x1000, 0x2f90), bytes.fromhex('8bc6'), bytes.fromhex('cd63'))],
+    },
+    'D20': {
+        'title': 'New deaths (user request 1 Nov 2026): a knight hit again in the slumped pose of its fall (script '
+                 '130E) dies by the blow: split in two by an up strike, a dagger in the forehead or the back of the '
+                 'head, a long thrust (down and forward) or a back strike through the helmet, lifted on the sword by '
+                 'an up and forward strike. mov di,[77E8h] at 1000:2D5E becomes int 63h, where SAVEHOOK.COM picks '
+                 'the death. The pieces are added to KN3.OB and the scripts written into DS:F480 by '
+                 'death_frames.py; the knights\' bank area (1000:86A7) grows by 100h paragraphs to hold them. Needs '
+                 'SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x2d5e), bytes.fromhex('8b3ee877'), bytes.fromhex('cd639090')),
+                  # a dagger also hits a knight slumped below its flight (1000:3E59)
+                  ((0x1000, 0x3e59), bytes.fromhex('837c0c00'), bytes.fromhex('cd639090')),
+                  # the striker goes on with these blows on a fallen knight too, as with the sweep (1000:4159)
+                  ((0x1000, 0x4159), bytes.fromhex('837d2804'), bytes.fromhex('cd639090')),
+                  # the spear trogg's blow on a slumped knight: the thrust, not the knight on its spear (1000:4357)
+                  ((0x1000, 0x4357), bytes.fromhex('8b7d0e'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x86a8), bytes.fromhex('c019'), bytes.fromhex('c01a')),
+                  # with EMS the files are cached at fixed places (DS:828A: page group, offset, size): KN3.OB and
+                  # HE3.OB grew into the next files (KN4.OB, KN5.OB; ki.cel), whose copies then overwrote the new
+                  # pieces. Those three move on by 800h (the groups are 8000h; they end by 7130h at most)
+                  (('DS', 0x83a6), bytes.fromhex('992b'), bytes.fromhex('9933')),
+                  (('DS', 0x83be), bytes.fromhex('692b'), bytes.fromhex('6933')),
+                  (('DS', 0x83c4), bytes.fromhex('a931'), bytes.fromhex('a939'))],
+    },
+    'K26': {
+        'title': 'The troll\'s depth (found in the user\'s play test, 31 Oct 2026): the troll counted as level with '
+                 'its knight within 5 in depth either way, but its swing hits only when its depth is 0-4 more than the '
+                 'knight\'s. 1-5 nearer, it stood and swung at the air while the knight stood still, e.g. a knight '
+                 'at the screen\'s edge with the troll off the screen. call 3C97h in its step (1000:570E) becomes '
+                 'int 63h: level means 0-4, else it steps in depth. And its swing hits a standing knight only from '
+                 'about 100 on, but it swung from 91 on: mov bp,[si+54h] (1000:573B, steps back within 90) becomes '
+                 'int 63h, it steps back within 104. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x570e), bytes.fromhex('e886e5'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x573b), bytes.fromhex('8b6c54'), bytes.fromhex('cd6390'))],
+    },
+    'K27': {
+        'title': 'The dragon\'s far fire (found in the user\'s play test, 1 Nov 2026): the dragon keeps to x 30-100, '
+                 'and it took up its far fire only for a knight 140 or more away (1000:388C, cmp ax,8Ch). Its near fire '
+                 'does not reach 96, so a knight 96-139 away was never hurt while the dragon breathed fire at it. '
+                 'The far fire now starts at 96',
+        'bytes': [((0x1000, 0x388c), bytes.fromhex('3d8c00'), bytes.fromhex('3d6000'))],
+    },
+    'D19': {
+        'title': 'Black Knights against 2-4 knights (Moonstone Rebuilt; user request 1 Nov 2026): practice\'s Black '
+                 'Knight with 2-4 knights, and the B key with any number, is a lair fight whose monsters are computer '
+                 'knights, as many as the knights, each a copy of one (the B key\'s: black, strength, constitution and '
+                 'endurance 5, the Sword of Sharpness and battle armour). Their fields (1000:2824, call bx), no more '
+                 'after one falls (0243), and they do not hurt each other (A14C) are int 63h. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x2824), bytes.fromhex('ffd3'), bytes.fromhex('cd63')),
+                  ((0x1000, 0x0243), bytes.fromhex('a16c09'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xa14c), bytes.fromhex('0bc0'), bytes.fromhex('cd63')),
+                  # a dagger keeps its thrower (1000:3E3B, 3E40)
+                  ((0x1000, 0x3e3b), bytes.fromhex('b21a'), bytes.fromhex('cd63')),
+                  ((0x1000, 0x3e40), bytes.fromhex('c7451a2a77'), bytes.fromhex('cd63909090')),
+                  # the B key's knights' daggers do double (1000:44C2)
+                  ((0x1000, 0x44c2), bytes.fromhex('294538'), bytes.fromhex('cd6390'))],
+    },
+    'D17': {
+        'title': 'CPU speed for fights (Moonstone Rebuilt; user request after a play test: fights with 2-4 knights '
+                 'are slow because the game draws every sprite itself and runs out of DOSBox-X cycles). At the start '
+                 'of every fight (the fight save, 1000:0307, D6) SAVEHOOK.COM runs DOSBox-X\'s own CONFIG -set '
+                 'cycles=... with default_cycles + additional_cycles_per_knight for every knight past the first (custom '
+                 'rules; default 4000 + 1000: 1-4 knights 4000-7000), and at its end (1000:0ABE, mov word [0942h],0, '
+                 'becomes int 63h) back to default_cycles, the conf\'s value. 0 per knight changes nothing; speedrun '
+                 'mode too. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x0abe), bytes.fromhex('c70642090000'), bytes.fromhex('cd6390909090'))],
+    },
     'D15': {
         'title': 'Co-op practice (Moonstone Rebuilt; user request; with D12-D14). With 2-4 players chosen, the practice '
                  'keys 1-9 put all the knights on the same side against that lair\'s monsters (with 3-4 players as many '

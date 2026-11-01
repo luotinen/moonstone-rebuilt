@@ -6,7 +6,7 @@ Only files from the user's installation are used; nothing of the original game i
 2. Copies the game files here: DISKA, DISKB, DISKC, SAMPLES, MS.EXE.
 3. Builds the original programs, only unpacked (the packed ones fail in DOSBox-X's lowest 64 KB, and LOADFIX would
    leave too little memory), and keeps the original sound files, in _fixes/original; builds the fixed ones in
-   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K6 K11 K16 K17 K18 K19 K20 K21 K22 K23 K24 D6 D7 D9 D11 D12 D13 D14 D15, INTR.EXE: K9, sound files: K10).
+   _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K6 K11 K16 K17 K18 K19 K20 K21 K22 K23 K24 K25 K26 K27 K28 D6 D7 D9 D11 D12 D13 D14 D15 D17 D19 D20, INTR.EXE: K9, sound files: K10).
 4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf: on the first setup the best music available (MT-32 if
    the ROMs are in mt32-roms, else General MIDI if soundfonts/default.sf2 exists, else AdLib); later runs keep the choice.
@@ -27,7 +27,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -110,7 +110,10 @@ def main(arg=None):
     write(os.path.join(original, 'MAIN.EXE'), make_main_exe(gog))
     write(os.path.join(original, 'INTR.EXE'), make_intr_exe(gog))
     say('  building MAIN.EXE (unpacking takes a moment) ...')
-    write(os.path.join(fixed, 'MAIN.EXE'), make_main_exe(gog, MAIN_FIXES))
+    from death_frames import install as install_deaths
+    # D20: the new deaths' pieces into the copied KN3.OB (the original MAIN.EXE never draws them), their scripts
+    # into the fixed MAIN.EXE
+    write(os.path.join(fixed, 'MAIN.EXE'), install_deaths(HERE, make_main_exe(gog, MAIN_FIXES)))
     write(os.path.join(fixed, 'INTR.EXE'), make_intr_exe(gog, INTR_FIXES))
     for name in samples:
         write(os.path.join(fixed, name), fix_rate(open(os.path.join(gog, name), 'rb').read(), os.path.basename(name)))

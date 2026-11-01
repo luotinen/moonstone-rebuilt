@@ -44,7 +44,7 @@ from rules import (HOOKS, FATE_HOOKS, FATE_STREAMS, SECTIONS, SECTION_SIZE, MODE
                    G_SAVE_MODE, G_FATE, G_SELLING, G_MAX_GOLD, G_SELL, G_HOARD, HOARD_MODES, MAX_HP, hook_bytes,
                    G_PRACTICE, G_PRACTICE_FLAGS, G_TARGET_MARGIN, COOP_KNIGHT_HITS, TEAM_KNIGHT_HITS,
                    COOP_DAGGER_HITS, TARGET_FIRST, G_HIT_REST, G_EXPLOIT_FIXES, KEEP_DRAGON_TARGET,
-                   NO_EXTRA_TURN, POTION_LIFE,
+                   NO_EXTRA_TURN, POTION_LIFE, G_CYCLES, G_DEATHS, DEATHS,
                    table as rules_default_table)
 
 FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x63   # MAIN.EXE uses none of these
@@ -81,7 +81,84 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   # K22: no extra action at the end of a turn
                   (0xa5ba, 'action_done'),
                   # K23: the healing potion's life
-                  (0xccb8, 'potion_life')]
+                  (0xccb8, 'potion_life'),
+                  # D17: the fight's end, where the map's CPU speed comes back
+                  (0x0ac0, 'fight_end'),
+                  # K25: the instant kill's knight
+                  (0x0ab5, 'instant_kill'),
+                  # K25: a knight down in co-op stays down; the troll's knight
+                  (0x3ed2, 'knight_down'), (0x55fb, 'troll_target'),
+                  # K26: the troll's depth, where its swing hits
+                  (0x5710, 'troll_depth'), (0x573d, 'troll_back'),
+                  # K25: the mudman's knight while it holds one
+                  (0x5300, 'mud_target'), (0x559e, 'mud_grab'), (0x54dd, 'mud_pull'),
+                  # K28: the Balok's knight while it shakes one
+                  (0x35b1, 'balok_target'), (0x37a9, 'balok_grab'),
+                  # K28: the trogg that spears a fallen knight
+                  (0x2f92, 'trogg_impale'),
+                  # D20: a knight hit again while it falls
+                  (0x2d60, 'death'), (0x3e5b, 'dagger_near'), (0x415b, 'strike_on'), (0x4359, 'spear_on'),
+                  # D19: the Black Knights of a practice with 2-4 knights (or the B key)
+                  (0x2826, 'spawn_init'), (0x0245, 'top_up'), (0xa14e, 'hit_pair'),
+                  # D19: who threw a dagger
+                  (0x3e3d, 'dagger_thrower'), (0x3e42, 'dagger_owner'), (0x44c4, 'dagger_damage')]
+# D19: Black Knights against 2-4 knights: the fight is a lair fight (its set-up, counts and end) whose monsters are
+# computer knights (+35h = 8, handler 1000:4B85) in the monster slots, as many as the knights, each a copy of one
+# the fight borrows the trolls' own set-up (1000:2277; not a lair: the lair records change with every game) and its
+# spawns (22DE -> 27FA), which the Black Knights replace
+BK_CHOICE, B_SCAN, BK_SET_UP = 13, 0x30, 0x2277
+KNOCKBACK = 0x7818                  # the blows' knockback table (1000:43ED, 56A6); [782Eh] = 0 in a new session
+COMPUTER_TYPE, KNIGHT_BANK, STANDING = 8, 0x8933, 0x15e4
+BK_ITEMS = 0x7666                   # their item table: monster slot 19 + 20h (the fight's set-up clears the slots)
+BK_X, BK_FACE = (-40, 360, -40, 360), (1, 3, 1, 3)   # walk in from both sides (the registration, 2998, picks the depth)
+BLACK_SITES = (0x4878, 0x487d, 0x4882)               # fight palette words of +20h = 4 (computer), for entries 41-43
+STRONG_BLACK = (0x0222, 0x0111, 0x0000)              # the B key's knights: 8/4/0 of 63 (40/20/0 looked grey)
+B_DAGGERS = 10                                       # the B key's knights' daggers (each throw gives one back)
+BK_HP = 30                                           # a Black Knight's HP when its knight's record has no max HP
+# the knights' hit reactions by the striker's attack (+28h), one table for all knights (1000:17C1): the trolls'
+# set-up (2280) makes the up and down thrusts' (+0Eh, +10h) the club's throw through the air (31D0)
+REACTIONS = 0x69c2
+REACTION_DEFAULTS = ((0x0e, 0x0c90), (0x10, 0x1202))
+BALOK_TYPE = 0x18                                    # K28: the Balok (+35h; handler 1000:35A5)
+SPEAR_TROGG = 0x10                                   # K28: the trogg with the spear (+35h; handler 1000:2DEB)
+# D20: new deaths for a knight hit again while it falls; their scripts (death_frames.py) are in MAIN.EXE's data
+# segment from D20_BASE, one per D20_SLOT bytes: the bottom of the stack segment (SS = DS + F46h, SP 1000h), which
+# no save state has ever touched
+D20_BASE, D20_SLOT = 0xf480, 0x110
+D20_NAMES = ('split', 'dagger_front', 'dagger_back', 'thrust_front', 'thrust_back', 'back',
+             'dagger_waist_front', 'dagger_waist_back',   # dagger_front/back: at the head's height
+             'up_forward')   # reserved, empty: a death for the up and forward strike (a kick?), TODO
+D20_SIZE = {name: 0x150 if name == 'split' else D20_SLOT for name in D20_NAMES}   # the split is the longest
+D20 = {name: D20_BASE + sum(D20_SIZE[n] for n in D20_NAMES[:k]) for k, name in enumerate(D20_NAMES)}
+D20_END = D20_BASE + sum(D20_SIZE.values())          # FE50h
+# the fall's slumped pose (script 1000:130E; its frame repeats 20 times, the script then goes on to the lying 1328,
+# whose first frame ends at 134Ch)
+SLUMP, SLUMP_END = 0x130e, 0x134c
+SLUMP_FRAMES = 0x1d                                  # the slump's repeat (DS:1313; the game's 20), about 1 s longer
+# a dagger hits a slumped knight up to 14 above it, and from 8 behind it to 16 nearer the player in depth
+DAGGER_REACH, DAGGER_BEHIND, DAGGER_NEARER = 14, 8, 16
+HE_BANK = 0x8949                                     # a duel's second knight is drawn from it (HE*.OB, 1000:202C)
+HEAD_ZONE = 12                                       # a dagger whose top is less than this below the knight's is at its head
+# attackers (+35h): the trogg with the axe (the one whose blow takes a fallen knight's head off, 1000:4308), the
+# ratman; a trogg's swing is +28h 4, its blow from above 10h (1000:2EFD, 2F17)
+DAGGER_TYPE, AXE_TROGG, RATMAN = 0x1a, 0x0c, 0x12
+UP, DOWN_FORWARD, BACK = 0x10, 0x02, 0x0a            # a knight's strike (+28h; tables DS:0C32, 0C48)
+MUDMAN, MUD_PULLING = 0x02, 0x18                     # the mudman (+35h); +48h bits of one rising under a knight (54C7)
+MUD_LET_GO = 0x554e                                  # K25: the mudman's hold ends in a kill (call 1000:0AB2 at 554B)
+DAGGER_OWNER = 0x5c                                  # D19: a dagger's thrower (an object field daggers do not use)
+BLACK_SHIFT = 35                                     # KN*.OB pixels 6-8 -> 41-43
+STRONG = 5                                           # the B key's knights: strength, constitution, endurance
+STRONG_HP = 10 * STRONG + 30 + 10                    # 1000:028D: battle armour, no rings
+STRONG_MOVE = 2 * STRONG + 4 + 2                     # 1000:02E7: battle armour
+SWORD_OF_SHARPNESS, BATTLE_ARMOUR = 0x19, 0x1e
+TEAM_SHOW = 18                      # D14: ticks (18.2 a second) a team practice shows the knights' own colours first
+TROLL_TYPE = 0x20                   # K26: the troll's +35h
+TROLL_BACK = 104                    # K26: the troll steps back from its knight within this (the game: 90)
+CMD_PATH = b'Z:\\COMMAND.COM\0'       # D17: DOSBox-X's shell runs its CONFIG command (in Z:\\SYSTEM, on the PATH)
+def cycles_tail(cycles):
+    """D17: the command line that sets DOSBox-X's cycles (length byte, text, CR); empty for 0 (no change)."""
+    text = f' /C CONFIG -set cycles={cycles} >NUL'.encode() if cycles else b''
+    return bytes([len(text)]) + text + b'\r'
 MAP_LOOP, AFTER_ACTION = 0xa4b0, 0xa5bb             # K22: the map loop's start; its dragon and end-of-turn checks
 MAP_REDRAW_RET, TARGET_KEPT = 0xa72c, 0xa831       # K21: the map set-up's call of 1000:A78C returns here; A78C's ret
 MOON_HALF, MOON_THREE_QUARTER = 0x2e, 0x2f          # K20: phase values (= KI.CEL frames) whose pictures swap
@@ -94,7 +171,7 @@ MENU_OPTION, PRACTICE_OPTION, PLAYERS = 0x0704, 2, 0x091e
 # D14: practice keys with 1 player: (scan code, choice). Choices 1-9 are lairs (PRACTICE_LAIRS, numbered as the
 # table DS:0A6A, 0 = the first forest lair), 0 the Black Knight, and two more fights by their own set-up (SET_UPS)
 PRACTICE_KEYS = [(0x02, 1), (0x03, 2), (0x04, 3), (0x05, 4), (0x06, 5), (0x07, 6), (0x08, 7), (0x09, 8), (0x0a, 9),
-                 (0x0b, 12), (0x20, 10), (0x22, 11)]
+                 (0x0b, 12), (0x20, 10), (0x22, 11), (B_SCAN, BK_CHOICE)]
 KEY_0_CHOICE = 12                                    # the 0 key: the tenth practice entry (custom rules can set it)
 # key 1 ratmen x10, 2 ratmen x14, 3 wasteland troggs x10, 4 axe troggs x10, 5 war beasts x9, 6 spear troggs x5,
 # 7 Baloks x3, 8 mudmen x5, 9 trolls x6
@@ -117,6 +194,7 @@ RECOLOUR_SHIFT, NEW_ENTRIES = 26, 32
 COOP_RECOLOUR = [(0x6d00, 6, 32), (0x6d62, 6, 26), (0x6dc4, 6, 29)]
 PRACTICE_RECOLOUR = [(rec, first, RECOLOUR_SHIFT) for rec, first, _ in RECOLOUR]
 GREEN_SITES = (0x4864, 0x4869, 0x486e)               # fight palette words of +20h = 2, for entries 38-40
+NEW_WORDS = 12                                       # entries 32-43 (D19: 41-43 the Black Knights)
 BLITTER, BLIT_COUNT = 0x5dd4, 0x637b          # the blitter, and its converter's output count (a word in MAIN's code)
 TEAM1, TEAM2 = (0x6c9e, 0x6d62), (0x6d00, 0x6dc4)   # D12: player 1 + joystick A, player 2 + joystick B
 JOY_A_CONTROL, JOY_B_CONTROL = 5, 6                  # D12: knight +9 for the two joysticks (4 is the computer)
@@ -730,6 +808,7 @@ def rules_code(a):
     # practice_add (1000:203D, after InitPractice registered the second knight; replaces mov word [91Ch],6). Adds
     # the joystick knights one game call at a time: each call returns to the int 63h at 203B, which comes back here
     a.label('rules_practice_add')
+    a.b(0x2e, 0xc7, 0x06); a.word('team_t0'); a.b(0x00, 0x00)   # mov word cs:[team_t0], 0   a new fight
     a.b(0x2e, 0x80, 0x3e); a.word('multi'); a.b(0x00)        # cmp byte cs:[multi], 0
     a.short(0x74, 'pa_done')                                 # je pa_done
     a.b(0x2e, 0xa0); a.word('add_state')                     # mov al, cs:[add_state]
@@ -781,22 +860,72 @@ def rules_code(a):
     a.label('rules_draw')
     a.b(0x2e, 0xc6, 0x06); a.word('recolour'); a.b(0x00)     # mov byte cs:[recolour], 0
     a.b(0x8b, 0x5d, 0x16)                                    # mov bx, [di+16h]   the object
+    # K25: frames flagged 10h are also drawn into the background (1000:9AEC, [80B9h] = 0AC00h), as the last frames
+    # of a death: the body stays there. In co-op a knight down goes off the screen, and its body was left behind in
+    # the knights' first colours (blue): a knight down is not drawn into the background
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'draw_kept')                               # je draw_kept
+    a.b(0x81, 0x7e, 0x02, 0xfd, 0x9a)                        # cmp word [bp+2], 9AFDh   the background's draw
+    a.short(0x75, 'draw_kept')                               # jne draw_kept
+    a.b(0x81, 0xfb, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)      # cmp bx, 6C9Eh
+    a.short(0x72, 'draw_kept')                               # jb draw_kept
+    a.b(0x81, 0xfb, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8)      # cmp bx, 6DC4h
+    a.short(0x76, 'draw_down')                               # jbe draw_down
+    a.near(0xe8, 'black_knight')                             # call black_knight   D19: or a Black Knight
+    a.short(0x75, 'draw_kept')                               # jnz draw_kept
+    a.label('draw_down')
+    a.b(0x83, 0x7f, 0x38, 0x00)                              # cmp word [bx+38h], 0
+    a.short(0x7f, 'draw_kept')                               # jg draw_kept       standing
+    a.near(0xe9, 'rules_done')                               # jmp rules_done     not drawn
+    a.label('draw_kept')
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
     a.short(0x75, 'draw_coop')                               # jne draw_coop
     a.b(0x2e, 0x80, 0x3e); a.word('multi'); a.b(0x00)        # cmp byte cs:[multi], 0
-    a.short(0x74, 'draw_call')                               # je draw_call
+    a.short(0x75, 'draw_multi')                              # jne draw_multi
+    a.near(0xe9, 'draw_call')                                # jmp draw_call
+    a.label('draw_multi')
     a.b(0x2e, 0x80, 0x3e); a.word('teams'); a.b(0x00)        # cmp byte cs:[teams], 0
-    a.short(0x75, 'draw_call')                               # jne draw_call     teams wear their team's colour
+    a.short(0x74, 'draw_own')                                # je draw_own
+    # teams wear their team's colour, after their own for TEAM_SHOW ticks of the fight (so each player sees at
+    # once which knight is theirs); cs:[team_t0] = the fight's first tick, 0 before it
+    a.b(0x50, 0x1e, 0x33, 0xc0, 0x8e, 0xd8)                  # push ax / push ds / xor ax, ax / mov ds, ax
+    a.b(0xa1, 0x6c, 0x04, 0x1f)                              # mov ax, [046Ch] / pop ds    the BIOS tick
+    a.b(0x2e, 0x83, 0x3e); a.word('team_t0'); a.b(0x00)      # cmp word cs:[team_t0], 0
+    a.short(0x74, 'draw_team_own')                           # je draw_team_own   not started
+    a.b(0x2e, 0x2b, 0x06); a.word('team_t0')                 # sub ax, cs:[team_t0]
+    a.b(0x3d, TEAM_SHOW, 0x00)                               # cmp ax, TEAM_SHOW
+    a.short(0x72, 'draw_team_own')                           # jb draw_team_own
+    a.b(0x58)                                                # pop ax
+    a.near(0xe9, 'draw_call')                                # jmp draw_call     the team's colour
+    a.label('draw_team_own')
+    a.b(0x58)                                                # pop ax
+    a.label('draw_own')
     for table, name in ((PRACTICE_RECOLOUR, 'p'), (COOP_RECOLOUR, 'c')):
         if name == 'c':
             a.short(0xeb, 'draw_call')                       # jmp draw_call
             a.label('draw_coop')
+            # K28: the Balok's frames of its hold show the knight (pixels 6-8, which its own frames do not use):
+            # in that knight's colours
+            a.b(0x80, 0x7f, 0x35, BALOK_TYPE)                # cmp byte [bx+35h], 18h
+            a.short(0x75, 'draw_not_balok')                  # jne draw_not_balok
+            a.b(0x2e, 0x8b, 0x1e); a.word('balok_victim')    # mov bx, cs:[balok_victim]
+            a.label('draw_not_balok')
+            a.b(0x80, 0x7f, 0x35, SPEAR_TROGG)               # cmp byte [bx+35h], 10h   the trogg's spear
+            a.short(0x75, 'draw_not_trogg')                  # jne draw_not_trogg
+            a.b(0x57, 0x8b, 0xfb); a.near(0xe8, 'slot_index')   # push di / mov di, bx / call slot_index
+            a.b(0x5f); a.short(0x72, 'draw_not_trogg')       # pop di / jc draw_not_trogg
+            a.b(0x2e, 0x8b, 0x9f); a.word('impaled')         # mov bx, cs:[bx+impaled]
+            a.label('draw_not_trogg')
         for rec, first, shift in table:
             a.b(0x81, 0xfb, rec & 0xff, rec >> 8)            # cmp bx, record
             a.short(0x75, f'draw_{name}{rec:x}')             # jne next
             a.b(0x2e, 0xc6, 0x06); a.word('recolour'); a.b(first)    # mov byte cs:[recolour], first pixel value
             a.b(0x2e, 0xc6, 0x06); a.word('rc_shift'); a.b(shift)    # mov byte cs:[rc_shift], shift
             a.label(f'draw_{name}{rec:x}')
+    a.near(0xe8, 'black_knight')                             # call black_knight   D19
+    a.short(0x75, 'draw_call')                               # jnz draw_call
+    a.b(0x2e, 0xc6, 0x06); a.word('recolour'); a.b(6)        # mov byte cs:[recolour], 6
+    a.b(0x2e, 0xc6, 0x06); a.word('rc_shift'); a.b(BLACK_SHIFT)   # mov byte cs:[rc_shift], 35
     a.label('draw_call')
     a.b(0x50, 0x8b, 0x46, 0x02, 0x40)                        # push ax / mov ax, [bp+2] / inc ax   site + 3
     a.b(0x2e, 0xa3); a.word('call_ret')                      # mov cs:[call_ret], ax
@@ -856,7 +985,7 @@ def rules_code(a):
     a.b(0x83, 0xc6, 0x02)                                    # add si, 2
     a.b(0x2e, 0xfe, 0x0e); a.word('words_left')              # dec byte cs:[words_left]
     a.short(0x75, 'ne_word')                                 # jnz ne_word
-    a.b(0x2e, 0xc6, 0x06); a.word('words_left'); a.b(0x09)   # mov byte cs:[words_left], 9
+    a.b(0x2e, 0xc6, 0x06); a.word('words_left'); a.b(NEW_WORDS)   # mov byte cs:[words_left], 12
     a.b(0x5e, 0x5a, 0x5b, 0x58, 0xc3)                        # pop si dx bx ax / ret
 
     # dac_write (1000:5B40; replaces mov dx,3C8h of the palette write 5B3E): writes the 32 entries from ds:si as the
@@ -979,13 +1108,29 @@ def rules_code(a):
     a.b(0x2e, 0xa2); a.word('coop')                          # mov cs:[coop], al
     a.label('pi_solo')
     a.b(0x58)                                                # pop ax
+    a.b(0x2e, 0xc6, 0x06); a.word('bk'); a.b(0x00)           # mov byte cs:[bk], 0
     a.b(0x2e, 0x80, 0x3e); a.word('init_state'); a.b(0x00)   # cmp byte cs:[init_state], 0
     a.short(0x75, 'pi_kept')                                 # jne pi_kept        (the second call of a lair)
     a.b(0x51, 0x57, 0x06, 0x0e, 0x07)                        # push cx di es / push cs / pop es
     a.b(0xbf); a.word('last_target')                         # mov di, last_target
     a.b(0x33, 0xc0, 0xb9, 0x15, 0x00, 0xfc, 0xf3, 0xab)      # xor ax, ax / mov cx, 21 / cld / rep stosw
     a.b(0x07, 0x5f, 0x59)                                    # pop es di cx
+    a.b(0x2e, 0xc6, 0x06); a.word('bk_count'); a.b(0x00)     # mov byte cs:[bk_count], 0   D19
     a.label('pi_kept')
+    # D19: the B key: Black Knights in black, strong, as many as the knights (one with one player: co-op of one)
+    a.b(0x80, 0xfb, BK_CHOICE)                               # cmp bl, 13
+    a.short(0x75, 'pi_not_bk')                               # jne pi_not_bk
+    a.b(0x2e, 0xc6, 0x06); a.word('bk'); a.b(0x02)           # mov byte cs:[bk], 2
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x75, 'pi_bk_lair')                              # jne pi_bk_lair
+    a.b(0x2e, 0xc6, 0x06); a.word('coop'); a.b(0x01)         # mov byte cs:[coop], 1
+    a.label('pi_bk_lair')
+    a.label('pi_bk_fight')
+    a.b(0xc7, 0x06, 0x78, 0x09, 0x9e, 0x6c)                  # mov word [0978h], 6C9Eh   (as a set-up of its own)
+    a.b(0x2e, 0xc6, 0x06); a.word('vs_monsters'); a.b(0x01)  # mov byte cs:[vs_monsters], 1
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(BK_SET_UP & 0xff, BK_SET_UP >> 8)   # the trolls' set-up
+    a.near(0xe9, 'pi_after')                                 # jmp pi_after
+    a.label('pi_not_bk')
     for choice, target in SET_UPS.items():                   # fights with their own set-up
         a.b(0x80, 0xfb, choice)                              # cmp bl, choice
         a.short(0x75, f'pi_not_{choice}')                    # jne next
@@ -1003,6 +1148,12 @@ def rules_code(a):
     a.b(0x2e, 0x8a, 0x84); a.word('rules_table', G_PRACTICE) # mov al, cs:[si+entry]
     a.b(0x3c, 0xff)                                          # cmp al, 0FFh             the Black Knight
     a.short(0x75, 'pk_lair')                                 # jne pk_lair
+    # D19: with 2-4 knights, Black Knights against them all; with one, knight against knight as before
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'pk_duel')                                 # je pk_duel
+    a.b(0x2e, 0xc6, 0x06); a.word('bk'); a.b(0x01)           # mov byte cs:[bk], 1
+    a.near(0xe9, 'pi_bk_fight')                              # jmp pi_bk_fight
+    a.label('pk_duel')
     a.b(0x2e, 0xc6, 0x06); a.word('coop'); a.b(0x00)         # mov byte cs:[coop], 0    knight against knight
     a.near(0xe9, 'pi_knight')                                # jmp pi_knight
     a.label('pk_lair')
@@ -1317,6 +1468,735 @@ def rules_code(a):
     a.label('pl_end')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
+    # instant_kill (K25; 1000:0AB3, mov si,[8979h] in the routine 0AB2 that monsters' instant kills call: the troll's
+    # club, the mudman, the Balok, the dragon...; it sets the knight's HP to -1): in co-op [8979h] is the first
+    # knight standing, so another knight died while the one hit kept its HP and stood up again. In co-op the knight
+    # the monster fights ([0978h], set for each object, D15) dies
+    # The knight's own handler also calls it (1000:3EEA, when the dragon has eaten it, [77F0h] = 1) with si = that
+    # knight, and so does a knight's death script (script call 1000:9DB3: di = the script's object, the knight
+    # dying; [0978h] is then the first knight standing): then that knight is the one
+    # The mudman's hold ends with the kill at 1000:554B (si = the mudman, di as a call left it): the knight it holds
+    a.label('rules_instant_kill')
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x75, 'ik_coop')                                 # jne ik_coop
+    a.near(0xe9, 'ik_game')                                  # jmp ik_game
+    a.label('ik_coop')
+    a.b(0x81, 0x7e, 0x0a, MUD_LET_GO & 0xff, MUD_LET_GO >> 8)   # cmp word [bp+10], 554Eh   (bp+8: the pushed si)
+    a.short(0x75, 'ik_knights')                              # jne ik_knights
+    a.b(0x2e, 0x83, 0x3e); a.word('mud_victim'); a.b(0x00)   # cmp word cs:[mud_victim], 0
+    a.short(0x74, 'ik_knights')                              # je ik_knights
+    a.b(0x2e, 0x8b, 0x36); a.word('mud_victim')              # mov si, cs:[mud_victim]
+    a.short(0xeb, 'ik_end')                                  # jmp ik_end
+    # K28: a monster's script calls the kill too (1000:9DB3, di = the monster): the Balok's bite and squeeze
+    # (scripts 4E04, 50C4) and the mudman's pull from below (594C, a second kill after 54E0). [0978h] then is the
+    # knight nearest it, another one: the knight it holds dies
+    a.label('ik_knights')
+    a.b(0x81, 0xff, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp di, 6F08h
+    a.short(0x72, 'ik_not_held')                             # jb ik_not_held
+    a.b(0x80, 0x7d, 0x35, BALOK_TYPE)                        # cmp byte [di+35h], 18h
+    a.short(0x75, 'ik_mudman')                               # jne ik_mudman
+    a.b(0x2e, 0x83, 0x3e); a.word('balok_victim'); a.b(0x00) # cmp word cs:[balok_victim], 0
+    a.short(0x74, 'ik_not_held')                             # je ik_not_held
+    a.b(0x2e, 0x8b, 0x36); a.word('balok_victim')            # mov si, cs:[balok_victim]
+    a.short(0xeb, 'ik_end')                                  # jmp ik_end
+    a.label('ik_mudman')
+    a.b(0x80, 0x7d, 0x35, MUDMAN)                            # cmp byte [di+35h], 2
+    a.short(0x75, 'ik_not_held')                             # jne ik_not_held
+    a.b(0x2e, 0x83, 0x3e); a.word('mud_victim'); a.b(0x00)   # cmp word cs:[mud_victim], 0
+    a.short(0x74, 'ik_not_held')                             # je ik_not_held
+    a.b(0x2e, 0x8b, 0x36); a.word('mud_victim')              # mov si, cs:[mud_victim]
+    a.short(0xeb, 'ik_end')                                  # jmp ik_end
+    a.label('ik_not_held')
+    for rec in KNIGHTS:
+        a.b(0x81, 0xfe, rec & 0xff, rec >> 8)                # cmp si, knight
+        a.short(0x74, 'ik_end')                              # je ik_end
+    for rec in KNIGHTS:
+        a.b(0x81, 0xff, rec & 0xff, rec >> 8)                # cmp di, knight
+        a.short(0x74, 'ik_di')                               # je ik_di
+    a.b(0x8b, 0x36, 0x78, 0x09)                              # mov si, [0978h]
+    a.short(0xeb, 'ik_end')                                  # jmp ik_end
+    a.label('ik_di')
+    a.b(0x8b, 0xf7)                                          # mov si, di
+    a.short(0xeb, 'ik_end')                                  # jmp ik_end
+    a.label('ik_game')
+    a.b(0x8b, 0x36, 0x79, 0x89)                              # mov si, [8979h]   (replaced)
+    a.label('ik_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # knight_down (K25; 1000:3ED0, the knight's handler, replaces mov word [7834h],0; si = the knight): it never looks
+    # at the HP, so after an instant kill the knight played the monster's kill and got up again. In co-op a knight
+    # with HP 0 or less gets the fall (1000:44AA: the death script, as when a blow takes the last HP) once, and then
+    # nothing new (1000:3AEA: script -1, its last frame stays)
+    # D20: also in the 3-4 knight practice, where a knight down stood up again once its last script ended (its HP
+    # still 0), and stays where it lies there; a knight that died one of the new deaths (its script in DS:F480-FE50)
+    # has fallen already
+    a.label('rules_knight_down')
+    a.b(0xc7, 0x06, 0x34, 0x78, 0x00, 0x00)                  # mov word [7834h], 0   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x75, 'kd_go')                                   # jne kd_go
+    a.b(0x2e, 0x80, 0x3e); a.word('multi'); a.b(0x00)        # cmp byte cs:[multi], 0
+    a.short(0x74, 'kd_end')                                  # je kd_end
+    a.label('kd_go')
+    a.b(0x81, 0xfe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)      # cmp si, 6C9Eh
+    a.short(0x72, 'kd_end')                                  # jb kd_end            not a knight
+    a.b(0x81, 0xfe, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8)      # cmp si, 6DC4h
+    a.short(0x77, 'kd_end')                                  # ja kd_end
+    a.b(0x50, 0x51)                                          # push ax / push cx
+    a.b(0x8b, 0xc6, 0x2d, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)   # mov ax, si / sub ax, 6C9Eh
+    a.b(0xb1, 0x62, 0xf6, 0xf1, 0x8a, 0xd8, 0x32, 0xff)      # mov cl, 62h / div cl / mov bl, al / xor bh, bh
+    a.b(0x83, 0x7c, 0x38, 0x00)                              # cmp word [si+38h], 0
+    a.short(0x7f, 'kd_up')                                   # jg kd_up
+    a.b(0x89, 0x36, 0xe8, 0x77)                              # mov [77E8h], si      for 1000:2D5E
+    a.b(0x2e, 0x80, 0xbf); a.word('down'); a.b(0x00)         # cmp byte cs:[bx+down], 0
+    a.b(0xc7, 0x46, 0x02, 0xea, 0x3a)                        # mov word [bp+2], 3AEAh   nothing new (flags kept)
+    a.short(0x74, 'kd_fall')                                 # je kd_fall
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'kd_pop')                                  # je kd_pop   the 3-4 knight practice: it stays
+    # after the fall the knight goes off the screen (x 480, as far right as monsters wait), so that a knight down
+    # can never be seen standing again; di = its animation slot (the update pass, 1000:98FC)
+    a.b(0xc7, 0x44, 0x02, 0xe0, 0x01, 0xc7, 0x45, 0x04, 0xe0, 0x01)   # mov word [si+2], 480 / mov word [di+4], 480
+    a.short(0xeb, 'kd_pop')                                  # jmp kd_pop
+    a.label('kd_fall')
+    a.b(0x2e, 0xc6, 0x87); a.word('down'); a.b(0x01)         # mov byte cs:[bx+down], 1
+    a.b(0x81, 0x7d, 0x02, D20_BASE & 0xff, D20_BASE >> 8); a.short(0x72, 'kd_fall_now')   # cmp [di+2], F480h / jb
+    a.b(0x81, 0x7d, 0x02, D20_END & 0xff, D20_END >> 8); a.short(0x72, 'kd_pop')         # cmp [di+2], FE50h / jb
+    a.label('kd_fall_now')
+    a.b(0xc7, 0x46, 0x02, 0xaa, 0x44)                        # mov word [bp+2], 44AAh   the fall
+    a.short(0xeb, 'kd_pop')                                  # jmp kd_pop
+    a.label('kd_up')
+    a.b(0x2e, 0xc6, 0x87); a.word('down'); a.b(0x00)         # mov byte cs:[bx+down], 0
+    a.label('kd_pop')
+    a.b(0x59, 0x58)                                          # pop cx / pop ax
+    a.label('kd_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # troll_target (K25; 1000:55F9, mov si,6C9Eh / cmp word [si+38h],0: the troll (handler 55D0) looks only at knight
+    # 1's HP, so in co-op it went idle, often off the screen, once knight 1 was down): in co-op the knight it fights
+    # mud_target, mud_grab, mud_pull (K25): the mudman keeps its hold in one game-wide state ([7B8Ch]: 1 holding,
+    # 2 pulling under, 4 pulled from below, 40h let go) but each frame acted on the knight it fights now ([77EAh] =
+    # [0978h]). In co-op that changes: it held one knight and pulled another under, or let another go (the pause is
+    # a toggle, 1000:9892), so knights stayed frozen and the wrong one died. The knight it takes hold of
+    # (1000:559C, mov ax,[si+0Ch]; 54DB, mov ax,di) stays its knight while the state lasts (1000:52FE, mov ax,[0978h])
+    # A pull from below (4) is never cleared: the game's fight is over then. In co-op, once the mudman that pulled has
+    # left, the others fight on. It has left when its object is no longer in use or no longer rising under a knight
+    # (+48h 8 and 10h): its slot can hold a new mudman by then (the top-up), which stood still for good
+    a.label('rules_mud_target')
+    a.b(0xa1, 0x78, 0x09)                                    # mov ax, [0978h]   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'mud_end')                                 # je mud_end
+    a.b(0xf6, 0x06, 0x8c, 0x7b, 0x04)                        # test byte [7B8Ch], 4
+    a.short(0x74, 'mud_held')                                # jz mud_held
+    a.b(0x53, 0x2e, 0x8b, 0x1e); a.word('mud_puller')        # push bx / mov bx, cs:[mud_puller]
+    a.b(0x0b, 0xdb); a.short(0x74, 'mud_free')               # or bx, bx / jz mud_free
+    a.b(0x83, 0x3f, 0x00); a.short(0x74, 'mud_free')         # cmp word [bx], 0 / je mud_free
+    a.b(0x8a, 0x5f, 0x48, 0x80, 0xe3, MUD_PULLING)           # mov bl, [bx+48h] / and bl, 18h
+    a.b(0x80, 0xfb, MUD_PULLING); a.short(0x74, 'mud_pulling')   # cmp bl, 18h / je mud_pulling
+    a.label('mud_free')
+    a.b(0x80, 0x26, 0x8c, 0x7b, 0xfb)                        # and byte [7B8Ch], 0FBh
+    a.b(0x2e, 0xc7, 0x06); a.word('mud_victim'); a.b(0x00, 0x00)   # mov word cs:[mud_victim], 0
+    a.b(0x2e, 0xc7, 0x06); a.word('mud_puller'); a.b(0x00, 0x00)   # mov word cs:[mud_puller], 0
+    a.label('mud_pulling')
+    a.b(0x5b)                                                # pop bx
+    a.label('mud_held')
+    a.b(0xf7, 0x06, 0x8c, 0x7b, 0x47, 0x00)                  # test word [7B8Ch], 47h
+    a.short(0x74, 'mud_end')                                 # jz mud_end         holding none
+    a.b(0x2e, 0x83, 0x3e); a.word('mud_victim'); a.b(0x00)   # cmp word cs:[mud_victim], 0
+    a.short(0x74, 'mud_end')                                 # je mud_end
+    a.b(0x2e, 0xa1); a.word('mud_victim')                    # mov ax, cs:[mud_victim]
+    a.label('mud_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('rules_mud_grab')
+    a.b(0x8b, 0x44, 0x0c)                                    # mov ax, [si+0Ch]  (replaced) the knight it touched
+    a.short(0xeb, 'mud_keep')                                # jmp mud_keep
+    a.label('rules_mud_pull')
+    a.b(0x8b, 0xc7)                                          # mov ax, di        (replaced)
+    a.b(0x2e, 0x89, 0x36); a.word('mud_puller')              # mov cs:[mud_puller], si   the mudman pulling
+    a.label('mud_keep')
+    a.b(0x2e, 0xa3); a.word('mud_victim')                    # mov cs:[mud_victim], ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # balok_target, balok_grab (K28): the Balok's hold ([7794h]: 1 grabbing, 20h shaking) pauses the knight it
+    # touched (1000:37A7, mov ax,di / call 9892) and lets go of the knight it fights then ([0978h], 37FC: pause
+    # toggled, placed beside it). In co-op that can be another: the knight held stayed frozen and the fight stuck.
+    # The knight it takes hold of stays its knight while the hold lasts (1000:35AF, mov ax,[0978h]); and the Balok's
+    # frames of the hold draw that knight in its colours (draw)
+    a.label('rules_balok_target')
+    a.b(0xa1, 0x78, 0x09)                                    # mov ax, [0978h]   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'bt_end')                                  # je bt_end
+    a.b(0xf7, 0x06, 0x94, 0x77, 0x21, 0x00)                  # test word [7794h], 21h
+    a.short(0x74, 'bt_end')                                  # jz bt_end          holding none
+    a.b(0x2e, 0x83, 0x3e); a.word('balok_victim'); a.b(0x00) # cmp word cs:[balok_victim], 0
+    a.short(0x74, 'bt_end')                                  # je bt_end
+    a.b(0x2e, 0xa1); a.word('balok_victim')                  # mov ax, cs:[balok_victim]
+    a.b(0xa3, 0x78, 0x09)                                    # mov [0978h], ax   (37FC and 3816 read it)
+    a.label('bt_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('rules_balok_grab')
+    a.b(0x8b, 0xc7)                                          # mov ax, di        (replaced) the knight it touched
+    a.b(0x2e, 0xa3); a.word('balok_victim')                  # mov cs:[balok_victim], ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # trogg_impale (K28; 1000:2F90, mov ax,si / call 98A2: the spear trogg takes a fallen knight off the screen, si,
+    # and plays its frames with the knight on its spear, script 2488): the trogg's own frames draw that knight with
+    # pixels 6-8, so the draw recolours them as the knight; each trogg (di) keeps its own
+    # D20: a slumped knight (KN*.OB, HE*.OB) gets the thrust instead (as a knight's), and the trogg goes back to
+    # standing (2F9E)
+    a.label('rules_trogg_impale')
+    a.b(0x50, 0x53, 0x56, 0x57, 0x87, 0xf7)                  # push ax bx si di / xchg si, di   si: the trogg
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DEATHS); a.b(0x00)   # cmp byte cs:[death_animations], 0
+    a.short(0x75, 'ti_spear')                                # jne ti_spear
+    a.near(0xe8, 'slumped')                                  # call slumped   (di: the knight; bx: its animation)
+    a.short(0x75, 'ti_spear')                                # jnz ti_spear
+    a.near(0xe8, 'de_side')                                  # call de_side   CF = 1 from the front
+    a.b(0xb8, D20['thrust_back'] & 0xff, D20['thrust_back'] >> 8); a.short(0x73, 'ti_set')
+    a.b(0xb8, D20['thrust_front'] & 0xff, D20['thrust_front'] >> 8)
+    a.label('ti_set')
+    a.near(0xe8, 'set_script')                               # call set_script
+    a.b(0xc7, 0x46, 0x02, 0x9e, 0x2f)                        # mov word [bp+2], 2F9Eh
+    a.b(0x5f, 0x5e, 0x5b, 0x58)                              # pop di si bx ax
+    a.near(0xe9, 'rules_done')
+    a.label('ti_spear')
+    a.b(0x5f, 0x5e, 0x5b, 0x58)                              # pop di si bx ax
+    a.b(0x8b, 0xc6)                                          # mov ax, si        (replaced)
+    a.b(0x53); a.near(0xe8, 'slot_index')                    # push bx / call slot_index (bx = di's index * 2)
+    a.short(0x72, 'ti_end')                                  # jc ti_end
+    a.b(0x2e, 0x89, 0x87); a.word('impaled')                 # mov cs:[bx+impaled], ax
+    a.label('ti_end')
+    a.b(0x5b)                                                # pop bx
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    # spear_on (D20; 1000:4357, mov di,[di+0Eh] / si = 2488h: the spear trogg's blow on a fallen knight, with
+    # blood on, takes it on the spear): a slumped knight goes to its death instead (2D5E picks the thrust)
+    a.label('rules_spear_on')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DEATHS); a.b(0x00)   # cmp byte cs:[death_animations], 0
+    a.short(0x75, 'so_spear')                                # jne so_spear
+    a.b(0x53); a.near(0xe8, 'slumped'); a.b(0x5b)            # push bx / call slumped / pop bx
+    a.short(0x75, 'so_spear')                                # jnz so_spear
+    a.b(0xc7, 0x06, 0x3a, 0x78, 0x28, 0x13)                  # mov word [783Ah], 1328h   a next script to pick on
+    a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d)                        # mov word [bp+2], 2D5Eh
+    a.near(0xe9, 'rules_done')
+    a.label('so_spear')
+    a.b(0x8b, 0x7d, 0x0e)                                    # mov di, [di+0Eh]   (replaced)
+    a.near(0xe9, 'rules_done')
+    # slumped: di = an object -> ZF = 1 if it is a player's knight drawn from KN*.OB or HE*.OB in the slumped pose
+    # (script 130E-134B), bx = its animation
+    a.label('slumped')
+    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8); a.short(0x72, 'sl_no')   # cmp di, 6C9Eh / jb
+    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8); a.short(0x77, 'sl_no')   # cmp di, 6DC4h / ja
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'sl_no')      # cmp byte [di+35h], 6 / jne
+    a.near(0xe8, 'anim_of'); a.short(0x75, 'sl_no')          # call anim_of / jnz
+    a.b(0x50, 0x8b, 0x47, 0x18, 0x3d, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8); a.short(0x74, 'sl_bank')
+    a.b(0x3d, HE_BANK & 0xff, HE_BANK >> 8); a.short(0x75, 'sl_pop')
+    a.label('sl_bank')
+    a.b(0x8b, 0x47, 0x02, 0x3d, SLUMP & 0xff, SLUMP >> 8); a.short(0x72, 'sl_nz')   # mov ax, [bx+2] / cmp / jb
+    a.b(0x3d, SLUMP_END & 0xff, SLUMP_END >> 8); a.short(0x73, 'sl_nz')            # cmp ax, 134Ch / jae
+    a.b(0x3b, 0xc0)                                          # cmp ax, ax   ZF = 1
+    a.short(0xeb, 'sl_pop')
+    a.label('sl_nz')
+    a.b(0x0b, 0xe4)                                          # or sp, sp   ZF = 0 (sp is never 0)
+    a.label('sl_pop')
+    a.b(0x58, 0xc3)                                          # pop ax / ret
+    a.label('sl_no')
+    a.b(0x0b, 0xe4, 0xc3)                                    # or sp, sp / ret   ZF = 0
+    # set_script: bx = an animation, ax = a script: as 1000:97FA (its counters cleared, the script started)
+    a.label('set_script')
+    a.b(0x06, 0x1e, 0x07, 0x57, 0x51, 0x50, 0x8b, 0x7f, 0x1c)   # push es / push ds / pop es / push di cx ax / mov di, [bx+1Ch]
+    a.b(0xb9, 0x0d, 0x00, 0x33, 0xc0, 0xfc, 0xf3, 0xab)      # mov cx, 13 / xor ax, ax / cld / rep stosw
+    a.b(0x58, 0x59, 0x5f, 0x07)                              # pop ax cx di es
+    a.b(0x89, 0x47, 0x02, 0xc6, 0x47, 0x01, 0x01, 0xc3)      # mov [bx+2], ax / mov byte [bx+1], 1 / ret
+
+    # slot_index: di = an object -> bx = its monster slot * 2, CF = 1 if not in a monster slot
+    a.label('slot_index')
+    a.b(0x50, 0x52, 0x8b, 0xc7)                              # push ax dx / mov ax, di
+    a.b(0x2d, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)      # sub ax, 6F08h
+    a.short(0x72, 'si_end')                                  # jb si_end            CF
+    a.b(0x33, 0xd2, 0xbb, SLOT_SIZE, 0x00, 0xf7, 0xf3)       # xor dx, dx / mov bx, 62h / div bx
+    a.b(0x8b, 0xd8, 0xd1, 0xe3)                              # mov bx, ax / shl bx, 1
+    a.b(0x3d, MONSTER_COUNT, 0x00, 0xf5)                     # cmp ax, 20 / cmc       CF if 20 or more
+    a.label('si_end')
+    a.b(0x5a, 0x58, 0xc3)                                    # pop dx ax / ret
+
+    # death (D20; 1000:2D5E, mov di,[77E8h]: an object's handler ends with its next script in [783Ah]): a knight
+    # (a player's, drawn from KN*.OB) in the slumped pose of its fall that is hit again gets a death by the blow:
+    # a knight's or Black Knight's up strike splits it, its down and forward thrust goes through the helmet, its
+    # back strike down through the helmet, its up and forward strike lifts it on the sword; a dagger stays in the
+    # helmet; the axe trogg splits, a ratman's thrust goes through. Through the helmet and the dagger: from the
+    # front or from behind, by the side the blow comes from and the way the knight faces (anim +14h bit 1: drawn
+    # mirrored, its face to the left)
+    # death_animations (custom rules): extended = these deaths and a slump of 29 frames; vanilla = the game's (its
+    # beheading, a slump of 20); off = also no blood: the game's gore setting ([0700h]) held at 1 in a fight
+    a.label('rules_death')
+    a.b(0x8b, 0x3e, 0xe8, 0x77)                              # mov di, [77E8h]   (replaced)
+    a.b(0x50, 0x53, 0x51, 0x56)                              # push ax bx cx si
+    a.b(0x2e, 0xa0); a.word('rules_table', G_DEATHS)         # mov al, cs:[death_animations]
+    a.b(0x0a, 0xc0); a.short(0x74, 'de_on')                  # or al, al / jz de_on   extended
+    a.b(0xc6, 0x06, 0x13, 0x13, 0x14)                        # mov byte [1313h], 20   the slump's frames
+    a.b(0x3c, DEATHS['off']); a.short(0x75, 'de_off_done')   # cmp al, 2 / jne
+    a.b(0xc7, 0x06, 0x00, 0x07, 0x01, 0x00)                  # mov word [0700h], 1   no blood
+    a.label('de_off_done')
+    a.near(0xe9, 'de_done')
+    a.label('de_on')
+    a.b(0xc6, 0x06, 0x13, 0x13, SLUMP_FRAMES)                # mov byte [1313h], 29
+    a.b(0x8b, 0x36, 0x3a, 0x78)                              # mov si, [783Ah]   its next script
+    a.b(0x8d, 0x44, 0x01, 0x3d, 0x01, 0x00)                  # lea ax, [si+1] / cmp ax, 1
+    a.short(0x77, 'de_some')                                 # ja de_some        not 0 or FFFFh
+    a.near(0xe9, 'de_done')
+    a.label('de_some')
+    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)      # cmp di, 6C9Eh
+    a.short(0x72, 'de_done_1')                               # jb
+    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8)      # cmp di, 6DC4h
+    a.short(0x77, 'de_done_1')                               # ja
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'de_done_1')  # cmp byte [di+35h], 6 / jne   a player's knight
+    a.b(0xbb, 0x7e, 0x94, 0xb9, 0x0a, 0x00)                  # mov bx, 947Eh / mov cx, 10   its animation
+    a.label('de_slot')
+    a.b(0x39, 0x7f, 0x16); a.short(0x74, 'de_found')         # cmp [bx+16h], di / je de_found
+    a.b(0x83, 0xc3, 0x24); a.short(0xe2, 'de_slot')          # add bx, 24h / loop de_slot
+    a.label('de_done_1')
+    a.near(0xe9, 'de_done')
+    a.label('de_found')
+    a.b(0x8b, 0x47, 0x02)                                    # mov ax, [bx+2]   its script now
+    a.b(0x3d, SLUMP & 0xff, SLUMP >> 8); a.short(0x72, 'de_done_1')            # cmp ax, 130Eh / jb
+    a.b(0x3d, SLUMP_END & 0xff, SLUMP_END >> 8); a.short(0x73, 'de_done_1')    # cmp ax, 1328h / jae
+    # drawn from the knights' banks (the animation's own table: a duel's second knight uses HE*.OB, 8949h)
+    a.b(0x8b, 0x47, 0x18, 0x3d, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8); a.short(0x74, 'de_bank')   # mov ax, [bx+18h] / cmp
+    a.b(0x3d, HE_BANK & 0xff, HE_BANK >> 8); a.short(0x75, 'de_done_1')
+    a.label('de_bank')
+    # a dagger that hit it (+0Eh): its death, at the head if the dagger's top is less than 12 below the knight's
+    # (a dagger from the right was not always noted at the hit)
+    a.b(0x8b, 0x75, 0x0e, 0x0b, 0xf6); a.short(0x74, 'de_table')   # mov si, [di+0Eh] / or si, si / jz
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'de_table')       # cmp byte [si+35h], 1Ah / jne
+    a.b(0x57, 0x53, 0x8b, 0xfe); a.near(0xe8, 'anim_of')           # push di bx / mov di, si / call anim_of
+    a.b(0xb0, 0x00); a.short(0x75, 'de_dh_done')                   # mov al, 0 / jnz   (mov keeps ZF)
+    a.b(0x8b, 0x4f, 0x0c, 0x5b, 0x53, 0x2b, 0x4f, 0x0c)            # mov cx, [bx+0Ch] / pop bx / push bx / sub cx, [bx+0Ch]
+    a.b(0x83, 0xf9, HEAD_ZONE); a.short(0x7d, 'de_dh_done')        # cmp cx, 12 / jge
+    a.b(0xfe, 0xc0)                                                # inc al
+    a.label('de_dh_done')
+    a.b(0x5b, 0x5f)                                                # pop bx di
+    a.near(0xe9, 'de_dagger')                                      # jmp de_dagger   (al: the height)
+    a.label('de_done_2')
+    a.near(0xe9, 'de_done')
+    a.label('de_table')
+    # who hit it and how, as noted at the hit (hit_pair): a strike's +28h may be over by now
+    a.b(0x53); a.near(0xe8, 'knight_slot')                   # push bx / call knight_slot
+    a.b(0x2e, 0x8b, 0xb7); a.word('last_hitter')             # mov si, cs:[bx+last_hitter]
+    a.b(0x2e, 0x8b, 0x87); a.word('last_strike'); a.b(0x5b)  # mov ax, cs:[bx+last_strike] / pop bx
+    a.b(0x0b, 0xf6); a.short(0x74, 'de_done_2')              # or si, si / jz
+    a.b(0x80, 0xfc, 0x06); a.short(0x74, 'de_knight')        # cmp ah, 6 / je    (ah: its type, al: its strike)
+    a.b(0x80, 0xfc, COMPUTER_TYPE); a.short(0x74, 'de_knight')
+    a.b(0x80, 0xfc, DAGGER_TYPE); a.short(0x74, 'de_dagger')
+    a.b(0x80, 0xfc, SPEAR_TROGG); a.short(0x74, 'de_thrust')
+    a.b(0x80, 0xfc, AXE_TROGG); a.short(0x75, 'de_ratman')
+    a.b(0x3c, UP); a.short(0x74, 'de_split'); a.short(0xeb, 'de_done_2')   # its swing: the game's beheading
+    a.label('de_ratman')
+    a.b(0x80, 0xfc, RATMAN); a.short(0x75, 'de_done_2')
+    a.b(0x3c, DOWN_FORWARD); a.short(0x74, 'de_thrust'); a.short(0xeb, 'de_done_2')
+    a.label('de_knight')
+    a.b(0x3c, UP); a.short(0x74, 'de_split')
+    a.b(0x3c, DOWN_FORWARD); a.short(0x74, 'de_thrust')
+    a.b(0x3c, BACK); a.short(0x74, 'de_back'); a.short(0xeb, 'de_done_2')
+    a.label('de_split')
+    a.b(0xb8, D20['split'] & 0xff, D20['split'] >> 8); a.short(0xeb, 'de_set')
+    a.label('de_back')
+    a.b(0xb8, D20['back'] & 0xff, D20['back'] >> 8); a.short(0xeb, 'de_set')
+    a.label('de_dagger')
+    a.b(0x8a, 0xc8)                                          # mov cl, al   1: at the head's height (hit_pair)
+    a.near(0xe8, 'de_side')                                  # call de_side   CF = 1 from the front
+    a.short(0x72, 'de_dagger_front')
+    a.b(0x0a, 0xc9, 0xb8, D20['dagger_waist_back'] & 0xff, D20['dagger_waist_back'] >> 8); a.short(0x74, 'de_set')   # or cl, cl / mov ax / jz
+    a.b(0xb8, D20['dagger_back'] & 0xff, D20['dagger_back'] >> 8); a.short(0xeb, 'de_set')
+    a.label('de_dagger_front')
+    a.b(0x0a, 0xc9, 0xb8, D20['dagger_waist_front'] & 0xff, D20['dagger_waist_front'] >> 8); a.short(0x74, 'de_set')
+    a.b(0xb8, D20['dagger_front'] & 0xff, D20['dagger_front'] >> 8); a.short(0xeb, 'de_set')
+    a.label('de_thrust')
+    a.near(0xe8, 'de_side')
+    a.b(0xb8, D20['thrust_back'] & 0xff, D20['thrust_back'] >> 8); a.short(0x73, 'de_set')
+    a.b(0xb8, D20['thrust_front'] & 0xff, D20['thrust_front'] >> 8)
+    a.label('de_set')
+    a.b(0xa3, 0x3a, 0x78)                                    # mov [783Ah], ax
+    a.label('de_done')
+    a.b(0x5e, 0x59, 0x5b, 0x58)                              # pop si cx bx ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    # dagger_near (D20; 1000:3E59, cmp word [si+0Ch],0 in the dagger's handler: has it hit): a dagger flies at a
+    # standing knight's height and went over a knight slumped on its knees. Its box (animation +0Ah, +0Ch, +0Eh,
+    # +10h: left, top, width, height) against a slumped knight's, up to 14 above it and 8 apart in depth: the
+    # knight gets the dagger's death (from the front if the dagger flies against the way it faces) and the dagger
+    # ends as after a hit (3EB0)
+    a.label('rules_dagger_near')
+    a.b(0x50, 0x53, 0x51, 0x57, 0x56)                        # push ax bx cx di si
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DEATHS); a.b(0x00)   # cmp byte cs:[death_animations], 0
+    a.short(0x74, 'dn_on'); a.near(0xe9, 'dn_none')          # jne dn_none
+    a.label('dn_on')
+    a.b(0x8b, 0xfe); a.near(0xe8, 'anim_of')                 # mov di, si / call anim_of   the dagger's
+    a.short(0x74, 'dn_have')                                 # jz dn_have
+    a.near(0xe9, 'dn_none')
+    a.label('dn_have')
+    a.b(0x8b, 0xf3)                                          # mov si, bx      the dagger's animation
+    a.b(0xbf, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xb9, 0x04, 0x00)   # mov di, 6C9Eh / mov cx, 4
+    a.label('dn_knight')
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'dn_next_1')  # cmp byte [di+35h], 6 / jne
+    a.near(0xe8, 'anim_of'); a.short(0x75, 'dn_next_1')      # call anim_of / jnz
+    a.b(0x8b, 0x47, 0x18, 0x3d, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8); a.short(0x74, 'dn_bank')   # its bank table
+    a.b(0x3d, HE_BANK & 0xff, HE_BANK >> 8); a.short(0x75, 'dn_next_1')
+    a.label('dn_bank')
+    a.b(0x8b, 0x47, 0x02)                                    # mov ax, [bx+2]
+    a.b(0x3d, SLUMP & 0xff, SLUMP >> 8); a.short(0x72, 'dn_next_1')          # cmp ax, 130Eh / jb
+    a.b(0x3d, SLUMP_END & 0xff, SLUMP_END >> 8); a.short(0x72, 'dn_depth')   # cmp ax, 134Ch / jb dn_depth
+    a.label('dn_next_1')
+    a.near(0xe9, 'dn_next')
+    a.label('dn_depth')
+    a.b(0x8b, 0x47, 0x08, 0x2b, 0x44, 0x08)                  # mov ax, [bx+8] / sub ax, [si+8]   depth apart
+    a.b(0x83, 0xc0, DAGGER_NEARER, 0x3d, DAGGER_NEARER + DAGGER_BEHIND, 0x00); a.short(0x77, 'dn_next_1')   # add ax, 16 / cmp ax, 24 / ja
+    a.b(0x8b, 0x44, 0x0a, 0x3b, 0x47, 0x0a); a.short(0x7c, 'dn_left')   # mov ax, [si+0Ah] / cmp ax, [bx+0Ah] / jl
+    a.b(0x8b, 0x47, 0x0a, 0x03, 0x47, 0x0e, 0x3b, 0x44, 0x0a); a.short(0x7e, 'dn_next_1')   # knight's right <= dagger's left
+    a.short(0xeb, 'dn_across')
+    a.label('dn_left')
+    a.b(0x03, 0x44, 0x0e, 0x3b, 0x47, 0x0a); a.short(0x7e, 'dn_next_1')   # add ax, [si+0Eh] / cmp ax, [bx+0Ah] / jle
+    a.label('dn_across')
+    a.b(0x8b, 0x44, 0x0c, 0x3b, 0x47, 0x0c); a.short(0x7c, 'dn_above')  # mov ax, [si+0Ch] / cmp ax, [bx+0Ch] / jl
+    a.b(0x8b, 0x47, 0x0c, 0x03, 0x47, 0x10, 0x3b, 0x44, 0x0c); a.short(0x7e, 'dn_next_1')   # knight's bottom <= dagger's top
+    a.short(0xeb, 'dn_hit')
+    a.label('dn_above')
+    a.b(0x03, 0x44, 0x10, 0x83, 0xc0, DAGGER_REACH, 0x3b, 0x47, 0x0c); a.short(0x7e, 'dn_next_1')   # its bottom + 14 <= top
+    a.label('dn_hit')
+    a.b(0x8b, 0x4c, 0x0c, 0x2b, 0x4f, 0x0c, 0x83, 0xe9, HEAD_ZONE)   # mov cx, [si+0Ch] / sub cx, [bx+0Ch] / sub cx, 12
+    #                                                          ch bit 7: at the head's height
+    a.b(0x8a, 0x44, 0x14, 0x32, 0x47, 0x14, 0xa8, 0x02)      # mov al, [si+14h] / xor al, [bx+14h] / test al, 2
+    a.short(0x75, 'dn_front')                                # jnz dn_front   against the way it faces
+    a.b(0xf6, 0xc5, 0x80, 0xb8, D20['dagger_waist_back'] & 0xff, D20['dagger_waist_back'] >> 8); a.short(0x74, 'dn_set')   # test ch, 80h / mov ax / jz
+    a.b(0xb8, D20['dagger_back'] & 0xff, D20['dagger_back'] >> 8); a.short(0xeb, 'dn_set')
+    a.label('dn_front')
+    a.b(0xf6, 0xc5, 0x80, 0xb8, D20['dagger_waist_front'] & 0xff, D20['dagger_waist_front'] >> 8); a.short(0x74, 'dn_set')
+    a.b(0xb8, D20['dagger_front'] & 0xff, D20['dagger_front'] >> 8)
+    a.label('dn_set')
+    a.b(0x06, 0x1e, 0x07, 0x8b, 0x7f, 0x1c, 0x50, 0xb9, 0x0d, 0x00, 0x33, 0xc0, 0xfc, 0xf3, 0xab, 0x58, 0x07)
+    #                                                          push es / push ds / pop es / mov di, [bx+1Ch] / push ax /
+    #                                                          mov cx, 13 / xor ax, ax / cld / rep stosw / pop ax / pop es
+    a.b(0x89, 0x47, 0x02, 0xc6, 0x47, 0x01, 0x01)            # mov [bx+2], ax / mov byte [bx+1], 1   as 1000:97FA
+    a.b(0xc7, 0x46, 0x02, 0xb0, 0x3e)                        # mov word [bp+2], 3EB0h   the dagger ends
+    a.b(0x5e, 0x5f, 0x59, 0x5b, 0x58)                        # pop si di cx bx ax
+    a.near(0xe9, 'rules_done')
+    a.label('dn_next')
+    a.b(0x83, 0xc7, SLOT_SIZE, 0x49); a.short(0x74, 'dn_none')   # add di, 62h / dec cx / jz dn_none
+    a.near(0xe9, 'dn_knight')                                # jmp dn_knight
+    a.label('dn_none')
+    a.b(0x5e, 0x5f, 0x59, 0x5b, 0x58)                        # pop si di cx bx ax
+    a.b(0x83, 0x7c, 0x0c, 0x00)                              # cmp word [si+0Ch], 0   (replaced)
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+    # anim_of: di = an object -> bx = its animation, ZF = 1 (ZF = 0: none)
+    a.label('anim_of')
+    a.b(0x51, 0xbb, 0x7e, 0x94, 0xb9, 0x0a, 0x00)            # push cx / mov bx, 947Eh / mov cx, 10
+    a.label('ao_loop')
+    a.b(0x80, 0x3f, 0x00); a.short(0x74, 'ao_next')          # cmp byte [bx], 0 / je   not in use
+    a.b(0x39, 0x7f, 0x16); a.short(0x74, 'ao_end')           # cmp [bx+16h], di / je ao_end
+    a.label('ao_next')
+    a.b(0x83, 0xc3, 0x24); a.short(0xe2, 'ao_loop')          # add bx, 24h / loop
+    a.b(0x0b, 0xdb)                                          # or bx, bx   (not 0: ZF = 0)
+    a.label('ao_end')
+    a.b(0x59, 0xc3)                                          # pop cx / ret
+
+    # strike_on (D20; 1000:4159, cmp word [di+28h],4 / jne 413B: a knight whose blow hit a fallen knight goes on with
+    # the blow only for the forward sweep, which takes the head off; after any other it stood up at once): the
+    # blows of the new deaths (up, down and forward, back) go on too
+    a.label('rules_strike_on')
+    a.b(0x50, 0x8b, 0x45, 0x28)                              # push ax / mov ax, [di+28h]
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DEATHS); a.b(0x00)   # cmp byte cs:[death_animations], 0
+    a.short(0x75, 'so_game')                                 # jne so_game
+    for strike in (UP, DOWN_FORWARD, BACK):
+        a.b(0x3d, strike, 0x00); a.short(0x74, 'so_end')     # cmp ax, strike / je so_end   (ZF = 1)
+    a.label('so_game')
+    a.b(0x3d, 0x04, 0x00)                                    # cmp ax, 4   (replaced)
+    a.label('so_end')
+    a.b(0x58)                                                # pop ax
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+
+    # knight_slot: di = a knight's record -> bx = its number * 2
+    a.label('knight_slot')
+    a.b(0x50, 0x51, 0x8b, 0xc7, 0x2d, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)   # push ax cx / mov ax, di / sub ax, 6C9Eh
+    a.b(0xb1, SLOT_SIZE, 0xf6, 0xf1, 0x32, 0xe4, 0xd1, 0xe0, 0x8b, 0xd8)    # mov cl, 62h / div cl / xor ah, ah / shl ax, 1 / mov bx, ax
+    a.b(0x59, 0x58, 0xc3)                                    # pop cx ax / ret
+
+    # de_side: CF = 1 if the blow (si) comes from the side the knight (di, animation bx) faces
+    a.label('de_side')
+    a.b(0x8b, 0x44, 0x02, 0x2b, 0x45, 0x02)                  # mov ax, [si+2] / sub ax, [di+2]
+    a.b(0xf6, 0x47, 0x14, 0x02); a.short(0x74, 'ds_right')   # test byte [bx+14h], 2 / jz   face to the right
+    a.b(0xf7, 0xd8)                                          # neg ax
+    a.label('ds_right')
+    a.b(0x0b, 0xc0); a.short(0x78, 'ds_behind')              # or ax, ax / js ds_behind
+    a.b(0xf9, 0xc3)                                          # stc / ret
+    a.label('ds_behind')
+    a.b(0xf8, 0xc3)                                          # clc / ret
+
+    # --- D19: Black Knights ---
+    # black_knight: bx = an object -> ZF = 1 if it is a Black Knight of this practice (a computer knight in a slot)
+    a.label('black_knight')
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
+    a.short(0x74, 'bkq_no')                                  # je bkq_no
+    a.b(0x81, 0xfb, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp bx, 6F08h
+    a.short(0x72, 'bkq_no')                                  # jb bkq_no
+    end_slots = MONSTER_SLOTS + MONSTER_COUNT * SLOT_SIZE
+    a.b(0x81, 0xfb, end_slots & 0xff, end_slots >> 8)        # cmp bx, 76B0h
+    a.short(0x73, 'bkq_no')                                  # jae bkq_no
+    a.b(0x80, 0x7f, 0x35, COMPUTER_TYPE, 0xc3)               # cmp byte [bx+35h], 8 / ret
+    a.label('bkq_no')
+    a.b(0x50, 0x33, 0xc0, 0x40, 0x58, 0xc3)                  # push ax / xor ax, ax / inc ax / pop ax / ret   ZF = 0
+
+    # spawn_init (1000:2824, call bx: a new monster's fields by its type, [0974h]; di = the object, its place set):
+    # a Black Knight practice makes it the next Black Knight instead: a copy of knight n (n = the count so far) as a
+    # computer knight, walking in from the left or right. The first sets the counts: as many at once and to defeat
+    # as the knights, and the set-up's spawn loop (1000:27F0, cx) makes that many
+    a.label('rules_spawn_init')
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
+    a.short(0x75, 'sp_bk')                                   # jne sp_bk
+    a.b(0x50, 0xa1, 0x74, 0x09)                              # push ax / mov ax, [0974h]
+    a.b(0x2e, 0xa3); a.word('call_target'); a.b(0x58)        # mov cs:[call_target], ax / pop ax
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x26, 0x28)   # mov word cs:[call_ret], 2826h
+    a.near(0xe9, 'call_game')                                # jmp call_game   as the game
+    a.label('sp_bk')
+    a.b(0x50, 0x51, 0x56, 0x57, 0x06)                        # push ax cx si di es
+    a.b(0x1e, 0x07, 0xfc)                                    # push ds / pop es / cld
+    a.b(0x2e, 0x80, 0x3e); a.word('bk_count'); a.b(0x00)     # cmp byte cs:[bk_count], 0
+    a.short(0x75, 'sp_copy')                                 # jne sp_copy
+    a.b(0x2e, 0xa0); a.word('coop'); a.b(0x32, 0xe4)         # mov al, cs:[coop] / xor ah, ah   the knights
+    a.b(0xa3, 0x6a, 0x09, 0xa3, 0x6c, 0x09)                  # mov [096Ah], ax / mov [096Ch], ax
+    a.b(0x81, 0x7e, 0x08, 0xf7, 0x27)                        # cmp word [bp+8], 27F7h   the set-up's loop?
+    a.short(0x75, 'sp_items')                                # jne sp_items
+    a.b(0x89, 0x46, 0xfa)                                    # mov [bp-6], ax           its cx: that many
+    a.label('sp_items')
+    for field, script in REACTION_DEFAULTS:                  # not the trolls' throw: as in a knight's fight
+        a.b(0xc7, 0x06, (REACTIONS + field) & 0xff, (REACTIONS + field) >> 8, script & 0xff, script >> 8)
+    a.b(0x57, 0xbf, BK_ITEMS & 0xff, BK_ITEMS >> 8)          # push di / mov di, item table
+    a.b(0xb9, 0x18, 0x00, 0x32, 0xc0, 0xf3, 0xaa, 0x5f)      # mov cx, 24 / xor al, al / rep stosb / pop di
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x02)           # cmp byte cs:[bk], 2
+    a.short(0x75, 'sp_copy')                                 # jne sp_copy
+    a.near(0xe8, 'bk_colours_on')                            # call bk_colours_on
+    a.b(0xc6, 0x06, (BK_ITEMS + 4) & 0xff, (BK_ITEMS + 4) >> 8, 0x01)   # mov byte [item table+4], 1   the Sword
+    a.label('sp_copy')
+    a.b(0x2e, 0xa0); a.word('bk_count')                      # mov al, cs:[bk_count]
+    a.b(0xb4, SLOT_SIZE, 0xf6, 0xe4)                         # mov ah, 62h / mul ah
+    a.b(0x05, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0x8b, 0xf0)   # add ax, 6C9Eh / mov si, ax   knight n
+    a.b(0x57, 0xb9, SLOT_SIZE, 0x00, 0xf3, 0xa4, 0x5f)       # push di / mov cx, 62h / rep movsb / pop di
+    a.b(0xc7, 0x05, 0x01, 0x00)                              # mov word [di], 1          in use
+    a.b(0xc6, 0x45, 0x35, COMPUTER_TYPE, 0xc6, 0x45, 0x09, 0x04)   # mov byte [di+35h], 8 / mov byte [di+9], 4
+    a.b(0xc7, 0x45, 0x20, 0x04, 0x00)                        # mov word [di+20h], 4      computer
+    a.b(0xc7, 0x45, 0x18, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8)   # mov word [di+18h], 8933h  the knights' bank
+    for field in (0x0c, 0x0e, 0x26, 0x28):
+        a.b(0xc7, 0x45, field, 0x00, 0x00)                   # mov word [di+field], 0
+    a.b(0xc7, 0x45, 0x44, BK_ITEMS & 0xff, BK_ITEMS >> 8)    # mov word [di+44h], item table
+    a.b(0x2e, 0x8a, 0x1e); a.word('bk_count'); a.b(0x32, 0xff)   # mov bl, cs:[bk_count] / xor bh, bh
+    a.b(0x2e, 0x8a, 0x87); a.word('bk_face')                 # mov al, cs:[bx+bk_face]
+    a.b(0x88, 0x45, 0x08, 0xd1, 0xe3)                        # mov [di+8], al / shl bx, 1
+    a.b(0x2e, 0x8b, 0x87); a.word('bk_x'); a.b(0x89, 0x45, 0x02)   # mov ax, cs:[bx+bk_x] / mov [di+2], ax
+    a.b(0xc7, 0x45, 0x04, 0x00, 0x00)                        # mov word [di+4], 0
+    # the set-up runs before the practice's knights are made ready, so a knight's record may still hold a fall of
+    # the last fight (HP 0 or less): the Black Knight came in down. It starts with its full HP
+    a.b(0x8b, 0x45, 0x3c, 0x85, 0xc0)                        # mov ax, [di+3Ch] / test ax, ax   max HP
+    a.short(0x7f, 'sp_hp')                                   # jg sp_hp
+    a.b(0xb8, BK_HP, 0x00, 0x89, 0x45, 0x3c)                 # mov ax, 30 / mov [di+3Ch], ax
+    a.label('sp_hp')
+    a.b(0x89, 0x45, 0x38)                                    # mov [di+38h], ax
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x02)           # cmp byte cs:[bk], 2
+    a.short(0x75, 'sp_count')                                # jne sp_count
+    a.b(0xc6, 0x45, 0x2e, STRONG, 0xc6, 0x45, 0x2f, STRONG, 0xc6, 0x45, 0x30, STRONG)   # strength, con., endurance
+    a.b(0xc7, 0x45, 0x40, SWORD_OF_SHARPNESS, 0x00, 0xc7, 0x45, 0x42, BATTLE_ARMOUR, 0x00)   # weapon, armour
+    a.b(0xc7, 0x45, 0x38, STRONG_HP, 0x00, 0xc7, 0x45, 0x3c, STRONG_HP, 0x00)   # HP, max HP
+    a.b(0xc7, 0x45, 0x3e, STRONG_MOVE, 0x00)                 # mov word [di+3Eh], movement
+    a.b(0xc6, 0x45, 0x34, B_DAGGERS)                         # mov byte [di+34h], daggers
+    a.label('sp_count')
+    a.b(0x2e, 0xfe, 0x06); a.word('bk_count')                # inc byte cs:[bk_count]
+    a.b(0x07, 0x5f, 0x5e, 0x59, 0x58)                        # pop es di si cx ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done   on at 2826 (the registration)
+
+    # bk_colours_on / off: the B key's knights wear STRONG_BLACK: the fight palette words of +20h = 4 (in MAIN's code,
+    # [bp+4]) hold it for the practice, which entries 41-43 are made from; put back at the practice's end
+    a.label('bk_colours_on')
+    a.b(0x06, 0x50, 0x8e, 0x46, 0x04)                        # push es ax / mov es, [bp+4]
+    a.b(0x2e, 0x80, 0x3e); a.word('bk_saved'); a.b(0x00)     # cmp byte cs:[bk_saved], 0
+    a.short(0x75, 'bkc_end')                                 # jne bkc_end
+    for n, (site, value) in enumerate(zip(BLACK_SITES, STRONG_BLACK)):
+        a.b(0x26, 0xa1, site & 0xff, site >> 8)              # mov ax, es:[site]
+        a.b(0x2e, 0xa3); a.word('bk_old', 2 * n)             # mov cs:[bk_old+n], ax
+        a.b(0x26, 0xc7, 0x06, site & 0xff, site >> 8, value & 0xff, value >> 8)   # mov word es:[site], value
+    a.b(0x2e, 0xc6, 0x06); a.word('bk_saved'); a.b(0x01)     # mov byte cs:[bk_saved], 1
+    a.short(0xeb, 'bkc_end')                                 # jmp bkc_end
+    a.label('bk_colours_off')
+    a.b(0x06, 0x50, 0x8e, 0x46, 0x04)                        # push es ax / mov es, [bp+4]
+    a.b(0x2e, 0x80, 0x3e); a.word('bk_saved'); a.b(0x00)     # cmp byte cs:[bk_saved], 0
+    a.short(0x74, 'bkc_end')                                 # je bkc_end
+    for n, site in enumerate(BLACK_SITES):
+        a.b(0x2e, 0xa1); a.word('bk_old', 2 * n)             # mov ax, cs:[bk_old+n]
+        a.b(0x26, 0xa3, site & 0xff, site >> 8)              # mov es:[site], ax
+    a.b(0x2e, 0xc6, 0x06); a.word('bk_saved'); a.b(0x00)     # mov byte cs:[bk_saved], 0
+    a.label('bkc_end')
+    a.b(0x58, 0x07, 0xc3)                                    # pop ax es / ret
+
+    # top_up (1000:0243, mov ax,[096Ch]: the next monster comes while fewer are on the screen than at once; the
+    # fight's start brings the first ones so): in a Black Knight practice none comes after all of them have
+    a.label('rules_top_up')
+    a.b(0xa1, 0x6c, 0x09)                                    # mov ax, [096Ch]   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
+    a.short(0x74, 'tu_end')                                  # je tu_end
+    a.b(0x50, 0x2e, 0xa0); a.word('bk_count')                # push ax / mov al, cs:[bk_count]
+    a.b(0x2e, 0x3a, 0x06); a.word('coop'); a.b(0x58)         # cmp al, cs:[coop] / pop ax
+    a.short(0x72, 'tu_end')                                  # jb tu_end         not all here yet (the fight's start)
+    a.b(0xa1, 0x6e, 0x09)                                    # mov ax, [096Eh]   as many as on the screen: no more
+    a.label('tu_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # hit_pair (1000:A14C, or ax,ax after the hit test of a weapon (bp = its animation slot) against a body (bx)):
+    # Black Knights do not hurt each other, nor do their daggers
+    # The knockback of a blow (the hit's script calls 1000:44DE) goes [782Eh]'s table of steps in [7832h]'s direction,
+    # which the monsters set as they strike (1000:56A3) but a knight never does: in a new session [782Eh] = 0 and the
+    # steps came from DS:0 (434), a knight flew across the screen. Never 0 now; and in a Black Knight practice a
+    # knight's or Black Knight's blow pushes the way the striker faces
+    a.label('rules_hit_pair')
+    a.b(0x0b, 0xc0)                                          # or ax, ax   (replaced)
+    a.short(0x75, 'hp_hit')                                  # jnz hp_hit
+    a.near(0xe9, 'hp_flags')                                 # jmp hp_flags   (ZF kept)
+    a.label('hp_hit')
+    a.b(0x53, 0x8b, 0x5e, 0x00, 0x8b, 0x5f, 0x16)            # push bx / mov bx, [bp+0] / mov bx, [bx+16h]   the game's bp
+    a.b(0x83, 0x3e, 0x2e, 0x78, 0x00)                        # cmp word [782Eh], 0
+    a.short(0x75, 'hp_table')                                # jne hp_table
+    a.b(0xc7, 0x06, 0x2e, 0x78, KNOCKBACK & 0xff, KNOCKBACK >> 8)   # mov word [782Eh], 7818h
+    a.label('hp_table')
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
+    a.short(0x74, 'hp_pop')                                  # je hp_pop
+    a.b(0x80, 0x7f, 0x35, 0x06); a.short(0x74, 'hp_dir')     # cmp byte [bx+35h], 6 / je hp_dir
+    a.b(0x80, 0x7f, 0x35, COMPUTER_TYPE); a.short(0x75, 'hp_dagger')   # cmp byte [bx+35h], 8 / jne hp_dagger
+    a.label('hp_dir')
+    a.b(0x50, 0x8a, 0x47, 0x08, 0xa2, 0x32, 0x78, 0x58)      # push ax / mov al, [bx+8] / mov [7832h], al / pop ax
+    a.label('hp_dagger')
+    a.b(0x80, 0x7f, 0x35, DAGGER)                            # cmp byte [bx+35h], 1Ah   a dagger: its thrower
+    a.short(0x75, 'hp_att')                                  # jne hp_att
+    a.b(0x8b, 0x5f, DAGGER_OWNER)                            # mov bx, [bx+5Ch]
+    a.label('hp_att')
+    a.near(0xe8, 'black_knight')                             # call black_knight
+    a.short(0x75, 'hp_pop')                                  # jnz hp_pop
+    a.b(0x8b, 0x5e, 0xfe, 0x8b, 0x5f, 0x16)                  # mov bx, [bp-2] / mov bx, [bx+16h]   the game's bx
+    a.near(0xe8, 'black_knight')                             # call black_knight
+    a.short(0x75, 'hp_pop')                                  # jnz hp_pop
+    a.b(0x33, 0xc0)                                          # xor ax, ax   no hit
+    a.label('hp_pop')
+    # D20: a hit on a player's knight: who hit it (a dagger: the dagger) and its strike (+28h) and type, for its
+    # death if it is slumped (death)
+    a.b(0x0b, 0xc0); a.short(0x74, 'hp_noted')               # or ax, ax / jz hp_noted
+    a.b(0x56, 0x57, 0x8b, 0x76, 0x00, 0x8b, 0x74, 0x16)      # push si di / mov si, [bp+0] / mov si, [si+16h]   hitter
+    a.b(0x8b, 0x7e, 0xfe, 0x8b, 0x7d, 0x16)                  # mov di, [bp-2] / mov di, [di+16h]   hit
+    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8); a.short(0x72, 'hp_not_knight')   # cmp di, 6C9Eh / jb
+    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8); a.short(0x77, 'hp_not_knight')   # cmp di, 6DC4h / ja
+    a.b(0x53); a.near(0xe8, 'knight_slot')                   # push bx / call knight_slot
+    a.b(0x2e, 0x89, 0xb7); a.word('last_hitter')             # mov cs:[bx+last_hitter], si
+    a.b(0x50, 0x8a, 0x44, 0x28, 0x8a, 0x64, 0x35)            # push ax / mov al, [si+28h] / mov ah, [si+35h]
+    a.b(0x80, 0xfc, DAGGER); a.short(0x75, 'hp_strike')      # cmp ah, 1Ah / jne hp_strike
+    # a dagger: al = 1 if it is at the knight's head (its box's top, animation +0Ch, less than 12 below the knight's)
+    a.b(0x56, 0x57, 0x8b, 0x76, 0x00, 0x8b, 0x7e, 0xfe)      # push si di / mov si, [bp+0] / mov di, [bp-2]   animations
+    a.b(0x8b, 0x74, 0x0c, 0x2b, 0x75, 0x0c, 0xb0, 0x00)      # mov si, [si+0Ch] / sub si, [di+0Ch] / mov al, 0
+    a.b(0x83, 0xfe, HEAD_ZONE); a.short(0x7d, 'hp_low')      # cmp si, 12 / jge hp_low
+    a.b(0xfe, 0xc0)                                          # inc al
+    a.label('hp_low')
+    a.b(0x5f, 0x5e)                                          # pop di si
+    a.label('hp_strike')
+    a.b(0x2e, 0x89, 0x87); a.word('last_strike'); a.b(0x58, 0x5b)   # mov cs:[bx+last_strike], ax / pop ax / pop bx
+    a.label('hp_not_knight')
+    a.b(0x5f, 0x5e)                                          # pop di si
+    a.label('hp_noted')
+    a.b(0x5b, 0x0b, 0xc0)                                    # pop bx / or ax, ax
+    a.label('hp_flags')
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+
+    # dagger_thrower, dagger_owner (1000:3E3B, mov dl,1Ah, di = the thrower; 3E40, mov word [di+1Ah],772Ah, di = the
+    # new dagger): the dagger keeps who threw it, so a Black Knight's daggers hurt the knights (practice_hit) and
+    # not the other Black Knights (hit_pair)
+    a.label('rules_dagger_thrower')
+    a.b(0xb2, DAGGER)                                        # mov dl, 1Ah   (replaced)
+    a.b(0x2e, 0x89, 0x3e); a.word('thrower')                 # mov cs:[thrower], di
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x02)           # cmp byte cs:[bk], 2   the B key's knights:
+    a.short(0x75, 'dth_end')                                  # jne dt_end            never out of daggers
+    a.b(0x8b, 0xdf); a.near(0xe8, 'black_knight')            # mov bx, di / call black_knight
+    a.short(0x75, 'dth_end')                                  # jnz dt_end
+    a.b(0xfe, 0x45, 0x34)                                    # inc byte [di+34h]     the one thrown back
+    a.label('dth_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('rules_dagger_owner')
+    a.b(0xc7, 0x45, 0x1a, 0x2a, 0x77)                        # mov word [di+1Ah], 772Ah   (replaced)
+    a.b(0x50, 0x2e, 0xa1); a.word('thrower')                 # push ax / mov ax, cs:[thrower]
+    a.b(0x89, 0x45, DAGGER_OWNER, 0x58)                      # mov [di+5Ch], ax / pop ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # dagger_damage (1000:44C2, sub [di+38h],ax: the damage of a dagger (or mudman) hit, si = it): the B key's Black
+    # Knights' daggers do double
+    a.label('rules_dagger_damage')
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x02)           # cmp byte cs:[bk], 2
+    a.short(0x75, 'dd_sub')                                  # jne dd_sub
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'dd_sub')   # cmp byte [si+35h], 1Ah / jne dd_sub
+    a.b(0x53, 0x8b, 0x5c, DAGGER_OWNER)                      # push bx / mov bx, [si+5Ch]   the thrower
+    a.near(0xe8, 'black_knight'); a.b(0x5b)                  # call black_knight / pop bx
+    a.short(0x75, 'dd_sub')                                  # jnz dd_sub
+    a.b(0xd1, 0xe0)                                          # shl ax, 1
+    a.label('dd_sub')
+    a.b(0x29, 0x45, 0x38)                                    # sub [di+38h], ax   (replaced)
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    a.label('rules_troll_target')
+    a.b(0xbe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)            # mov si, 6C9Eh   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x74, 'mt_cmp')                                  # je mt_cmp
+    a.b(0x8b, 0x36, 0x78, 0x09)                              # mov si, [0978h]
+    a.label('mt_cmp')
+    a.b(0x83, 0x7c, 0x38, 0x00)                              # cmp word [si+38h], 0   (replaced)
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+
+    # troll_depth (K26; 1000:570E, call 3C97h in the troll's step 56E5h; si = the troll, di = its knight): the troll
+    # counted as level with its knight within 5 in depth either way (+56h), but its swing hits only when its depth
+    # is 0-4 more than the knight's. 1-5 nearer, it stood and swung at the air for as long as the knight stood
+    # still, e.g. a knight at the screen's edge with the troll off the screen. Level now means 0-4: else it steps
+    # (5 at a time, 1000:5629 and 563E), so it always gets there
+    # The step 56E5h is shared: the mudman (1000:5363) and the computer knight (4BCA) use it too, so for them it
+    # does what 3C97h does: level within +56h either way
+    a.label('rules_troll_depth')
+    a.b(0x80, 0x7c, 0x35, TROLL_TYPE)                        # cmp byte [si+35h], 20h
+    a.short(0x74, 'td_troll')                                # je td_troll
+    a.b(0x8b, 0x44, 0x06, 0x2b, 0x45, 0x06)                  # mov ax, [si+6] / sub ax, [di+6]
+    a.short(0x79, 'td_abs'); a.b(0xf7, 0xd8)                 # jns td_abs / neg ax
+    a.label('td_abs')
+    a.b(0x3b, 0x44, 0x56, 0xb8, 0x00, 0x00)                  # cmp ax, [si+56h] / mov ax, 0
+    a.short(0x7f, 'td_end')                                  # jg td_end
+    a.b(0x40)                                                # inc ax
+    a.short(0xeb, 'td_end')                                  # jmp td_end
+    a.label('td_troll')
+    a.b(0x8b, 0x44, 0x06, 0x2b, 0x45, 0x06)                  # mov ax, [si+6] / sub ax, [di+6]
+    a.b(0x3d, 0x04, 0x00, 0xb8, 0x00, 0x00)                  # cmp ax, 4 / mov ax, 0
+    a.short(0x77, 'td_end')                                  # ja td_end      below 0 or above 4: not level
+    a.b(0x40)                                                # inc ax
+    a.label('td_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done (the game tests ax)
+
+    # troll_back (K26; 1000:573B, mov bp,[si+54h] in the troll's step: it steps back from its knight within this, 90):
+    # its swing hits a standing knight only from about 100 on, but the troll swung from 91 on (1000:568B, below 100),
+    # past the knight's body. It steps back within 104 now, so it swings only where it can hit
+    a.label('rules_troll_back')
+    a.b(0x8b, 0x5c, 0x54)                                    # mov bx, [si+54h]
+    a.b(0x80, 0x7c, 0x35, TROLL_TYPE)                        # cmp byte [si+35h], 20h   only the troll
+    a.short(0x75, 'tb_set')                                  # jne tb_set
+    a.b(0x81, 0xfb, TROLL_BACK & 0xff, TROLL_BACK >> 8)      # cmp bx, 104
+    a.short(0x7d, 'tb_set')                                  # jge tb_set
+    a.b(0xbb, TROLL_BACK & 0xff, TROLL_BACK >> 8)            # mov bx, 104
+    a.label('tb_set')
+    a.b(0x89, 0x5e, 0x00)                                    # mov [bp+0], bx     the game's bp (pop bp)
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # fight_end (D17; 1000:0ABE, replaces mov word [0942h],0 at the end of every fight): the map's CPU speed again
+    a.label('rules_fight_end')
+    a.b(0xfb, 0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x06, 0x1e)   # sti / push ax bx cx dx si di bp es ds
+    a.b(0x0e, 0x1f, 0x80, 0x3e); a.word('sped'); a.b(0x00)   # push cs / pop ds / cmp byte [sped], 0
+    a.short(0x74, 'fe_same')                                 # je fe_same           the speed did not change
+    a.b(0xbe); a.word('map_tail')                            # mov si, map_tail
+    a.near(0xe8, 'speed')                                    # call speed
+    a.b(0xc6, 0x06); a.word('sped'); a.b(0x00)               # mov byte [sped], 0
+    a.label('fe_same')
+    a.b(0x1f, 0x07, 0x5d, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58)   # pop ds es bp di si dx cx bx ax
+    a.b(0xc7, 0x06, 0x42, 0x09, 0x00, 0x00)                  # mov word [0942h], 0   (replaced)
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
     # moon_picture (K20; 1000:9053, replaces mov ax,[8989h] before the map's moon is drawn): the phase values 2Eh
     # and 2Fh are drawn as each other's picture. The cycle DS:05A9 showed full, half, three-quarters, crescent, new;
     # the half-moon Moonstones work at 2Eh (1000:1065, 2DBF), which now shows the half moon
@@ -1368,8 +2248,16 @@ def rules_code(a):
     a.label('pf_quit_cmp')
     a.near(0xe9, 'pf_cmp')                                   # jmp pf_cmp
     a.label('pf_play')
+    a.b(0x2e, 0x83, 0x3e); a.word('team_t0'); a.b(0x00)      # cmp word cs:[team_t0], 0
+    a.short(0x75, 'pf_started')                              # jne pf_started
+    a.b(0x50, 0x1e, 0x33, 0xc0, 0x8e, 0xd8)                  # push ax / push ds / xor ax, ax / mov ds, ax
+    a.b(0xa1, 0x6c, 0x04, 0x1f, 0x0c, 0x01)                  # mov ax, [046Ch] / pop ds / or al, 1   (never 0)
+    a.b(0x2e, 0xa3); a.word('team_t0'); a.b(0x58)            # mov cs:[team_t0], ax / pop ax   the first frame
+    a.label('pf_started')
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
-    a.short(0x74, 'pf_not_coop')                             # je pf_not_coop
+    a.short(0x75, 'pf_coop')                                 # jne pf_coop
+    a.near(0xe9, 'pf_not_coop')                              # jmp pf_not_coop
+    a.label('pf_coop')
     # co-op: [0978h] = a knight standing; while one stands and monsters are left the fight goes on; with none
     # standing the end starts (when the monsters are all down the game ends it itself)
     a.b(0x50, 0x53, 0x56, 0x51)                              # push ax bx si cx
@@ -1389,11 +2277,70 @@ def rules_code(a):
     a.b(0x0b, 0xf6)                                          # or si, si
     a.short(0x75, 'pfc_alive')                               # jnz pfc_alive
     a.b(0x80, 0x3e, 0x7d, 0x89, 0x00)                        # cmp byte [897Dh], 0
-    a.short(0x74, 'pfc_pop')                                 # je pfc_pop           already ending
+    a.short(0x74, 'pfc_none_pop')                            # je pfc_none_pop      already ending
     a.b(0xc6, 0x06, 0x7d, 0x89, 0x00, 0xc6, 0x06, 0x87, 0x89, 0x23)   # mov byte [897Dh], 0 / mov byte [8987h], 23h
-    a.short(0xeb, 'pfc_pop')                                 # jmp pfc_pop
+    a.label('pfc_none_pop')
+    a.near(0xe9, 'pfc_pop')                                  # jmp pfc_pop
     a.label('pfc_alive')
     a.b(0x89, 0x36, 0x78, 0x09)                              # mov [0978h], si      the first knight standing
+    # D19: a Black Knight falls as a knight does, not through the monsters' death (1000:0213), so the counts never
+    # fall: the fight is won when all of them have come and none stands
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
+    a.short(0x74, 'pfc_monsters')                            # je pfc_monsters
+    # not all have come (the set-up made fewer): the game's top-up brings them
+    a.b(0x2e, 0xa0); a.word('coop'); a.b(0x32, 0xe4)         # mov al, cs:[coop] / xor ah, ah
+    a.b(0x2e, 0x3a, 0x06); a.word('bk_count')                # cmp al, cs:[bk_count]
+    a.short(0x76, 'pfc_bk_all')                              # jbe pfc_bk_all
+    a.b(0xa3, 0x6c, 0x09)                                    # mov [096Ch], ax      at once: all
+    a.b(0x39, 0x06, 0x6e, 0x09); a.short(0x73, 'pfc_bk_all') # cmp [096Eh], ax / jae   (on screen >= all: none)
+    a.label('pfc_bk_more')
+    a.b(0x83, 0x3e, 0x6a, 0x09, 0x00); a.short(0x7e, 'pfc_bk_all')   # cmp word [096Ah], 0 / jle
+    a.b(0x59, 0x5e, 0x5b, 0x58)                              # pop cx si bx ax
+    a.near(0xe9, 'pf_topup')                                 # jmp pf_topup
+    a.label('pfc_bk_all')
+    a.b(0x57, 0x33, 0xc9, 0xbf, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8, 0xb8, MONSTER_COUNT, 0x00)
+    #                                                          push di / xor cx, cx / mov di, 6F08h / mov ax, 20
+    a.label('pfc_bk')
+    a.b(0x83, 0x3d, 0x00); a.short(0x74, 'pfc_bk_next')      # cmp word [di], 0 / je
+    a.b(0x80, 0x7d, 0x35, COMPUTER_TYPE); a.short(0x75, 'pfc_bk_next')   # cmp byte [di+35h], 8 / jne
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'pfc_bk_next')   # cmp word [di+38h], 0 / jle   down
+    a.b(0x41)                                                # inc cx
+    a.label('pfc_bk_next')
+    a.b(0x83, 0xc7, SLOT_SIZE, 0x48); a.short(0x75, 'pfc_bk')   # add di, 62h / dec ax / jnz pfc_bk
+    a.b(0x5f, 0x0b, 0xc9)                                    # pop di / or cx, cx
+    a.short(0x74, 'pfc_bk_none')                             # jz pfc_bk_none
+    a.near(0xe9, 'pfc_go')                                   # jmp pfc_go           one stands
+    a.label('pfc_bk_none')
+    a.b(0x2e, 0xa0); a.word('bk_count')                      # mov al, cs:[bk_count]
+    a.b(0x2e, 0x3a, 0x06); a.word('coop')                    # cmp al, cs:[coop]
+    a.short(0x73, 'pfc_bk_won')                              # jae pfc_bk_won
+    a.near(0xe9, 'pfc_go')                                   # jmp pfc_go           not all came yet
+    a.label('pfc_bk_won')
+    a.b(0xc7, 0x06, 0x6a, 0x09, 0x00, 0x00, 0xc7, 0x06, 0x6e, 0x09, 0x00, 0x00)   # [096Ah] = [096Eh] = 0
+    a.b(0x80, 0x3e, 0x7d, 0x89, 0x00)                        # cmp byte [897Dh], 0
+    a.short(0x74, 'pfc_bk_hero')                             # je pfc_bk_hero      already ending
+    a.b(0xc6, 0x06, 0x7d, 0x89, 0x00, 0xc6, 0x06, 0x87, 0x89, 0x23)   # mov byte [897Dh], 0 / mov byte [8987h], 23h
+    a.label('pfc_bk_hero')
+    a.b(0x89, 0x36, 0x79, 0x89)                              # mov [8979h], si      a knight standing
+    a.near(0xe9, 'pfc_pop')                                  # jmp pfc_pop
+    a.label('pfc_monsters')
+    # K25: a monster that left the fight without dying (a mudman that pulled a knight under) still counted as on the
+    # screen ([096Eh]), so no other came: in the one-to-one game the fight was over. With fewer monster objects
+    # active than counted, the count follows and the game's own top-up (1000:0243) runs, which brings the next
+    a.b(0x57, 0x33, 0xc9, 0xbf, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8, 0xb8, MONSTER_COUNT, 0x00)
+    #                                                          push di / xor cx, cx / mov di, 6F08h / mov ax, 20
+    a.label('pfc_count')
+    a.b(0x83, 0x3d, 0x00); a.short(0x74, 'pfc_count_next')   # cmp word [di], 0 / je              not active
+    a.b(0x41)                                                # inc cx
+    a.label('pfc_count_next')
+    a.b(0x83, 0xc7, SLOT_SIZE, 0x48); a.short(0x75, 'pfc_count')   # add di, 62h / dec ax / jnz pfc_count
+    a.b(0x5f)                                                # pop di
+    a.b(0x3b, 0x0e, 0x6e, 0x09); a.short(0x73, 'pfc_counted')   # cmp cx, [096Eh] / jae pfc_counted
+    a.b(0x39, 0x0e, 0x6a, 0x09); a.short(0x7e, 'pfc_counted')   # cmp [096Ah], cx / jle: none left to come
+    a.b(0x89, 0x0e, 0x6e, 0x09)                              # mov [096Eh], cx
+    a.b(0x59, 0x5e, 0x5b, 0x58)                              # pop cx si bx ax
+    a.near(0xe9, 'pf_topup')                                 # jmp pf_topup
+    a.label('pfc_counted')
     a.b(0x83, 0x3e, 0x6a, 0x09, 0x00)                        # cmp word [096Ah], 0  monsters still to come
     a.short(0x7f, 'pfc_go')                                  # jg pfc_go
     a.b(0x83, 0x3e, 0x6e, 0x09, 0x00)                        # cmp word [096Eh], 0  monsters on screen
@@ -1456,6 +2403,14 @@ def rules_code(a):
     a.label('pf_cmp')
     a.b(0x80, 0x3e, 0x7d, 0x89, 0x00)                        # cmp byte [897Dh], 0     (replaced instruction)
     a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+    # pf_topup (K25): return into the game's top-up 1000:0243 with its ret pointing at this int 63h again (the
+    # frame check then runs as usual). The interrupt frame moves down a word: IP 0243h, CS, flags, the site
+    a.label('pf_topup')
+    a.b(0x5b, 0x5d, 0x50, 0x50, 0x55, 0x8b, 0xec)            # pop bx / pop bp / push ax / push ax / push bp / mov bp, sp
+    a.b(0x8b, 0x46, 0x06, 0x2d, 0x02, 0x00)                  # mov ax, [bp+6] / sub ax, 2    the site
+    a.b(0x87, 0x46, 0x0a, 0x87, 0x46, 0x08, 0x89, 0x46, 0x06)   # xchg ax, [bp+10] / xchg ax, [bp+8] / mov [bp+6], ax
+    a.b(0xc7, 0x46, 0x04, 0x43, 0x02)                        # mov word [bp+4], 0243h
+    a.b(0x5d, 0x58, 0xcf)                                    # pop bp / pop ax / iret
 
     # practice_hit (1000:4275, a knight was hit; replaces mov si,[di+0Eh] / xor ax,ax): a hit by a teammate is
     # dropped and the knight's control goes on as if not hit (1000:3F05)
@@ -1466,6 +2421,8 @@ def rules_code(a):
     a.short(0x74, 'ph_knights')                              # je ph_knights
     a.b(0x80, 0x7c, 0x35, DAGGER)                            # cmp byte [si+35h], 1Ah
     a.short(0x75, 'ph_knights')                              # jne ph_knights
+    a.b(0x81, 0x7c, DAGGER_OWNER, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp word [si+5Ch], 6F08h
+    a.short(0x73, 'ph_knights')                              # jae ph_knights   D19: a Black Knight's: a hit
     a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_PRACTICE_FLAGS); a.b(COOP_DAGGER_HITS)   # test flags, dagger
     a.short(0x74, 'ph_drop')                                 # jz ph_drop
     a.label('ph_knights')
@@ -1473,7 +2430,11 @@ def rules_code(a):
     a.short(0x74, 'ph_end')                                  # jz ph_end
     a.b(0x8b, 0xdf); a.near(0xe8, 'team')                    # mov bx, di / call team
     a.b(0x8a, 0xe0)                                          # mov ah, al
-    a.b(0x8b, 0xde); a.near(0xe8, 'team')                    # mov bx, si / call team
+    a.b(0x8b, 0xde)                                          # mov bx, si
+    a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'ph_team')  # cmp byte [bx+35h], 1Ah / jne ph_team
+    a.b(0x8b, 0x5f, DAGGER_OWNER)                            # mov bx, [bx+5Ch]   D19: a dagger is on its thrower's side
+    a.label('ph_team')
+    a.near(0xe8, 'team')                                     # call team
     a.b(0x0a, 0xc0)                                          # or al, al
     a.short(0x74, 'ph_clear')                                # jz ph_clear     not a knight (a dagger): a hit
     a.b(0x3a, 0xc4)                                          # cmp al, ah
@@ -1568,6 +2529,8 @@ def rules_code(a):
 
     # practice_end (1000:014D; replaces mov dx,[0940h]): practice is over
     a.label('rules_practice_end')
+    a.near(0xe8, 'bk_colours_off')                           # call bk_colours_off   D19
+    a.b(0x2e, 0xc6, 0x06); a.word('bk'); a.b(0x00)           # mov byte cs:[bk], 0
     a.b(0x2e, 0xc6, 0x06); a.word('multi'); a.b(0x00)        # mov byte cs:[multi], 0
     a.b(0x2e, 0xc6, 0x06); a.word('monster'); a.b(0x00)      # mov byte cs:[monster], 0
     a.b(0x2e, 0xc6, 0x06); a.word('init_state'); a.b(0x00)   # mov byte cs:[init_state], 0
@@ -1603,6 +2566,30 @@ def rules_code(a):
 
 def rules_data(a, table):
     """The int 63h tables: the sites (return address, job) and the settings from rules.py."""
+    base, per = struct.unpack_from('<HH', table or rules_default_table(), G_CYCLES)
+    a.label('fight_tails')                                   # D17: CONFIG -set cycles=... for 1-4 knights, the map
+    for n in range(4):
+        a.word(f'fight_tail{n}')
+    for n in range(4):                                       # 1 knight: the map's speed, no change
+        a.label(f'fight_tail{n}'); a.b(cycles_tail(base + per * n if per and n else 0))
+    a.label('map_tail'); a.b(cycles_tail(base if per else 0))
+    a.label('sped'); a.b(0)                                  # 1 after a fight's speed was set
+    a.label('down'); a.b(bytes(4))                           # K25: 1 = the knight's fall has been started
+    a.label('mud_victim'); a.b(0, 0)                         # K25: the knight the mudman holds
+    a.label('mud_puller'); a.b(0, 0)                         # K25: the mudman that pulled a knight under
+    a.label('balok_victim'); a.b(0, 0)                       # K28: the knight the Balok holds (or held last)
+    a.label('impaled'); a.b(bytes(2 * MONSTER_COUNT))        # K28: by monster slot, the knight a trogg speared
+    a.label('last_hitter'); a.b(bytes(8))                    # D20: by knight, the object that hit it last
+    a.label('last_strike'); a.b(bytes(8))                    # D20: by knight, that object's +28h (low) and type (high)
+    a.label('team_t0'); a.b(0, 0)
+    a.label('bk'); a.b(0)                                    # D19: 1 = a Black Knight practice, 2 = the B key's
+    a.label('bk_count'); a.b(0)                              # D19: Black Knights made in this fight
+    a.label('bk_saved'); a.b(0)                              # D19: 1 = bk_old holds MAIN's words
+    a.label('bk_old'); a.b(bytes(6))
+    a.label('bk_face'); a.b(bytes(BK_FACE))
+    a.label('bk_x'); a.b(struct.pack('<4h', *BK_X))
+    a.label('thrower'); a.b(0, 0)                            # D19: the object throwing a dagger now
+                            # D14: the BIOS tick of the fight's first frame
     a.label('hooks')
     for where, old, kind in HOOKS + [(where, old, 'fate') for where, old, _ in FATE_HOOKS]:
         _, ret = hook_bytes(where, old, kind)
@@ -1635,9 +2622,9 @@ def rules_data(a, table):
     a.label('call_ret'); a.b(0, 0)
     a.label('recolour'); a.b(0)                              # D13: first pixel value to move in this frame, 0 = none
     a.label('level'); a.b(16)                                # D13: fade level of entries 32-37, 0-16
-    a.label('words_left'); a.b(9)
-    a.label('colour_sites')                                  # D13/D15: where MAIN keeps the colour words: 32-40
-    for sites in [sites for _, _, sites in RECOLOUR] + [GREEN_SITES]:
+    a.label('words_left'); a.b(NEW_WORDS)
+    a.label('colour_sites')                                  # D13/D15/D19: where MAIN keeps the colour words: 32-43
+    for sites in [sites for _, _, sites in RECOLOUR] + [GREEN_SITES, BLACK_SITES]:
         for site in sites:
             a.b(site & 0xff, site >> 8)
     a.label('rc_shift'); a.b(RECOLOUR_SHIFT)                 # D15: the shift of the frame being recoloured
@@ -1673,6 +2660,26 @@ def make_savehook(rules_table=None):
     a.b(0xfb)                                                # sti
     a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x1e, 0x06)   # push ax bx cx dx si di bp ds es
     a.b(0x0e, 0x1f)                                          # push cs / pop ds
+    a.b(0x81, 0x3e); a.word('name_ptr'); a.word('fight_name')   # cmp word [name_ptr], fight_name
+    a.short(0x75, 'save_check')                              # jne save_check
+    # D17: the fight's CPU speed by its knights: a co-op practice's count, D12's 3-4, 2 in a two-player practice,
+    # else 1 (MAIN's DS is the one pushed last but one)
+    a.b(0x8b, 0xec, 0x8e, 0x46, 0x02, 0x33, 0xdb)            # mov bp, sp / mov es, [bp+2] / xor bx, bx
+    a.b(0x8a, 0x1e); a.word('coop'); a.b(0x0a, 0xdb)         # mov bl, [coop] / or bl, bl
+    a.short(0x75, 'fs_count')                                # jnz fs_count
+    a.b(0x8a, 0x1e); a.word('multi'); a.b(0x0a, 0xdb)        # mov bl, [multi] / or bl, bl
+    a.short(0x75, 'fs_count')                                # jnz fs_count
+    a.b(0xb3, 0x01)                                          # mov bl, 1
+    a.b(0x26, 0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION)   # cmp word es:[0704h], 2
+    a.short(0x75, 'fs_count')                                # jne fs_count
+    a.b(0x26, 0x83, 0x3e, CHOSEN_PLAYERS & 0xff, CHOSEN_PLAYERS >> 8, 0x02)   # cmp word es:[0940h], 2
+    a.short(0x72, 'fs_count')                                # jb fs_count
+    a.b(0xb3, 0x02)                                          # mov bl, 2
+    a.label('fs_count')
+    a.b(0x4b, 0x83, 0xe3, 0x03, 0xd1, 0xe3)                  # dec bx / and bx, 3 / shl bx, 1
+    a.b(0x8b, 0xb7); a.word('fight_tails')                   # mov si, [bx+fight_tails]
+    a.near(0xe8, 'speed')                                    # call speed
+    a.label('save_check')
     a.near(0xe8, 'checkpoint')                               # call checkpoint   save modes
     a.b(0x80, 0x3e); a.word('rules_table', G_SAVE_MODE); a.b(MANUAL_ONLY)   # cmp byte [save_mode], 2
     a.short(0x73, 'save_skip')                               # jae save_skip     no automatic saves
@@ -1772,7 +2779,21 @@ def make_savehook(rules_table=None):
     a.short(0xe2, 'set_loop')                                # loop set_loop
     a.b(0xc3)                                                # ret
 
+    # speed (D17): DS = CS, si = a command line (fight_tail, map_tail): DOSBox-X's CONFIG -set cycles=... through its
+    # shell, run as a child like the name refresh; an empty line changes nothing. All registers but si may change
+    a.label('speed')
+    a.b(0x80, 0x3c, 0x00); a.short(0x74, 'speed_end')        # cmp byte [si], 0 / je speed_end
+    a.b(0xc6, 0x06); a.word('sped'); a.b(0x01)               # mov byte [sped], 1
+    a.b(0x89, 0x36); a.word('param_block', 2)                # mov [param_block+2], si   the command line
+    a.b(0xba); a.word('cmd_path')                            # mov dx, cmd_path
+    a.b(0x56); a.near(0xe8, 'exec')                          # push si / call exec
+    a.b(0x5e, 0xc7, 0x06); a.word('param_block', 2); a.word('tail')   # pop si / mov word [param_block+2], tail
+    a.label('speed_end')
+    a.b(0xc3)                                                # ret
+
     a.label('refresh')                                       # run the child so that DOSBox-X re-reads the name
+    a.b(0xba); a.word('child_path')                          # mov dx, child_path
+    a.label('exec')                                          # dx = the program to run (all registers may change)
     a.b(0xa1); a.word('reserve')                             # mov ax, [reserve]
     a.b(0x0b, 0xc0)                                          # or ax, ax
     a.short(0x74, 'no_free')                                 # jz no_free
@@ -1782,7 +2803,6 @@ def make_savehook(rules_table=None):
     a.b(0x2e, 0x89, 0x26); a.word('save_sp')                 # mov cs:[save_sp], sp
     a.b(0x0e, 0x07)                                          # push cs / pop es
     a.b(0xbb); a.word('param_block')                         # mov bx, param_block
-    a.b(0xba); a.word('child_path')                          # mov dx, child_path
     a.b(0xb8, 0x00, 0x4b, 0xcd, 0x21)                        # mov ax, 4B00h / int 21h          exec
     a.b(0xfa)                                                # cli
     a.b(0x2e, 0x8e, 0x16); a.word('save_ss')                 # mov ss, cs:[save_ss]
@@ -1819,6 +2839,7 @@ def make_savehook(rules_table=None):
     a.label('save_ss'); a.b(0, 0)
     a.label('save_sp'); a.b(0, 0)
     a.label('child_path'); a.b(CHILD_PATH)
+    a.label('cmd_path'); a.b(CMD_PATH)
     a.label('chk_path'); a.b(CHK_PATH)
     a.label('slot_path'); a.b(SLOT_PATH)
     a.label('auto_name'); a.b(AUTO_NAME.ljust(8, b'\0'))

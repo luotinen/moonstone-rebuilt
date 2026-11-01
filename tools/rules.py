@@ -28,6 +28,12 @@ ITEMS = [('healing_potions', 0x00), ('gems_of_seeing', 0x02), ('rings_of_protect
          ('talismans_of_the_wyrm', 0x08), ('scrolls_of_haste', 0x0a), ('scrolls_of_the_hawk', 0x0c),
          ('scrolls_of_acquisition', 0x0e), ('scrolls_of_the_wyrm', 0x10), ('scrolls_of_protection', 0x12)]
 SHARPNESS_ITEM, KEYS, MOONSTONES = 0x04, 0x14, 0x16
+# one setting per Moonstone, its bit in the item table's mask. There are four (the Guardian gives one of the four
+# bits, 1000:1037), but the moon phase has one value for both half moons (2Eh, cycle DS:05A9), so Stonehenge (1053)
+# and the damage bonus (2DAB) treat bits 4 and 8 alike, and they share the icon and (since K19) the name. Which of
+# the two is the waxing one is not in the code; the names follow moonstonetavern.co.uk
+MOONSTONE_BITS = [('moonstone_new_moon', 1), ('moonstone_full_moon', 2), ('moonstone_half_moon_waxing', 4),
+                  ('moonstone_half_moon_waning', 8)]
 # Home villages: the places 15h-18h (table DS:0498: id, x, y) belong to the knights +20h = 0-3 and are near their
 # start corners. A knight starts (and respawns or reincarnates) at the start corner of its home village.
 HOME_VILLAGES = {'north_west': 0, 'north_east': 1, 'south_west': 2, 'south_east': 3}
@@ -176,11 +182,15 @@ G_TARGET_MARGIN = G_PRACTICE_FLAGS + 1        # byte: a monster keeps its knight
 G_HIT_REST = G_TARGET_MARGIN + 1              # 2 bytes (K6): BIOS ticks after a hit on the dragon / the Guardian in
                                               # which further hits do not count (0 = as the game: every hit counts)
 G_EXPLOIT_FIXES = G_HIT_REST + 2              # byte: fixes of exploits runs use, off in speedrun mode (bits below)
-TABLE_SIZE = G_EXPLOIT_FIXES + 1
 KEEP_DRAGON_TARGET = 1                        # K21: the dragon keeps its target when the map is drawn again
 NO_EXTRA_TURN = 2                             # K22: after an action that used up the turn, no input before its end
 POTION_LIFE = 4                               # K23: a potion gives no life to a knight without lives
 EXPLOIT_FIXES = KEEP_DRAGON_TARGET | NO_EXTRA_TURN | POTION_LIFE
+G_CYCLES = G_EXPLOIT_FIXES + 1                # 2 words: DOSBox-X cycles, more per knight in a fight (D17)
+G_DEATHS = G_CYCLES + 4                       # byte: death_animations (D20), DEATHS
+DEATHS = {'extended': 0, 'vanilla': 1, 'off': 2}   # all deaths / only the game's beheading / no blood (as gore off)
+TABLE_SIZE = G_DEATHS + 1
+CYCLES_DEFAULT = (4000, 1000)                 # the conf's cycles, more for each knight past the first in a fight
 HIT_REST_DEFAULT = 8                          # K6: tenths of a second (0.8 s), until play tests set it
 # Selling at the merchant (item screen mode 5): half the shop price, rounded down. The long sword and padded armour
 # are what a knight gets back and are not bought; the Sword of Sharpness is a magic item and not sold here.
@@ -278,7 +288,8 @@ _onoff = _choice({'on': 1, 'off': 0, 'true': 1, 'false': 0})
 MAX_HP = 999
 KNIGHT_BOUNDS = {'strength': (1, 99), 'constitution': (1, 99), 'endurance': (1, 99), 'lives': (1, 99),
                  'hp_bonus': (0, 900), 'gold': (0, 20000), 'experience': (0, 20000), 'daggers': (0, 99),
-                 'keys': (0, 4), 'moonstones': (0, 4), **{name: (0, 9) for name, _ in ITEMS}}
+                 'keys': (0, 4), **{name: (0, 1) for name, _ in MOONSTONE_BITS},
+                 **{name: (0, 9) for name, _ in ITEMS}}
 RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 100), 'max_gold': (0, 20000),
                 'max_lives': (1, 99), 'moon_days': (1, 100), 'xp_per_stat': (1, 1000), 'weapon_damage': (0, 100),
                 'armour_hp': (0, 100), 'xp_per_moon_phase': (0, 100), 'duel_win_xp': (0, 100),
@@ -286,7 +297,8 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'healer_price': (0, 127), 'move_damage': (0, 100), 'max_daggers': (1, 99), 'frog_days': (0, 100),
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
-                'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50)}
+                'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50),
+                'default_cycles': (100, 100000), 'additional_cycles_per_knight': (0, 20000)}
 
 def ticks(tenths):
     """Tenths of a second -> BIOS ticks (18.2 a second), as SAVEHOOK.COM counts them."""
@@ -309,7 +321,9 @@ def read_ini(path):
         if os.path.abspath(path) == default:
             raise RulesError('custom_rules-default.ini must have speedrun_mode = off')
         r = read_ini(default)
-        r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0)
+        r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0,
+                 hawk_curse=0, protection_curse=0,      # no curses: luck should not end a run
+                 cycles=(CYCLES_DEFAULT[0], 0))         # D17 off: the game's own speed
         return r
     r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
@@ -321,6 +335,9 @@ def read_ini(path):
     r['village_any'] = _get(cp, g, 'village_heal_where', _choice({'home': 0, 'any': 1}))
     r['rest_heal'] = _get(cp, g, 'rest_heal', _choice({'none': 0, 'full': 1}))
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
+    r['deaths'] = _get(cp, g, 'death_animations', _choice(DEATHS)) if cp.has_option(g, 'death_animations') else 0
+    r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
+                   _get(cp, g, 'additional_cycles_per_knight', int, *rb['additional_cycles_per_knight']))
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
     r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
@@ -394,6 +411,9 @@ def read_ini(path):
         if not cp.has_section(sec):
             old = sec.split('_')[0]                          # [Knight1] became [Knight1_blue]
             raise RulesError(f'section [{sec}] is missing' + (f' ([{old}] is now [{sec}])' if cp.has_section(old) else ''))
+        if cp.has_option(sec, 'moonstones'):                 # moonstones = 0-4 became one line per stone
+            raise RulesError(f'[{sec}] moonstones: now one line per stone, 0 or 1: '
+                             + ', '.join(name for name, _ in MOONSTONE_BITS))
         k = {key: _get(cp, sec, key, int, lo, hi) for key, (lo, hi) in KNIGHT_BOUNDS.items()}
         k['weapon'] = _get(cp, sec, 'weapon', _choice(WEAPONS))
         k['armour'] = _get(cp, sec, 'armour', _choice(ARMOURS))
@@ -408,7 +428,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'speedrun_mode', 'default_cycles', 'additional_cycles_per_knight', 'death_animations', 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
                  'merchant_selling',
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -435,8 +455,8 @@ def read_ini(path):
 
 # --- the SAVEHOOK.COM table -------------------------------------------------------------------------------------------
 DEFAULT_KNIGHT = dict(strength=1, constitution=1, endurance=1, lives=5, gold=10, experience=0, daggers=10, hp_bonus=0,
-                      weapon=0x16, armour=0x1b, keys=0, moonstones=0, mode=0, colour=None,
-                      **{name: 0 for name, _ in ITEMS})
+                      weapon=0x16, armour=0x1b, keys=0, mode=0, colour=None,
+                      **{name: 0 for name, _ in MOONSTONE_BITS}, **{name: 0 for name, _ in ITEMS})
 
 def table(r=None):
     """Settings table for SAVEHOOK.COM (TABLE_SIZE bytes). Without rules: the normal game's values."""
@@ -453,7 +473,7 @@ def table(r=None):
         if k['weapon'] == WEAPONS['sword_of_sharpness']:
             struct.pack_into('<H', items, SHARPNESS_ITEM, 1)
         items[KEYS] = (1 << k['keys']) - 1                 # one bit per region
-        items[MOONSTONES] = (1 << k['moonstones']) - 1     # bits 1, 2, 4, 8: one per moon phase
+        items[MOONSTONES] = sum(bit for name, bit in MOONSTONE_BITS if k[name])
         t[o + 0x10:o + 0x28] = items
     hp = r['armour_hp'] if r else [0, 10, 20, 30]
     struct.pack_into('<4hh', t, G_ARMOUR_HP, *hp, r['weapon_damage'][0] if r else 0)
@@ -479,6 +499,8 @@ def table(r=None):
     t[G_TARGET_MARGIN] = r['target_margin'] if r else 20
     t[G_HIT_REST:G_HIT_REST + 2] = bytes(r['hit_rest'] if r else (ticks(HIT_REST_DEFAULT),) * 2)
     t[G_EXPLOIT_FIXES] = r['exploit_fixes'] if r else EXPLOIT_FIXES
+    struct.pack_into('<HH', t, G_CYCLES, *(r['cycles'] if r else CYCLES_DEFAULT))
+    t[G_DEATHS] = r.get('deaths', 0) if r else 0
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------

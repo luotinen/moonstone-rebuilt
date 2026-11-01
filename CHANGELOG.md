@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+* D17: fights with 2-4 knights are no longer slow: when a fight starts SAVEHOOK.COM raises DOSBox-X's cycles by
+  `additional_cycles_per_knight` (1000) for every knight past the first, from `default_cycles` (4000): 1-4 knights
+  4000-7000; after the fight the speed goes back (`custom_rules.ini`; 0 per knight turns it off). CTRL+F12 /
+  CTRL+F11 now change the speed by 1000 cycles.
+* K25: in co-op a monster's instant kill (troll, mudman, Balok, dragon...) kills the knight it hit. It killed the
+  first knight standing instead, while the knight hit stood up again and the monster kept attacking it. A knight
+  killed in co-op now stays down, and a troll no longer goes idle (often off the screen) once knight 1 is down. A knight down goes off the screen
+  after its fall, so it can never be seen standing again. When a mudman pulls a knight under, the next mudman comes
+  for the knights left. A knight down no longer leaves a blue body behind (its last frames were drawn into the
+  background without its colour). A mudman that takes hold of one knight now pulls under, or lets go of, that same
+  knight: it held one and killed another, and could leave knights frozen. Its hold now kills only the knight it
+  holds (it could kill others too), and after a mudman has pulled a knight under from below the other mudmen fight
+  on (they stood still for good).
+* K28: the Balok's hold in co-op: it shook one knight and let go of another, so the knight it held could stay
+  frozen and the fight stuck. It now lets go of the knight it holds, and that knight is shown in its own colours
+  while it is shaken (it was always blue). Its bite and squeeze now kill the knight it holds: they killed the knight
+  nearest it (blue, or green with red). A knight on a spear trogg's spear is shown in its own colours (it was
+  always blue). The mudman's pull from below no longer kills two more knights, and a mudman coming in after it
+  no longer stands still for good.
+* D19: practice against Black Knights with 2-4 players: key 0 sets all the knights against as many Black Knights,
+  each a copy of one of them, every one going for the nearest knight; key B does it with strong black ones
+  (strength, constitution and endurance 5, the Sword of Sharpness, battle armour, daggers that never run out and
+  do double damage), also with one player. Daggers are on their thrower's side: in a team practice they hurt only
+  the other team, against monsters or Black Knights the knights' daggers never hurt knights, and the Black Knights'
+  never hurt Black Knights. A Black Knight now always comes in with its full HP: it is made from a knight's record
+  before the practice readies the knights, and a knight that fell in the last fight made a Black Knight already
+  down (with 4 players only 2 came). An up or down thrust no longer throws the knight hit through the air: the
+  practice borrows the trolls' set-up, which makes those blows' hit reactions the troll club's throw; they are the
+  knights' own again (a small lift for the up thrust).
+* D20: new deaths. A knight that has fallen to its knees (dead, before it lies down) and is hit again dies by the
+  blow: an up strike splits it in two from top to bottom (one half falls towards you, the other away, both showing the blood-red inside), a down and forward thrust
+  goes through the middle of the body (from the front or from behind), a back strike goes down through the helmet, an up and
+  forward strike lifts it on the sword, and a dagger stays where it hit: in the helmet's face or the back of the head, or in the belly or the back. Knights, Black
+  Knights, axe troggs and ratmen use them on the players' knights; the forward sweep still takes the head off.
+  The new pieces are made by setup from the game's own knight pieces (KN3.OB). A knight on its knees waits about a second longer for the death blow, and in the 3-4 knight practice a knight down no longer stands up again.
+* Custom rules: `death_animations = extended` (the default: the new deaths), `vanilla` (only the game's beheading)
+  or `off` (no blood, as the game's gore setting off). The up and forward strike no longer has a death of its own;
+  the spear trogg's blow on a knight on its knees is the thrust, the axe trogg's blow from above the split.
+* A blow no longer throws a knight across the screen at the start of a session: the knockback table the game
+  reads ([782Eh]) is set only when a monster strikes, and was empty before that.
+* K26 now acts on the troll only: the mudman and the computer knight share the troll's step, and the mudman kept
+  too far from its knight (it stayed stuck at the bottom of the screen).
+* D14: a team practice shows each knight in its own colour for the first second, then in its team's colour.
+* K26: the troll no longer stands swinging at the air a little off its knight's depth (as at the screen's edge with
+  the troll off the screen): it steps until its swing can hit. It no longer swings from too close either (its stick
+  passed the knight): it steps back first.
+* K27: the dragon takes up its far fire for a knight 96 or more away (was 140), so it no longer breathes its near fire
+  at a knight it cannot reach.
+* Speedrun mode: scrolls are never cursed (Hawk, Protection), so bad luck cannot spoil a run.
+* Custom rules: each knight's Moonstones are now one line per stone, 0 or 1 (`moonstone_new_moon`,
+  `moonstone_full_moon`, `moonstone_half_moon_waxing`, `moonstone_half_moon_waning`) instead of `moonstones = 0-4`; a file with
+  the old line is refused with a message that names the new ones.
+
 ## 0.5.0 – Dragon, Moonstone, team fight fixes
 
 * K6: the dragon and the Guardian can no longer be stun-locked: after a hit, further hits do not count for a short
