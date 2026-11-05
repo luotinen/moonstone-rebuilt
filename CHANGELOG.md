@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+* Cheat codes (`cheat_codes = yes` in `custom_rules.ini`, the default): typed in the item screen, in a fight or on
+  the map, and in the first menu TOOEASY (harder fights) and the monster codes, which start a practice fight with player 1 as one of its monsters: HOTSTUFF (the dragon), DIRTYRAT (a ratman), CLUBMEMBER (a troll), JUMPSCARE (a Balok), TROGLIFE (a trogg) and SWAMPTHING (a mudman), with as many knights as players chosen (with 4, five people play: a third key set I J K L, B, N); D, J, G and B wait two thirds of a second in the first menu for a code's next letter (a code's keys may be 1.3 s apart); the monster is player 1's once it has walked in (or come up out of the mud), and knight 1 leaves the screen unseen; the troll and the troggs: up and fire = the overhead blow, else the push or sideways blow; HOTSTUFF's dragon pushes a close knight away with its paw at once; SWAMPTHING's mudman grabs from below only after its own sinking; a code typed whole plays the sword clash sound; the list is in CHEATS.md.
+* Item screen codes DANUBLESS (full HP, else a life, else a healing potion), PUTARINGONIT (a Ring of Protection)
+  and MOONMAX (strength, constitution and endurance 5).
+* ROCKETMAN flies on the secondary button (the knight walks and strikes in the air); new fight code LUNAR: moon
+  physics (blows push the one hit away, flings go farther, half-speed walking, moon jumps on the secondary button; with ROCKETMAN too: faster flight up, a slow moon fall).
+* The fight codes can also be typed in the first menu (for the next practice fight) or on the map (for the next
+  fight of the game), several at once; of codes that clash the last one typed counts. Speedrun mode turns the cheat
+  codes, catch-up and anti-cheese off (the game's own exploits stay).
+* Age rating for parents (`[Parental]` `age_rating` at the top of `custom_rules.ini`): K18 (the default, as the
+  game), K16 (blood as chosen, no fatalities: the deaths of gore off), K12 (gore off whatever the game's options
+  say), and K16_permanent / K12_permanent, kept in PARENTAL.LCK: the installation never goes above that rating
+  again (only a new installation lifts it; the setup writes 18 for a new installation, and without the file the
+  game is locked to K12); Start.bat then starts the game only with the custom rules on, and
+  Custom_rules_off.bat, Custom_rules_reset.bat and Fixes_Off.bat refuse. README: a note for parents on the
+  game's violence (Mindscape: 12+; ours: 18 with the normal settings, about 12 with gore off).
+* Catch-up (`catchup = yes`, the default, or `off`; custom rules, the game only): a human knight behind the leading
+  human knight (Moonstones, keys, lives, abilities, experience, HP) finds more in a lair's chest the first time it
+  wins it: per 30 points behind (up to 4 levels) 10 gold and one magic item more, and from level 3 a Scroll of
+  Acquisition. A human knight on its last life or at a quarter of its HP has a 10 % chance of a healing potion in
+  the chest (both: 25 %).
+* `anticheese = false / true` in `custom_rules.ini` (`[Rules]`): the anti-cheese rules below without TOOEASY. Black
+  Knights' fights (the B key's practice; after BLACKDEATH, fights with computer knights) always use TOOEASY and the
+  anti-cheese rules, for that fight only.
+* TOOEASY against the cheese (Moonstone Tavern's tactics): the monsters that walk (trolls, troggs, mudmen, the
+  Guardian, computer knights) keep out of a knight's reach until they are level with it, so the step-up-and-strike
+  trick no longer works; the dragon answers a blow with its near fire at once instead of flinching (one blow per
+  run in under its head), and its near fire and claw and bite are not stopped by blows.
+* The secondary button (custom rules): right Shift for player 1, left Shift for player 2, a controller's second
+  button (which no longer attacks as the first does). It does nothing in the game itself; JUMPSCARE uses it.
+* Co-op: a knight a mudman holds breaks free (fire and down) by its own keys or controller; before, only player 1's
+  keys counted, whichever knight was held.
+* D25: knights turn in place: turning round no longer makes the knight hop sideways (its feet change places and it
+  stays where it is), and the turn takes no step. Knights also walk right up to each other (and to monsters) until
+  their pictures touch, instead of stopping up to a whole stride (25 pixels) apart. In depth they now stop 14 apart
+  (it was 20, and up to a step more).
+* Custom rules: `rest_heal` is now `on_E_rest_heal`, with a new default. When the day changes, each knight heals
+  `rest_heal_fixed_percentage` (20) % of its missing hit points (at least 1) plus `rest_heal_endurance_percentage`
+  (10) % times the share of its endurance (movement) left when its last turn ended: E pressed at once 30 %, all
+  walked 20 % (the original heals a quarter); endurance left after a fight or a visit counts too
+  (`fixed_and_endurance`). Also `fixed_only`, `full` (the original, and E restores full hit points, as
+  `rest_heal = full` did) and `none` (the original). An old `rest_heal` line gives an error naming the new setting.
+* K30: in co-op, the knight shown in a monster's special attack (a ratman's, the boar tossing a knight, a mudman's
+  hold and pull, the Guardian's) was always drawn in the first knight's colours (blue). It now has the colours of
+  the knight the monster goes for, as the Balok, the spear trogg and the dragon already had.
+* D24: more responsive controls. A key tapped quickly (shorter than one frame, about 0.1 s) was sometimes missed:
+  every key press now counts. An attack pressed while the knight is still finishing its last move is made as soon
+  as that move ends, instead of being lost (`input_buffer` in `custom_rules.ini`, on by default).
+* D15: a co-op practice against the dragon (D) did not end when the dragon was beaten: the fight went on with no
+  enemy. The dragon is not one of the counted monsters, so the co-op check kept the fight running after the
+  dragon's death had ended it. Now the fight is won when the dragon is dead.
+* K25: when the dragon ate a knight in a co-op fight, the blue knight died instead (the eating animation's kill went
+  to the dragon's nearest knight, and the "eaten" flag stopped the next knight's animation). Now the knight eaten
+  dies, and it is shown in its own colours in the dragon's jaws (it was always blue).
+* K29: a knight could stand behind the dragon at the left edge of the screen, where the dragon (which always faces
+  right) never attacks it while the knight's blows still hurt it. The dragon's body is now a wall: the knights stay
+  in front of it, where it attacks them. Also in the one-knight game.
+* D22: gore off (the game's blood option, or `death_animations = off`) now means no blood at all. Blood that is a
+  piece of its own (sprays, drops, pools) is not drawn, and blood on the knights, the Balok and the boar is painted
+  over with the colour beside it. The troll's blow from above and the Balok's leap no longer crush a knight into a
+  pool of blood: it falls to its knees and lies down. The new deaths (D20) are off. Every hit shows a hit marker
+  instead: a short white X where the blow lands.
+* More room for new knight pieces: SAVEHOOK.COM is loaded into upper memory (`lh savehook` in
+  `moonstone-dosbox-x.conf`), which leaves the game about 9 KB more conventional memory, and the knights' bank area
+  grows by 4 KB more (D20: 1BC0h paragraphs; the EMS cache places after KN3.OB and HE3.OB move on by 1600h). The hit
+  marker's frames are no longer added to HE3.OB, which never draws them.
+* Less CPU time in fights: SAVEHOOK.COM finds the hooks that run for every piece drawn, every object and every hit
+  test first (they were 31st to 70th of 73 in the table it searches), and with gore off it stops looking for blood
+  in a frame as soon as the answer is known.
+* D23: faster drawing. The game turned every sprite piece, every frame, from its bit planes into pixels bit by bit;
+  SAVEHOOK.COM now does it with a table and 32-bit registers, with exactly the same result. With the knights'
+  recolouring made faster too, a fight takes about a third fewer instructions (measured on fight saves: 370 000 ->
+  238 000 a frame with four knights). Two knight pieces drawn with fewer colour planes (KN3.OB 31, KN4.OB 25) now
+  take each knight's own colours; they always showed in the first knight's.
+* D21: dragon debug mode for testing (`dragon_debug_mode = 1` in `custom_rules.ini`, off by default): on the map
+  the keys 1-4 make knight 1-4 the dragon's target, and Enter starts the dragon fight when the knight whose turn it
+  is stands under the dragon.
+
 ## 0.6.0 – Team combat and new fatalities
 
 * D17: fights with 2-4 knights are no longer slow: when a fight starts SAVEHOOK.COM raises DOSBox-X's cycles by

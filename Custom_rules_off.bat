@@ -1,6 +1,14 @@
 @echo off
 rem Uses the default rules: the normal game. custom_rules.ini is kept; Custom_rules_on.bat uses it again.
 cd /d "%~dp0"
+set "AGELOCK=1"
+if exist PARENTAL.LCK findstr /b /c:"18 " PARENTAL.LCK >nul && set "AGELOCK="
+if defined AGELOCK (
+  echo This installation is locked to an age rating for good ^(PARENTAL.LCK, or no PARENTAL.LCK^): the custom rules stay on.
+  echo Only a new installation of Moonstone Rebuilt removes the lock. Nothing was changed.
+  pause
+  exit /b 1
+)
 if not exist "_fixes\fixed\MAIN.EXE" goto missing
 if not exist "_fixes\fixed\SAVEHOOK.COM" goto missing
 if not exist ORIGINAL.FLG copy /y "_fixes\fixed\MAIN.EXE" MAIN.EXE >nul || goto failed

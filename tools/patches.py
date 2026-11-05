@@ -257,7 +257,12 @@ PATCHES = {
                   # hold of stays its knight (1000:52FE, 559C, 54DB)
                   ((0x1000, 0x52fe), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
                   ((0x1000, 0x559c), bytes.fromhex('8b440c'), bytes.fromhex('cd6390')),
-                  ((0x1000, 0x54db), bytes.fromhex('8bc7'), bytes.fromhex('cd63'))],
+                  ((0x1000, 0x54db), bytes.fromhex('8bc7'), bytes.fromhex('cd63')),
+                  # the dragon's bite takes a knight off and sets [77F0h]; the next knight's handler that runs kills
+                  # itself (3EEA): in co-op another knight than the one eaten (1000:3AF3 notes the one eaten)
+                  ((0x1000, 0x3af3), bytes.fromhex('8b450c'), bytes.fromhex('cd6390')),
+                  # ... and in co-op without the flag (1000:3AF9): the eating script kills the one eaten
+                  ((0x1000, 0x3af9), bytes.fromhex('c706f0770100'), bytes.fromhex('cd6390909090'))],
     },
     'K28': {
         'title': 'The Balok in co-op (found in the user\'s play test, 1 Nov 2026): its hold pauses the knight it '
@@ -270,13 +275,66 @@ PATCHES = {
                   # the spear trogg's frames of a fallen knight on its spear (1000:2F90)
                   ((0x1000, 0x2f90), bytes.fromhex('8bc6'), bytes.fromhex('cd63'))],
     },
+    'D25': {
+        'title': 'Knights turn in place and walk up close (user report 4 Nov 2026). A turn (1000:3F83, 3F92) '
+                 'mirrors the pose about the object\'s x, which the standing knight is not centred on (x-13..x+23), '
+                 'so it hopped 10 to the side and took its first step at once; now x moves 10 the other way (the body '
+                 'stays, the feet change places) and that frame takes no step. A step blocked by another figure\'s '
+                 'box (1000:9FDF, the drawn frames\' extents; the walking steps are 25, 3, 23, 4) stopped the knight '
+                 'up to a whole step away; now it is cut to the gap (3FAC), so the figures come up to touching. '
+                 'Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x3f83), bytes.fromhex('c6450801'), bytes.fromhex('cd639090')),
+                  ((0x1000, 0x3f92), bytes.fromhex('c6450803'), bytes.fromhex('cd639090')),
+                  ((0x1000, 0x3fac), bytes.fromhex('8b36e877'), bytes.fromhex('cd639090')),
+                  # in depth figures stop 14 apart, not 20 (the hits reach 10)
+                  ((0x1000, 0xa0ab), bytes.fromhex('83f914'), bytes.fromhex('83f90e'))],
+    },
+    'D24': {
+        'title': 'Responsive controls (user request 4 Nov 2026). The game reads its key table once a frame (two BIOS '
+                 'ticks, about 110 ms), so a key tapped between two reads was lost, and a knight reads its input only '
+                 'when its move is over (1000:98F6), so an attack pressed during a move was lost too. The keyboard '
+                 'interrupt\'s store (1000:8271) becomes int 64h: SAVEHOOK.COM keeps a release back until the key '
+                 'has been down three ticks (let through by the key test, 828B -> int 63h). The knight\'s input '
+                 '(3F16 -> int 63h): a fire key pressed in the last 8 ticks gives that attack, with its directions '
+                 '(input_buffer, on by default). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x8271), bytes.fromhex('2e8887e381'), bytes.fromhex('cd64909090')),
+                  ((0x1000, 0x828b), bytes.fromhex('2e80bfe381ff'), bytes.fromhex('cd6390909090')),
+                  ((0x1000, 0x3f16), bytes.fromhex('894526'), bytes.fromhex('cd6390'))],
+    },
+    'D23': {
+        'title': 'Faster drawing (measured 4 Nov 2026: in a fight of four knights about 39 % of the instructions '
+                 'went to the sprite converter, which turns every piece drawn, every frame, from planes into a byte '
+                 'a pixel bit by bit with rol / rcl). Its call at 1000:5EDA becomes int 63h: SAVEHOOK.COM does the '
+                 'same with a table and 386 registers (DOSBox-X\'s CPU), about four times fewer instructions, and '
+                 'gives masks it has no routine for to the game\'s own. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x5eda), bytes.fromhex('2eff17'), bytes.fromhex('cd6390'))],
+    },
+    'D22': {
+        'title': 'Gore off without blood (user decisions 4 Nov 2026). With the game\'s blood setting off ([0700h], or '
+                 'death_animations = off): the troll\'s blow and the Balok\'s leap no longer crush a knight down into '
+                 'a pool of blood but give the plain death (1000:43B0 and 3729, the script 16E2h becomes 1310h); '
+                 'SAVEHOOK.COM clears frames of blood only (colour 15) from the fight\'s pieces and paints the blood '
+                 'on the knights, the Balok and the boar over with the colour beside it (draw and recolour hooks); '
+                 'the new deaths (D20) are off; and every hit shows a hit marker, a white X (frames in KN3.OB, '
+                 'script DS:FE60, made at the hit test 1000:A14C). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x43b0), bytes.fromhex('c7063a78e216'), bytes.fromhex('cd6390909090')),
+                  ((0x1000, 0x3729), bytes.fromhex('bee216'), bytes.fromhex('cd6390'))],
+    },
+    'D21': {
+        'title': 'Dragon debug mode (user request 4 Nov 2026; custom rules dragon_debug_mode = 1, off by default): on '
+                 'the map the keys 1-4 make knight 1-4 the target of the dragon (+46h), and Enter by a knight standing '
+                 'under the dragon starts its fight. In the game only the target of the dragon is attacked, when the '
+                 'dragon flies over it in its turn (1000:A5BB), and Enter only runs the action of a place (B000). '
+                 'mov di,6E26h at 1000:A5BB becomes int 63h. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xa5bb), bytes.fromhex('bf266e'), bytes.fromhex('cd6390'))],
+    },
     'D20': {
         'title': 'New deaths (user request 1 Nov 2026): a knight hit again in the slumped pose of its fall (script '
                  '130E) dies by the blow: split in two by an up strike, a dagger in the forehead or the back of the '
                  'head, a long thrust (down and forward) or a back strike through the helmet, lifted on the sword by '
                  'an up and forward strike. mov di,[77E8h] at 1000:2D5E becomes int 63h, where SAVEHOOK.COM picks '
                  'the death. The pieces are added to KN3.OB and the scripts written into DS:F480 by '
-                 'death_frames.py; the knights\' bank area (1000:86A7) grows by 100h paragraphs to hold them. Needs '
+                 'death_frames.py; the knights\' bank area (1000:86A7) grows by 200h paragraphs to hold them. Needs '
                  'SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x2d5e), bytes.fromhex('8b3ee877'), bytes.fromhex('cd639090')),
                   # a dagger also hits a knight slumped below its flight (1000:3E59)
@@ -285,13 +343,15 @@ PATCHES = {
                   ((0x1000, 0x4159), bytes.fromhex('837d2804'), bytes.fromhex('cd639090')),
                   # the spear trogg's blow on a slumped knight: the thrust, not the knight on its spear (1000:4357)
                   ((0x1000, 0x4357), bytes.fromhex('8b7d0e'), bytes.fromhex('cd6390')),
-                  ((0x1000, 0x86a8), bytes.fromhex('c019'), bytes.fromhex('c01a')),
+                  # the knights' bank area: 19C0h -> 1BC0h paragraphs (D20's pieces and D22's hit marker, room for
+                  # more; SAVEHOOK.COM is loaded high, so DOS has it)
+                  ((0x1000, 0x86a8), bytes.fromhex('c019'), bytes.fromhex('c01b')),
                   # with EMS the files are cached at fixed places (DS:828A: page group, offset, size): KN3.OB and
                   # HE3.OB grew into the next files (KN4.OB, KN5.OB; ki.cel), whose copies then overwrote the new
-                  # pieces. Those three move on by 800h (the groups are 8000h; they end by 7130h at most)
-                  (('DS', 0x83a6), bytes.fromhex('992b'), bytes.fromhex('9933')),
-                  (('DS', 0x83be), bytes.fromhex('692b'), bytes.fromhex('6933')),
-                  (('DS', 0x83c4), bytes.fromhex('a931'), bytes.fromhex('a939'))],
+                  # pieces. Those three move on by 1600h (the groups are 8000h; they end by 7F30h at most)
+                  (('DS', 0x83a6), bytes.fromhex('992b'), bytes.fromhex('9941')),
+                  (('DS', 0x83be), bytes.fromhex('692b'), bytes.fromhex('6941')),
+                  (('DS', 0x83c4), bytes.fromhex('a931'), bytes.fromhex('a947'))],
     },
     'K26': {
         'title': 'The troll\'s depth (found in the user\'s play test, 31 Oct 2026): the troll counted as level with '

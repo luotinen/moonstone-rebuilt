@@ -6,6 +6,25 @@ runs the original DOS game in DOSBox-X with bug fixes, automatic saves and bette
 **This release contains no game files.** You need your own copy of the DOS version from GOG.com. The setup copies
 your game files into this folder and patches the copies; your GOG installation is not changed.
 
+> **A note for parents: graphic violence.** Moonstone's fights are bloody: blood sprays and pools, knights are
+> beheaded, split in two or run through, and monsters eat them. Mindscape rated the game for ages 12 and up, but
+> with the normal settings it is closer to **16 or even 18**; our own rating is **18** with the normal settings and
+> about **12** with **gore off** (no blood at all; a small X shows where a blow lands). Gore off is in the game's own
+> options (the blood setting). At the top of `custom_rules.ini`, `age_rating` sets the rating (then run
+> `Custom_rules_on.bat`):
+>
+> | `age_rating` | What it allows |
+> |---|---|
+> | `K18` (the default) | Everything as the game: blood or gore off as chosen in its options, all the death animations. |
+> | `K16` | Blood as chosen in the game's options, but no fatalities: the knights die as they do with gore off. |
+> | `K12` | Gore off, whatever the game's options say. |
+> | `K16_permanent` | As K16, and the installation never goes above K16 again (K12 can still be chosen). |
+> | `K12_permanent` | As K12, for good. |
+>
+> A permanent rating can only be lifted by installing Moonstone Rebuilt again in a new folder; until then the
+> scripts that would turn the custom rules or the fixes off refuse. The limit is kept in `PARENTAL.LCK` in the
+> game folder (the setup writes 18 there); deleting that file locks the game to K12.
+
 ## Requirements
 
 ### Mandatory
@@ -107,9 +126,7 @@ skip the intro.
   | 5 | war beasts, 9 | 0 | the Black Knight |
 
   **0** with 2-4 players (D19): the knights fight together against as many Black Knights, each a copy of one of
-  them; every Black Knight goes for the knight nearest to it, and they cannot hurt each other. **B** (any number of
-  players) is the same against strong Black Knights: black, strength, constitution and endurance 5, the Sword of
-  Sharpness, battle armour and endless daggers that do double damage. Daggers are on their thrower's side: in a
+  them; every Black Knight goes for the knight nearest to it, and they cannot hurt each other. Daggers are on their thrower's side: in a
   team practice they hurt only the other team, and against monsters or Black Knights a knight's dagger never hurts
   another knight.
 
@@ -133,7 +150,9 @@ most generic gamepads) into that joystick. Nothing needs installing:
    bindings, with one controller for both players (its right stick and its third and fourth buttons are player 2).
 2. Connect the controllers **before** `Start.bat`; DOSBox-X looks for controllers only when it starts.
 3. Each player moves with the left stick or the D-pad and attacks with the first or second button (A or B on an Xbox
-   pad; cross or circle on a PlayStation pad). The keyboard keeps working alongside.
+   pad; cross or circle on a PlayStation pad). With custom rules on, only the first button attacks; the second is
+   a *secondary button* (as right Shift for player 1 and left Shift for player 2 on the keyboard), which the game
+   itself does not use. The keyboard keeps working alongside.
 4. If the knight drifts or ignores a direction, calibrate: on the game's first menu press **J**, then follow the
    two screens (stick to the top left + button, stick to the bottom right + button). If up and down are the wrong
    way round, run the other of the two scripts.
@@ -184,8 +203,15 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
 * **Treasure, Math and Mythral:** the dragon's hoard (`grows` with its victories, `reset` each game, or `keep` as the original), what the lairs hold (gold, magic items or both), the gold amount, the chance of each magic item (lairs, Math, the dragon's hoard and the High Temple's stock), what Math the Wizard gives and his frog days and irritation, and Mythral's chance of success for each size of donation. Tables the game could roll on forever (for example only one kind of magic item) are refused.
 * **Practice:** what each practice key 1-0 starts (monster type or the Black Knight, the lair's ground, monsters to defeat, how many at once), whether knights' blows and daggers hurt other knights, and whether monsters go for the nearest knight or the first.
+* **Parents:** `age_rating` (see the note at the top).
+* **Harder fights:** `anticheese = true`: the monsters no longer fall for the usual repeated tricks (stepping off
+  their level and striking as they come level; running in under the dragon's head during its long fire), but the
+  fights stay winnable face to face.
+* **Catch-up** (`catchup = yes`, the default): in the game (not practice) a human knight well behind the leading
+  human knight finds more in a lair's chest the first time it wins it (gold, magic items, and when far behind a
+  Scroll of Acquisition), and a knight on its last life or low on hit points sometimes finds a healing potion.
 * **Fight speed:** DOSBox-X's speed (`default_cycles`, 4000, as on the map) and how much each knight past the first adds in a fight (`additional_cycles_per_knight`, 1000), as fights with several knights need more.
-* **Speedrun mode** (`speedrun_mode = on`): every other setting in the file is ignored. The game runs with the default rules and all the fixes, except where runs rely on the game's own behaviour: every hit on the dragon and the Guardian counts, the dragon's target can be rerolled from the item screen, the extra-turn glitch, the healing potion after the Guardian, the Moonstone damage bonus as in the original, and the dragon's hoard kept from game to game. Scrolls are never cursed in speedrun mode, so bad luck cannot spoil a run. Records still need the unmodified game.
+* **Speedrun mode** (`speedrun_mode = on`): every other setting in the file is ignored. The game runs with the default rules and all the fixes, except where runs rely on the game's own behaviour: every hit on the dragon and the Guardian counts, the dragon's target can be rerolled from the item screen, the extra-turn glitch, the healing potion after the Guardian, the Moonstone damage bonus as in the original, and the dragon's hoard kept from game to game. Scrolls are never cursed in speedrun mode, so bad luck cannot spoil a run, and there is no catch-up loot or anti-cheese (the game's own exploits stay). Records still need the unmodified game.
 * **Monsters:** the hit recovery of the dragon and the Guardian (fix K6: after a hit, further hits do not count for this long), the hit points and damage of every monster, the ratmen by moon phase, the Guardian and the dragon, and the least damage the dragon does against Talismans of the Wyrm.
 * **Prices:** the weapon and armour shops (the computer knights pay the same), the healer and every High Temple item. The prices on screen follow; selling at the temple pays half, as in the game.
 * **Selling at the merchant** (`merchant_selling = on`): click one of your daggers, your weapon or your armour on the merchant screen to sell it for half its price, rounded down. You get the long sword or padded armour back for free; armour takes its hit points with it, and chain mail and battle armour their extra movement. Magic items, the Sword of Sharpness included, are not bought there.
@@ -204,7 +230,10 @@ All changes are listed with details in **[FIXES.md](FIXES.md)**. In short:
   plays; ratmen grow stronger with the moon as the manual says.
 * **Improvements:** optional custom rules in `custom_rules.ini` (starting values per knight, death modes, caps and more); automatic saves before every fight and turn; the intro and ending can be skipped; the intro
   works in DOSBox-X; MT-32, General MIDI or AdLib music; optional Amiga intro and ending music; DOSBox-X settings
-  from the GOG community (speed, joystick, black screen); 4:3 picture with crisp pixels.
+  from the GOG community (speed, joystick, black screen); 4:3 picture with crisp pixels; gore off without any blood
+  (a hit marker instead) and a parental lock for it; quicker controls (no lost key taps, an attack pressed during a
+  move follows it); knights turn in place and walk up close; faster drawing in fights with several knights; optional
+  rest healing, catch-up loot and anti-cheese rules.
 
 The original difficulty and rules are kept.
 

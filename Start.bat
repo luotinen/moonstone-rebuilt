@@ -1,6 +1,13 @@
 @echo off
 rem Starts Moonstone with DOSBox-X using the settings in this folder.
 cd /d "%~dp0"
+rem An age rating locked for good (PARENTAL.LCK below 18, or no PARENTAL.LCK: K12) needs the custom rules on.
+set "AGELOCK=1"
+if exist PARENTAL.LCK findstr /b /c:"18 " PARENTAL.LCK >nul && set "AGELOCK="
+if defined AGELOCK (
+  if exist ORIGINAL.FLG goto locked
+  if not exist CUSTOM_RULES.FLG goto locked
+)
 set "DBX="
 set "AMIGA="
 if exist "C:\DOSBox-X\dosbox-x.exe" set "DBX=C:\DOSBox-X\dosbox-x.exe"
@@ -45,3 +52,8 @@ findstr /c:"= fluidsynth" music.conf >nul && set "SET=gm"
 copy /y "_music\amiga\%SET%\*.BIN" DISKA >nul
 set "AMIGA=1"
 exit /b 0
+:locked
+echo This installation is locked to an age rating for good ^(PARENTAL.LCK, or no PARENTAL.LCK: K12^), but the custom rules are off.
+echo Set age_rating in custom_rules.ini, run Fixes_On.bat and Custom_rules_on.bat; then Start.bat starts the game.
+pause
+exit /b 1

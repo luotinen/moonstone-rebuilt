@@ -6,21 +6,23 @@ HE3.OB, the other look) and appended to those banks; the scripts that draw them 
 Usage: python -I tools/death_frames.py <game dir> [preview.png]   (the preview needs Pillow and msfmt.py)"""
 import os, random, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE
+from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE
 
 BANK = 8                                  # KN3.OB in the knights' bank table (DS:8933, loaded at 1000:8B10)
 FIRST = 64                                # KN3.OB's own frames are 0-63; the new ones follow
 DS_IN_IMAGE = 0x123b * 16                 # MAIN.EXE's data segment from the start of the load image
 GORE_OFF_SCRIPT = 0x1328                  # the plain fall the game plays when [0700h] is set
 # with EMS the game copies files into a cache at start, each at a fixed place (DS:828A, 6 bytes a file: page group,
-# offset, size); D20 moves the files after KN3.OB and HE3.OB on by 800h, which leaves them this much room
-EMS_ROOM = {'KN3.OB': 0x3369, 'HE3.OB': 0x3399}
-# the knights' bank area (1000:86A7): 1988h paragraphs for KN1-5.OB, D20 makes it this big
-BANK_AREA, BANK_USED = 0x1ac0, 0x1988
+# offset, size); D20 moves the files after KN3.OB and HE3.OB on by 1600h, which leaves them this much room
+EMS_ROOM = {'KN3.OB': 0x4169, 'HE3.OB': 0x4199}
+# the knights' bank area (1000:86A7): 1988h paragraphs for KN1-5.OB, D20 makes it this big (SAVEHOOK.COM is loaded
+# high so that DOS has the room)
+BANK_AREA, BANK_USED = 0x1bc0, 0x1988
 THRUST_NEAR = 6                           # the thrust brings the knight this much nearer (anim +8h), in front of the sword
 # blood is 15 only, as the game's own blood in KN3.OB: colours 9-14 come from each scene's palette (the knights
 # never use them; 14 showed as coloured grains)
 BLOOD, BLOOD_LIGHT, OUTLINE, STEEL, STEEL_DARK, STEEL_EDGE = 15, 15, 5, 1, 2, 4
+MARKER_GREY, MARKER_DARK, MARKER_BOX = 2, 3, 24    # D22: the hit marker's greys (fixed knight colours) and its size
 # the slumped pose (script 1000:130E): head 21, body 22, legs and sword 23, as (frame, dx, dy)
 HEAD, BODY, LEGS = (21, -28, 7), (22, -28, 21), (23, -59, 40)
 LYING = [(25, -52, 42), (24, -80, 44), (26, -62, 51), (27, -98, 56)]   # the game's lying knight (1000:1328)
@@ -330,7 +332,35 @@ def make(k3):
         (3, [legs(), body_p(), head_p(0, 2), P(SPRAY_S, hx + 7, hy - 3), P(DRIP, hx + 16, hy + 13)]),
         (0, lying + [P(POOL_S, -72, ground)]),
     ]
+    # D22: the hit marker (gore off): an X of four short diagonal arms round an empty middle, white in the middle and
+    # grey at the ends; it lights up, shows whole and spreads out grey (the user's choice, 4 Nov 2026). Drawn with
+    # its middle at the object's position
+    def x_marker(gap, length, cols, wide):
+        a = blank(MARKER_BOX, MARKER_BOX)
+        c = MARKER_BOX // 2
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                for i in range(length):
+                    d = gap + i; x, y = c + sx * d, c + sy * d
+                    a[y][x] = cols[min(i, len(cols) - 1)]
+                    if wide: a[y][x + 1] = a[y][x]
+        return a
+    half = MARKER_BOX // 2
+    deaths['marker'] = [(rep, [(BANK, add(x_marker(*k)), -half, 0, -half)]) for rep, k in (
+        (1, (2, 4, (STEEL, STEEL, MARKER_GREY, MARKER_DARK), True)),
+        (2, (3, 6, (STEEL, STEEL, STEEL, MARKER_GREY, MARKER_GREY, MARKER_DARK), True)),
+        (1, (6, 5, (MARKER_GREY, MARKER_DARK, MARKER_DARK, MARKER_DARK, MARKER_DARK), False)))]
     return new, deaths
+
+
+def marker_script(frames):
+    """D22: the hit marker's script: its frames, each shown `repeat` times, then the object removed (9Eh, as the
+    game's hit effect 6820)."""
+    s = bytearray()
+    for repeat, pieces in frames:
+        if repeat > 1: s += bytes((0x84, repeat))
+        s += b''.join(struct.pack('<BBbBh', b, n, dy, fl, dx) for b, n, dy, fl, dx in pieces) + bytes((0xff, 0x00))
+    return bytes(s + bytes((0x9e, 0x00, 0xff, 0xff)))
 
 
 def script(frames, sound=0x09):
@@ -371,6 +401,7 @@ def install(game, exe):
         frames, _ = read_bank(data)
         new, made = make(bank_frames(data)[:FIRST])
         if name == 'KN3.OB': deaths = made
+        else: new = new[:-len(made['marker'])]           # D22's hit marker is drawn from KN3.OB only (last)
         if len(frames) == FIRST:
             data = bank_with(data, new)
             with open(path, 'wb') as f: f.write(data)
@@ -391,6 +422,12 @@ def install(game, exe):
         if any(exe[at:at + D20_SIZE[name]]) and exe[at:at + len(code)] != code:
             raise ValueError(f'MAIN.EXE: DS:{D20[name]:04X} is not free')
         exe[at:at + D20_SIZE[name]] = code + bytes(D20_SIZE[name] - len(code))
+    code = marker_script(deaths['marker'])                # D22
+    assert len(code) <= MARKER_SIZE, len(code)
+    at = image + MARKER_SCRIPT
+    if any(exe[at:at + MARKER_SIZE]) and exe[at:at + len(code)] != code:
+        raise ValueError(f'MAIN.EXE: DS:{MARKER_SCRIPT:04X} is not free')
+    exe[at:at + MARKER_SIZE] = code + bytes(MARKER_SIZE - len(code))
     return bytes(exe)
 
 

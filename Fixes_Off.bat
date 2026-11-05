@@ -1,6 +1,14 @@
 @echo off
 rem Switches the game to: original (unpacked but unchanged programs, original sound files).
 cd /d "%~dp0"
+set "AGELOCK=1"
+if exist PARENTAL.LCK findstr /b /c:"18 " PARENTAL.LCK >nul && set "AGELOCK="
+if defined AGELOCK (
+  echo This installation is locked to an age rating for good ^(PARENTAL.LCK, or no PARENTAL.LCK^): the original game, with its own blood option, is not used.
+  echo Only a new installation of Moonstone Rebuilt removes the lock. Nothing was changed.
+  pause
+  exit /b 1
+)
 for %%F in ("_fixes\original\MAIN.EXE" "_fixes\original\INTR.EXE" "_fixes\original\DISKA\CAMEL4") do if not exist %%F goto missing
 if not exist "_fixes\original\SAMPLES\*" goto missing
 copy /y "_fixes\original\MAIN.EXE" MAIN.EXE >nul || goto failed

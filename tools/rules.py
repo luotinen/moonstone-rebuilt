@@ -189,7 +189,25 @@ EXPLOIT_FIXES = KEEP_DRAGON_TARGET | NO_EXTRA_TURN | POTION_LIFE
 G_CYCLES = G_EXPLOIT_FIXES + 1                # 2 words: DOSBox-X cycles, more per knight in a fight (D17)
 G_DEATHS = G_CYCLES + 4                       # byte: death_animations (D20), DEATHS
 DEATHS = {'extended': 0, 'vanilla': 1, 'off': 2}   # all deaths / only the game's beheading / no blood (as gore off)
-TABLE_SIZE = G_DEATHS + 1
+G_DRAGON_DEBUG = G_DEATHS + 1                 # byte: dragon_debug_mode (D21), 0 or 1
+G_INPUT_BUFFER = G_DRAGON_DEBUG + 1           # byte: input_buffer (D24), 1 = on
+G_REST_FIXED = G_INPUT_BUFFER + 1             # byte: rest_heal_fixed_percentage (0-100)
+G_REST_ENDURANCE = G_REST_FIXED + 1           # byte: rest_heal_endurance_percentage (0-100)
+G_CHEATS = G_REST_ENDURANCE + 1               # byte: cheat_codes, 1 = yes
+G_ANTICHEESE = G_CHEATS + 1                   # byte: anticheese, 1 = true (as TOOEASY's anti-cheese rules)
+G_CATCHUP = G_ANTICHEESE + 1                  # byte: catchup, 1 = yes (more loot for a knight behind, potions when low)
+G_AGE = G_CATCHUP + 1                         # byte: [Parental] age_rating: 12 gore off, 16 no fatalities, 18 all
+TABLE_SIZE = G_AGE + 1
+# age_rating: (rating, permanent lock). PARENTAL.LCK holds the highest rating allowed in this installation: the setup
+# writes 18 once (a new installation, or the first setup of 0.7.0 over an older one: _fixes/PARENTAL.INIT), a
+# permanent rating lowers it for good, and a missing file counts as 12 (deleting it locks the game to K12)
+AGE_RATINGS = {'k12_permanent': (12, 12), 'k12': (12, 0), 'k16_permanent': (16, 16), 'k16': (16, 0), 'k18': (18, 0)}
+AGE_LOCK, AGE_INIT = 'PARENTAL.LCK', os.path.join('_fixes', 'PARENTAL.INIT')
+# on_E_rest_heal (G_REST): none = the game's daily healing (a quarter of the missing HP); full = also the E key
+# restores full HP; fixed_and_endurance and fixed_only = the daily healing is fixed % of the missing HP (at least
+# 1), plus endurance % times the share of the movement (endurance) the knight had left when its last turn ended
+# (E pressed, a fight, a place)
+REST_HEAL = {'none': 0, 'full': 1, 'fixed_and_endurance': 2, 'fixed_only': 3}
 CYCLES_DEFAULT = (4000, 1000)                 # the conf's cycles, more for each knight past the first in a fight
 HIT_REST_DEFAULT = 8                          # K6: tenths of a second (0.8 s), until play tests set it
 # Selling at the merchant (item screen mode 5): half the shop price, rounded down. The long sword and padded armour
@@ -205,6 +223,26 @@ HOOKS = [
     (0x2d84, '8a4c2e03c1', 'damage'),                   # damage of a hit (1000:2D73): + strength (long sword bonus)
     (0xa66c, '807c3100', 'turn'),                       # turn change: is the knight dead?
     (0xa58e, 'a1accc', 'rest'),                         # E key: end the turn
+    (0xa568, '8b3ee877', 'turn_moves'),                 # every pass of the map loop, before the E key and actions
+    (0xa607, 'c706aacc0000', 'turn_end'),               # the end of a turn: the movement left noted
+    (0x11bf, '8b5c3c2b5c387407d1ebd1eb83cb01', 'daily_heal'),   # the day's end: each record's healing
+    (0xbfec, 'e89710', 'items_loop'),                   # cheat codes: every pass of the item screen's loop
+    (0xa6d2, '833ea2cc00', 'turn_haste'),               # cheat codes: the turn's budget, KNIGHTRIDER's haste
+    (0x3c24, 'e8be1a', 'dragon_move'),                  # HOTSTUFF: the dragon's moves (call 56E5)
+    (0x3c27, '8b36e877', 'dragon_input'),               #   ... and player 1's input as its moves
+    (0x3886, 'e85904', 'dragon_range'),                 #   no flights of its own (call 3CE2)
+    (0x39e6, '83268677bf', 'dragon_attack'),            #   its attacks by the keys
+    (0x3150, 'e8ac0b', 'rat_decide'),                   # DIRTYRAT: player 1's ratman decides by the keys
+    (0x5605, 'e8dd00', 'troll_decide'),                 # CLUBMEMBER: player 1's troll decides by the keys
+    (0x35ec, '837d3800', 'balok_decide'),               # JUMPSCARE: player 1's Balok decides by the keys
+    (0x2e19, 'e8c928', 'trogg_decide'),                 # TROGLIFE: player 1's trogg decides by the keys
+    (0x4e97, '8b36e877', 'mon_walk'),                   # LUNAR: the monsters' walk (trolls, troggs) at half speed
+    (0x3ab4, '8b4428', 'dragon_hit'),                   # TOOEASY: the dragon answers a knight's blow
+    (0x05b6, 'c745080100', 'lair_loot'),                # catchup: a lair won the first time, before its chest
+    (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
+    (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
+    (0x550a, 'e8b32e', 'mud_escape'),                   # co-op: a knight a mudman holds breaks free by its own keys
+    (0x3711, '8b36e877', 'balok_land'),                 #   ... and its jump attack lands on a knight
     (0x112e, '807c31037d0480443101', 'village'),        # home village druids
     (0x0add, '806c3101', 'lives_si'), (0x0aed, '806d3101', 'lives_di'),   # fight lost
     (0x0d03, '806c3101', 'lives_si'),                   # computer knight robbed by the dragon
@@ -314,6 +352,9 @@ def read_ini(path):
         raise RulesError(f'the file cannot be read: {e}')
     rb = RULES_BOUNDS
     g = 'Rules'
+    # [Parental] age_rating: kept also in speedrun mode
+    age = (_get(cp, 'Parental', 'age_rating', _choice(AGE_RATINGS))
+           if cp.has_option('Parental', 'age_rating') else AGE_RATINGS['k18'])
     # speedrun mode: everything else in the file is ignored; the default rules with the fixes, but the game's own
     # behaviour wherever runs use it (the dragon's and the Guardian's hits, the dragon's hoard)
     if cp.has_option(g, 'speedrun_mode') and _get(cp, g, 'speedrun_mode', _onoff):
@@ -321,11 +362,13 @@ def read_ini(path):
         if os.path.abspath(path) == default:
             raise RulesError('custom_rules-default.ini must have speedrun_mode = off')
         r = read_ini(default)
+        r['age'], r['age_lock'] = age
+        r.update(cheats=0, catchup=0, anticheese=0)        # no cheat codes; the game's own loot and AI (its exploits)
         r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0,
                  hawk_curse=0, protection_curse=0,      # no curses: luck should not end a run
                  cycles=(CYCLES_DEFAULT[0], 0))         # D17 off: the game's own speed
         return r
-    r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES}
+    r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES, 'age': age[0], 'age_lock': age[1]}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
     r['hawk_curse'] = _get(cp, g, 'hawk_curse_chance', float, *rb['hawk_curse_chance'])
     r['protection_curse'] = _get(cp, g, 'protection_curse_chance', float, *rb['protection_curse_chance'])
@@ -333,9 +376,20 @@ def read_ini(path):
     r['max_lives'] = _get(cp, g, 'max_lives', int, *rb['max_lives'])
     r['village_heal'] = _get(cp, g, 'village_heal', _choice(VILLAGE))
     r['village_any'] = _get(cp, g, 'village_heal_where', _choice({'home': 0, 'any': 1}))
-    r['rest_heal'] = _get(cp, g, 'rest_heal', _choice({'none': 0, 'full': 1}))
+    if cp.has_option(g, 'rest_heal'):
+        raise RulesError(f'[{g}] rest_heal is now on_E_rest_heal (none, fixed_and_endurance, fixed_only or full)')
+    r['rest_heal'] = _get(cp, g, 'on_e_rest_heal', _choice(REST_HEAL))
+    r['rest_fixed'] = _get(cp, g, 'rest_heal_fixed_percentage', int, 0, 100)
+    r['rest_endurance'] = _get(cp, g, 'rest_heal_endurance_percentage', int, 0, 100)
+    r['cheats'] = _get(cp, g, 'cheat_codes', _choice({'no': 0, 'yes': 1})) if cp.has_option(g, 'cheat_codes') else 1
+    r['anticheese'] = (_get(cp, g, 'anticheese', _choice({'false': 0, 'true': 1, 'no': 0, 'yes': 1}))
+                       if cp.has_option(g, 'anticheese') else 0)
+    r['catchup'] = (_get(cp, g, 'catchup', _choice({'off': 0, 'no': 0, 'yes': 1, 'on': 1}))
+                    if cp.has_option(g, 'catchup') else 1)
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
     r['deaths'] = _get(cp, g, 'death_animations', _choice(DEATHS)) if cp.has_option(g, 'death_animations') else 0
+    r['dragon_debug'] = _get(cp, g, 'dragon_debug_mode', int, 0, 1) if cp.has_option(g, 'dragon_debug_mode') else 0
+    r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
     r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
                    _get(cp, g, 'additional_cycles_per_knight', int, *rb['additional_cycles_per_knight']))
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
@@ -428,7 +482,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'additional_cycles_per_knight', 'death_animations', 'village_heal', 'village_heal_where', 'rest_heal', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'speedrun_mode', 'default_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
                  'merchant_selling',
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -441,6 +495,7 @@ def read_ini(path):
              y: {f'band{n}_up_to' for n in range(1, MYTHRAL_BANDS)}
                 | {f'band{n}_chance' for n in range(1, MYTHRAL_BANDS + 1)},
              mo: monster_keys,
+             'Parental': {'age_rating'},
              'Practice': {f'key{k}' for k in PRACTICE_KEYS} | {'team_knight_hits', 'coop_knight_hits', 'coop_dagger_hits', 'monster_target',
                             'target_switch_margin'},
              **{sec: knight_keys | {'home_village'} for sec in SECTIONS[:-1]},
@@ -478,6 +533,12 @@ def table(r=None):
     hp = r['armour_hp'] if r else [0, 10, 20, 30]
     struct.pack_into('<4hh', t, G_ARMOUR_HP, *hp, r['weapon_damage'][0] if r else 0)
     t[G_REST] = r['rest_heal'] if r else 0
+    t[G_REST_FIXED] = r['rest_fixed'] if r else 0
+    t[G_REST_ENDURANCE] = r['rest_endurance'] if r else 0
+    t[G_CHEATS] = r.get('cheats', 1) if r else 0
+    t[G_ANTICHEESE] = r.get('anticheese', 0) if r else 0
+    t[G_CATCHUP] = r.get('catchup', 1) if r else 0
+    t[G_AGE] = r.get('age', 18) if r else 18
     t[G_VILLAGE] = r['village_heal'] if r else 0
     t[G_MAX_LIVES] = r['max_lives'] if r else 5
     struct.pack_into('<h', t, G_RING, r['ring_hp'] if r else 20)
@@ -501,6 +562,8 @@ def table(r=None):
     t[G_EXPLOIT_FIXES] = r['exploit_fixes'] if r else EXPLOIT_FIXES
     struct.pack_into('<HH', t, G_CYCLES, *(r['cycles'] if r else CYCLES_DEFAULT))
     t[G_DEATHS] = r.get('deaths', 0) if r else 0
+    t[G_DRAGON_DEBUG] = r.get('dragon_debug', 0) if r else 0
+    t[G_INPUT_BUFFER] = r.get('input_buffer', 1) if r else 1
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------
@@ -563,6 +626,10 @@ def main_patches(r, img):
         imm(site, 2, r['max_gold'])
     if r['speedrun']:                                    # K24 undone: the damage bonus as the game
         out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes']]
+    # the secondary button: a controller's button 2 (joystick A's, B's) no longer fires as button 1 does
+    # (1000:834D, 82DA: shr al,1 / and dl,al joined the two buttons), it is the secondary button (SAVEHOOK sec_input)
+    for site in (0x83b1, 0x833e):
+        out.append((site, b'\xd0\xe8', b'\x8a\xc0'))      # shr al, 1 -> mov al, al
     m = r['max_lives']                                   # life cap 5: Stonehenge, healer, potion, computer potion use
     imm(0x10b1, 1, m); out.append((0x10b2, b'\x74', b'\x7d'))     # cmp 5 / je -> jge (a start above the cap)
     imm(0xbce4, 1, m); out.append((0xbce5, b'\x74', b'\x7d'))
@@ -702,7 +769,14 @@ def install(game):
     ini = os.path.join(game, 'custom_rules.ini')
     if not os.path.exists(ini):
         shutil.copyfile(os.path.join(game, 'custom_rules-default.ini'), ini)
-    exe, hook = build(game, read_ini(ini))
+    r = read_ini(ini)
+    lock_path = os.path.join(game, AGE_LOCK)             # a permanent age rating: never above it again
+    old_lock = age_limit(game)
+    if r['age'] > old_lock:
+        raise RulesError(f'[Parental] age_rating: this installation allows at most K{old_lock} for good '
+                         f'({AGE_LOCK}); only a new installation allows a higher rating')
+    new_lock = min(old_lock, r['age_lock'] or 18)
+    exe, hook = build(game, r)
     from make_savehook import make_savehook
     os.makedirs(os.path.join(game, '_fixes', 'rules'), exist_ok=True)
     # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here.
@@ -714,7 +788,27 @@ def install(game):
         writes.append(('MAIN.EXE', exe))
     for name, data in writes + [('CUSTOM_RULES.FLG', b'custom rules\r\n')]:
         open(os.path.join(game, name), 'wb').write(data)
+    # a permanent age rating: Start.bat then starts the game only with the fixes and the custom rules in place, and
+    # Custom_rules_off.bat, Custom_rules_reset.bat and Fixes_Off.bat refuse
+    open(lock_path, 'w').write(f'{new_lock} the highest age rating allowed in this installation\n')
     return on
+
+def age_limit(game):
+    """The highest age rating PARENTAL.LCK allows (12, 16 or 18); a missing or unreadable file allows 12."""
+    try:
+        return min(18, max(12, int(open(os.path.join(game, AGE_LOCK)).read().split()[0])))
+    except (OSError, ValueError, IndexError):
+        return 12
+
+def age_init(game):
+    """The setup: a new installation (or the first of 0.7.0 over an older one) allows K18 (PARENTAL.LCK = 18)."""
+    marker = os.path.join(game, AGE_INIT)
+    if os.path.exists(marker):
+        return
+    if not os.path.exists(os.path.join(game, AGE_LOCK)):
+        open(os.path.join(game, AGE_LOCK), 'w').write('18 the highest age rating allowed in this installation\n')
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    open(marker, 'w').write('PARENTAL.LCK set up\n')
 
 if __name__ == '__main__':
     try:
