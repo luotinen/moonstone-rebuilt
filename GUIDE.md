@@ -246,6 +246,8 @@ The manual only says that at least 10 gp improves your chances. The real odds of
 * **Healer** *(manual p. 7)*:
   * 10 gp heals all hit points;
   * 15 gp buys one life point (up to 5); the knight must be at full hit points first.
+  * [Custom rules: a smaller sum is a chance (4 gp: 40 % for the heal; 27 gp: the heal, a life and 2/15 for another),
+    and money nothing can use is returned. The original kept the change.]
   * The healer also cures the ratmen disease *(see 9; code `1000:BCC9`)*.
 * **Tavern:** the dice game. Bet 1–5 gp and roll three dice. The manual lists the winning combinations and their
   payouts, from 4:1 up to 30:1 for three dragons. *(manual pp. 7–8)*
@@ -264,7 +266,8 @@ Only its own knight can enter. *(manual pp. 5, 8)*
 
 [The manual says a knight with fewer than 3 life points is healed to full hit points and given a life point, at most
 three times per game. In the DOS code (`1000:112A`) a knight with fewer than 3 life points gets one life point, every
-time. No full heal and no three-visit limit were found.]
+time. No full heal and no three-visit limit were found. Custom rules: full hit points on every visit, at any life
+points.]
 
 ### Math's tower (Northern Wastelands)
 
@@ -396,6 +399,7 @@ Hit points and damage to a knight per hit, from the code *(descriptions: manual 
 * [Original: a computer knight's ability rise after winning a duel had no limit of 5. Rebuilt: limit 5 (K16).]
 
 **Scroll of Protection.** If another knight attacks you and you have one, you may use it to avoid the fight.
+[Custom rules: also when the dragon attacks: it flies off and your turn ends.]
 
 **The dragon** picks a random living knight as its target and flies after it. *(manual p. 10)*
 
@@ -444,10 +448,10 @@ scroll in advance: there is a random chance each time a scroll is read *(`1000:C
 
 | Scroll | According to the manual | In the code |
 |---|---|---|
-| Hawk | you land at a random place | yes: 1 read in 8 |
+| Hawk | you land at a random place | yes: 1 read in 8 [custom rules: never in the Valley] |
 | Protection | your controls are reversed in the fight | yes: about 1 read in 12; the next fight only |
-| Haste | half movement instead of double | [never: the code for it exists but is never reached] |
-| Wyrm | the dragon attacks you | [never: no curse in the code] |
+| Haste | half movement instead of double | [original: never. Custom rules: 1 read in 8] |
+| Wyrm | the dragon attacks you | [original: never. Custom rules: 1 read in 8] |
 
 ## 12. Prices
 

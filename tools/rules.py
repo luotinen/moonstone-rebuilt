@@ -197,7 +197,10 @@ G_CHEATS = G_REST_ENDURANCE + 1               # byte: cheat_codes, 1 = yes
 G_ANTICHEESE = G_CHEATS + 1                   # byte: anticheese, 1 = true (as TOOEASY's anti-cheese rules)
 G_CATCHUP = G_ANTICHEESE + 1                  # byte: catchup, 1 = yes (more loot for a knight behind, potions when low)
 G_AGE = G_CATCHUP + 1                         # byte: [Parental] age_rating: 12 gore off, 16 no fatalities, 18 all
-TABLE_SIZE = G_AGE + 1
+G_FIGHT_CYCLES = G_AGE + 1                    # 4 words: DOSBox-X cycles of a fight with 1-4 knights (D17)
+G_HASTE_CURSE = G_FIGHT_CYCLES + 8            # signed byte: roll <= this: a Scroll of Haste is cursed (-1 never)
+G_WYRM_CURSE = G_HASTE_CURSE + 1              # signed byte: the same for a Scroll of the Wyrm
+TABLE_SIZE = G_WYRM_CURSE + 1
 # age_rating: (rating, permanent lock). PARENTAL.LCK holds the highest rating allowed in this installation: the setup
 # writes 18 once (a new installation, or the first setup of 0.7.0 over an older one: _fixes/PARENTAL.INIT), a
 # permanent rating lowers it for good, and a missing file counts as 12 (deleting it locks the game to K12)
@@ -208,7 +211,9 @@ AGE_LOCK, AGE_INIT = 'PARENTAL.LCK', os.path.join('_fixes', 'PARENTAL.INIT')
 # 1), plus endurance % times the share of the movement (endurance) the knight had left when its last turn ended
 # (E pressed, a fight, a place)
 REST_HEAL = {'none': 0, 'full': 1, 'fixed_and_endurance': 2, 'fixed_only': 3}
-CYCLES_DEFAULT = (4000, 1000)                 # the conf's cycles, more for each knight past the first in a fight
+CYCLES_DEFAULT = (4000, 650)                  # the conf's cycles (map, menus), more for each knight past the first
+CURSE_DEFAULT = 12.5                          # % for the Haste and Wyrm curses (as the Hawk's)
+FIGHT_CYCLES_DEFAULT = (2600, 3250, 3500, 3750)   # fights with 1-4 knights (play tests: 2 knights 3250, 4 at 4550 too fast)
 HIT_REST_DEFAULT = 8                          # K6: tenths of a second (0.8 s), until play tests set it
 # Selling at the merchant (item screen mode 5): half the shop price, rounded down. The long sword and padded armour
 # are what a knight gets back and are not bought; the Sword of Sharpness is a magic item and not sold here.
@@ -233,6 +238,11 @@ HOOKS = [
     (0x3886, 'e85904', 'dragon_range'),                 #   no flights of its own (call 3CE2)
     (0x39e6, '83268677bf', 'dragon_attack'),            #   its attacks by the keys
     (0x3150, 'e8ac0b', 'rat_decide'),                   # DIRTYRAT: player 1's ratman decides by the keys
+    (0x32c4, '8b36e877', 'rat_tree'),                   #   ... and in the tree
+    (0x32f9, 'e8c450', 'rat_escape'),                   # co-op: a knight a ratman hangs breaks free by its own keys
+    (0x335f, 'e85e50', 'rat_escape'),                   #   ... or one it rides
+    (0x3576, 'c7063a780038', 'rat_ride'),               #   ... the knight it jumps on
+    (0x3597, 'c7063a78d43b', 'rat_hang'),               #   ... the knight it hangs
     (0x5605, 'e8dd00', 'troll_decide'),                 # CLUBMEMBER: player 1's troll decides by the keys
     (0x35ec, '837d3800', 'balok_decide'),               # JUMPSCARE: player 1's Balok decides by the keys
     (0x2e19, 'e8c928', 'trogg_decide'),                 # TROGLIFE: player 1's trogg decides by the keys
@@ -242,7 +252,15 @@ HOOKS = [
     (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
     (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
     (0x550a, 'e8b32e', 'mud_escape'),                   # co-op: a knight a mudman holds breaks free by its own keys
-    (0x3711, '8b36e877', 'balok_land'),                 #   ... and its jump attack lands on a knight
+    (0xbcac, 'b90000', 'healer'),                       # the healer: partial donations are chances, the change is returned
+    (0xcccf, 'c706a2ccffff', 'haste_curse'),            # Scroll of Haste: may be cursed
+    (0xc03c, 'c7067af30000', 'wyrm_curse'),             # Scroll of the Wyrm: may be cursed
+    (0x0d15, 'e82c17', 'dragon_scroll'),                # Scroll of Protection against the dragon
+    (0xab7d, '83445c20', 'hawk_land'),                  # a cursed Hawk never lands in the Valley
+    (0x0fd2, '807c140f', 'valley_keys'),                # SIRPICKSALOT: the Valley with any number of keys
+    (0xa45f, 'b81400', 'lair_icon'),                    # IDROPPEDMYKEY: the lairs holding keys glow
+    (0x3711, '8b36e877', 'balok_land'),                 #   ... and its hop lands on a knight
+    (0x37fc, '8b3e7809', 'balok_crush'),                #   ... and its crushing grab (the secondary button)
     (0x112e, '807c31037d0480443101', 'village'),        # home village druids
     (0x0add, '806c3101', 'lives_si'), (0x0aed, '806d3101', 'lives_di'),   # fight lost
     (0x0d03, '806c3101', 'lives_si'),                   # computer knight robbed by the dragon
@@ -282,6 +300,21 @@ def hook_bytes(where, old, kind):
 # --- reading the INI --------------------------------------------------------------------------------------------------
 class RulesError(Exception):
     pass
+
+def _fight_cycles(cp, sec, per, bounds):
+    """fight_cycles: 1-4 numbers, the cycles of a fight with 1, 2, 3, 4 knights; past the last one given, each
+    knight adds additional_cycles_per_knight (one number: that and more per knight, as before)."""
+    raw = cp.get(sec, 'fight_cycles').split(';')[0].strip()
+    lo, hi = bounds
+    try:
+        vals = [int(v) for v in raw.split(',')]
+    except ValueError:
+        vals = []
+    if not 1 <= len(vals) <= 4 or not all(lo <= v <= hi for v in vals):
+        raise RulesError(f'[{sec}] fight_cycles = {raw}: must be 1-4 numbers {lo}-{hi}, separated by commas')
+    while len(vals) < 4:
+        vals.append(vals[-1] + per)
+    return tuple(vals)
 
 def _get(cp, sec, key, conv, lo=None, hi=None):
     if not cp.has_option(sec, key):
@@ -328,7 +361,9 @@ KNIGHT_BOUNDS = {'strength': (1, 99), 'constitution': (1, 99), 'endurance': (1, 
                  'hp_bonus': (0, 900), 'gold': (0, 20000), 'experience': (0, 20000), 'daggers': (0, 99),
                  'keys': (0, 4), **{name: (0, 1) for name, _ in MOONSTONE_BITS},
                  **{name: (0, 9) for name, _ in ITEMS}}
-RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 100), 'max_gold': (0, 20000),
+SPEEDRUN_GAME = ('healer', 'dragon_scroll', 'hawk_land')   # speedrun mode keeps the game's own behaviour here
+RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 100), 'haste_curse_chance': (0, 100),
+                'wyrm_curse_chance': (0, 100), 'max_gold': (0, 20000),
                 'max_lives': (1, 99), 'moon_days': (1, 100), 'xp_per_stat': (1, 1000), 'weapon_damage': (0, 100),
                 'armour_hp': (0, 100), 'xp_per_moon_phase': (0, 100), 'duel_win_xp': (0, 100),
                 'ring_of_protection_hp': (0, 100), 'shop_price': (0, 127), 'temple_price': (0, 999),
@@ -336,7 +371,8 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
                 'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50),
-                'default_cycles': (100, 100000), 'additional_cycles_per_knight': (0, 20000)}
+                'default_cycles': (100, 100000), 'additional_cycles_per_knight': (0, 20000),
+                'fight_cycles': (100, 100000)}
 
 def ticks(tenths):
     """Tenths of a second -> BIOS ticks (18.2 a second), as SAVEHOOK.COM counts them."""
@@ -365,13 +401,16 @@ def read_ini(path):
         r['age'], r['age_lock'] = age
         r.update(cheats=0, catchup=0, anticheese=0)        # no cheat codes; the game's own loot and AI (its exploits)
         r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0,
-                 hawk_curse=0, protection_curse=0,      # no curses: luck should not end a run
-                 cycles=(CYCLES_DEFAULT[0], 0))         # D17 off: the game's own speed
+                 hawk_curse=0, protection_curse=0, haste_curse=0, wyrm_curse=0,   # no curses: luck should not end a run
+                 cycles=(CYCLES_DEFAULT[0], 0),         # D17 off: the game's own speed
+                 fight_cycles=(CYCLES_DEFAULT[0],) * 4)
         return r
     r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES, 'age': age[0], 'age_lock': age[1]}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
     r['hawk_curse'] = _get(cp, g, 'hawk_curse_chance', float, *rb['hawk_curse_chance'])
     r['protection_curse'] = _get(cp, g, 'protection_curse_chance', float, *rb['protection_curse_chance'])
+    for key, name in (('haste_curse', 'haste_curse_chance'), ('wyrm_curse', 'wyrm_curse_chance')):
+        r[key] = _get(cp, g, name, float, *rb[name]) if cp.has_option(g, name) else CURSE_DEFAULT
     r['max_gold'] = _get(cp, g, 'max_gold', int, *rb['max_gold'])
     r['max_lives'] = _get(cp, g, 'max_lives', int, *rb['max_lives'])
     r['village_heal'] = _get(cp, g, 'village_heal', _choice(VILLAGE))
@@ -392,6 +431,8 @@ def read_ini(path):
     r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
     r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
                    _get(cp, g, 'additional_cycles_per_knight', int, *rb['additional_cycles_per_knight']))
+    r['fight_cycles'] = (_fight_cycles(cp, g, r['cycles'][1], rb['fight_cycles'])
+                         if cp.has_option(g, 'fight_cycles') else FIGHT_CYCLES_DEFAULT)
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
     r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
@@ -481,8 +522,8 @@ def read_ini(path):
     r['ai_math_per_moon_phase'] = _get(cp, b, 'math_visit_per_moon_phase', _onoff)
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
-    known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
+    known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
                  'merchant_selling',
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -561,8 +602,11 @@ def table(r=None):
     t[G_HIT_REST:G_HIT_REST + 2] = bytes(r['hit_rest'] if r else (ticks(HIT_REST_DEFAULT),) * 2)
     t[G_EXPLOIT_FIXES] = r['exploit_fixes'] if r else EXPLOIT_FIXES
     struct.pack_into('<HH', t, G_CYCLES, *(r['cycles'] if r else CYCLES_DEFAULT))
+    struct.pack_into('<4H', t, G_FIGHT_CYCLES, *(r.get('fight_cycles', FIGHT_CYCLES_DEFAULT) if r else FIGHT_CYCLES_DEFAULT))
     t[G_DEATHS] = r.get('deaths', 0) if r else 0
     t[G_DRAGON_DEBUG] = r.get('dragon_debug', 0) if r else 0
+    t[G_HASTE_CURSE] = roll_threshold(r.get('haste_curse', 0) if r else 0) & 0xff
+    t[G_WYRM_CURSE] = roll_threshold(r.get('wyrm_curse', 0) if r else 0) & 0xff
     t[G_INPUT_BUFFER] = r.get('input_buffer', 1) if r else 1
     return bytes(t)
 
@@ -620,12 +664,14 @@ def main_patches(r, img):
         fmt = {1: 'b' if signed else 'B', 2: 'h' if signed else 'H'}[size]
         out.append((where, bytes(img[where:where + size]), struct.pack('<' + fmt, value)))
     for where, old, kind in HOOKS:
+        if r['speedrun'] and kind in SPEEDRUN_GAME:
+            continue
         new, _ = hook_bytes(where, old, kind)
         out.append((where, bytes.fromhex(old), new))
     for site in (0xb4cd, 0xb4d4, 0xba11, 0xba18, 0xcef6, 0xd060, 0xd068):   # gold cap 150: dice, Math, loot, sale
         imm(site, 2, r['max_gold'])
     if r['speedrun']:                                    # K24 undone: the damage bonus as the game
-        out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes']]
+        out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes'] + PATCHES['K32']['bytes']]
     # the secondary button: a controller's button 2 (joystick A's, B's) no longer fires as button 1 does
     # (1000:834D, 82DA: shr al,1 / and dl,al joined the two buttons), it is the secondary button (SAVEHOOK sec_input)
     for site in (0x83b1, 0x833e):
@@ -678,6 +724,8 @@ def main_patches(r, img):
     for name, site in MOVES:
         imm(site, 2, r['moves'][name])
     imm(0xcfd9, 1, r['max_daggers'], True)               # shop: cmp byte [si+34h],10 / jge
+    imm(0xce19, 1, r['max_daggers'], True)               # loot: the same limit
+    imm(0xce25, 1, r['max_daggers'], True)
     imm(0xafec, 1, r['max_daggers'], True)               # computer knight: cmp byte [si+34h],10 / je -> jge
     out.append((0xafed, b'\x74', b'\x7d'))
     for value, site in zip(r['armour_hp'][1:], (0xcf3b, 0xcf5e, 0xcf81)):   # buying armour adds its HP at once

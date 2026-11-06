@@ -17,10 +17,11 @@ The handler:
 1. does the replaced instruction,
 2. renames MAIN's memory block to the next of FIGHT1-FIGHT5 or TURN1-TURN4 and runs SAVEHOOK.COM again as a child, so
    DOSBox-X re-reads the name (the child sees the handlers are installed and exits at once),
-3. waits WAIT_TICKS BIOS ticks (about 1.1 s), during which DOSBox-X's once-a-second autosave check saves the state.
-   Emulation stops while DOSBox-X writes a save, so the wait lasts longer in real time and often covers a second
-   check. The game cannot see the pause (its clocks, the CMOS clock included, follow emulated time), so the second
-   save goes into the same slot (one slot per name),
+3. waits until DOSBox-X's once-a-second autosave check has saved the state: the save's file (C:\SAVE\91.SAV for
+   TURN1 ... C:\SAVE\100.SAV for FIGHT5, as the conf's slots; C: is the game folder) gets a new date and time,
+   read once a BIOS tick, or at most WAIT_TICKS ticks (about 1.1 s; also where the file cannot be seen). Emulation
+   stops while DOSBox-X writes a save, so the game cannot see the pause (its clocks, the CMOS clock included, follow
+   emulated time); ending at the save keeps a second check from saving again into the same slot,
 4. restores the old name and runs the child again, so the name is MAIN again.
 K16, int 62h: the weapon pick on the duel loot screen (1000:ce99) moved only the weapon number. Taking the Sword of
 Sharpness (weapon 19h) left the sword item with the loser, so both knights had the sword. The handler also moves the
@@ -45,7 +46,8 @@ from rules import (HOOKS, FATE_HOOKS, FATE_STREAMS, SECTIONS, SECTION_SIZE, MODE
                    G_PRACTICE, G_PRACTICE_FLAGS, G_TARGET_MARGIN, COOP_KNIGHT_HITS, TEAM_KNIGHT_HITS,
                    COOP_DAGGER_HITS, TARGET_FIRST, G_HIT_REST, G_EXPLOIT_FIXES, KEEP_DRAGON_TARGET,
                    NO_EXTRA_TURN, POTION_LIFE, G_CYCLES, G_DEATHS, DEATHS, G_DRAGON_DEBUG, G_INPUT_BUFFER,
-                   G_REST_FIXED, G_REST_ENDURANCE, REST_HEAL, G_CHEATS, G_ANTICHEESE, G_CATCHUP, G_AGE,
+                   G_REST_FIXED, G_REST_ENDURANCE, REST_HEAL, G_CHEATS, G_ANTICHEESE, G_CATCHUP, G_AGE, G_FIGHT_CYCLES,
+                   G_HASTE_CURSE, G_WYRM_CURSE,
                    table as rules_default_table)
 
 FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x63   # MAIN.EXE uses none of these
@@ -113,7 +115,14 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   # D19: the Black Knights of a practice with 2-4 knights (or the B key)
                   (0x2826, 'spawn_init'), (0x0245, 'top_up'), (0xa14e, 'hit_pair'),
                   # D19: who threw a dagger
-                  (0x3e3d, 'dagger_thrower'), (0x3e42, 'dagger_owner'), (0x44c4, 'dagger_damage')]
+                  (0x3e3d, 'dagger_thrower'), (0x3e42, 'dagger_owner'), (0x44c4, 'dagger_damage'),
+                  # D19: Black Knights do not block each other's way
+                  (0xa00a, 'bk_collide'),
+                  # D26: a new turn on the map waits for the keys to be let go
+                  (0xa538, 'map_keys'),
+                  # K33: limits and checks
+                  (0xa67d, 'game_over'), (0xce77, 'loot_hp'), (0x0baf, 'auto_loot_hp'), (0x2cfd, 'path_none'),
+                  (0xbc30, 'mythral_table')]
 # D19: Black Knights against 2-4 knights: the fight is a lair fight (its set-up, counts and end) whose monsters are
 # computer knights (+35h = 8, handler 1000:4B85) in the monster slots, as many as the knights, each a copy of one
 # the fight borrows the trolls' own set-up (1000:2277; not a lair: the lair records change with every game) and its
@@ -150,7 +159,7 @@ MARKER_SCRIPT, MARKER_SIZE, MARKER_TYPE, MARKER_GAP = 0xfe60, 0x40, 0x14, 3
 TURN_MOVES_SITE = 0xa568                             # cheat codes: the map loop's hook (turn_moves), to come back to
 # the hooks that run most often (every piece drawn: draw, recolour; every object: update; every hit test: hit_pair;
 # every palette write: dac_write): first in the table that rules_handler searches
-HOT = ('draw', 'convert', 'recolour', 'update', 'hit_pair', 'key_check', 'dac_write')
+HOT = ('draw', 'convert', 'recolour', 'update', 'hit_pair', 'key_check', 'dac_write', 'bk_collide')
 # D24: a key release this soon after its press (BIOS ticks; a frame is 2) waits, so every press is seen once; a fire
 # press this recent when a knight's move ends is its next attack (input_buffer); the players' keys as 1000:83C0
 # reads them (fire, then up 8, down 4, left 2, right 1): player 1 Enter and the arrows, player 2 Tab and W S A D (D9)
@@ -165,22 +174,26 @@ def _scans(name):
         return [0x48, 0x48, 0x50, 0x50, 0x4b, 0x4d, 0x4b, 0x4d, 0x30, 0x1e]
     return [CHEAT_LETTERS[c] for c in name]
 CHEAT_ITEM_CODES = ['IDKFA', 'KONAMI', 'HESOYAM', 'ROSEBUD', 'KLAPAUCIUS', 'MOTHERLODE', 'POINTTAKEN', 'TINMAN', 'SIRLOIN', 'HEADSROLL', 'WYRMPROOF', 'MINEALLMINE', 'KNIGHTRIDER', 'HASTALAVISTA', 'SPECIALDELIVERY', 'NOTTODAY', 'FLYBYKNIGHT', 'KEYMASTER', 'FULLMOONEY', 'DARKSIDE', 'COMINGSOON', 'GOINGGONE', 'FLESHWOUND', 'PEEPINGTOM', 'LIVEANDLEARN', 'SIRLIFTSALOT', 'BUILTTOLAST', 'AREWETHEREYET', 'DANUBLESS', 'PUTARINGONIT', 'MOONMAX']
-CHEAT_FIGHT_CODES = ['ROCKETMAN', 'JUSTFLESHWOUND', 'THERECANBEONLYONE', 'FAIRFIGHT', 'YOUANDWHATARMY', 'FORE', 'IDDQD', 'ABACABB', 'FINISHHIM', 'LUNAR']
-CHEAT_MAP_CODES = ['WEPL', 'MOONWALK', 'HOMESICK', 'ONEMORETURN', 'HEREBEDRAGONS', 'DRAGONSLAYER', 'FROGPRINCE', 'BACKFORSECONDS', 'BLACKDEATH']
+CHEAT_FIGHT_CODES = ['ROCKETMAN', 'JUSTFLESHWOUND', 'THERECANBEONLYONE', 'FAIRFIGHT', 'YOUANDWHATARMY', 'FORE', 'IDDQD', 'ABACABB', 'FINISHHIM', 'LUNAR', 'MINEFIELD']
+CHEAT_MAP_CODES = ['WEPL', 'MOONWALK', 'HOMESICK', 'ONEMORETURN', 'HEREBEDRAGONS', 'DRAGONSLAYER', 'FROGPRINCE', 'BACKFORSECONDS', 'BLACKDEATH', 'SIRWALKSALOT', 'IDROPPEDMYKEY', 'SIRPICKSALOT']
 # monster codes (typed in the first menu): that fight, player 1 one of its monsters: (type, lair of the practice)
 MONSTER_CODES = ['DIRTYRAT', 'CLUBMEMBER', 'JUMPSCARE', 'TROGLIFE', 'SWAMPTHING']
 TROGG_ANY = 0xfe                                      # mon_ctl: any trogg (types 0Ch, 0Eh, 10h)
+MONSTER_ALIASES = {'TROGGLIFE': 'TROGLIFE'}           # also accepted, as the code they name
 MONSTER_TYPES = {'DIRTYRAT': 0x12, 'CLUBMEMBER': 0x20, 'JUMPSCARE': 0x18, 'TROGLIFE': TROGG_ANY, 'SWAMPTHING': 0x02}
 MONSTER_LAIRS = {'DIRTYRAT': 0, 'CLUBMEMBER': 17, 'JUMPSCARE': 7, 'SWAMPTHING': 12}   # as practice keys 1, 9, 7, 8
 TROGG_LAIRS = (9, 1, 19)                              # TROGLIFE, one at random: keys 3, 4, 6 (wasteland, axe, spear)
 LAIR_CHOICE = 0x40                                    # practice choice 40h + n: lair n itself (the monster codes)
-BALOK_HOP_X, BALOK_HOP_Z, BALOK_JUMP_X, BALOK_JUMP_Z, BALOK_REACH = 40, 20, 100, 30, 10   # JUMPSCARE's jumps
+BALOK_HOP_X, BALOK_HOP_Z = 40, 20                    # JUMPSCARE: a hop's length in x and depth
+BALOK_REACH_X, BALOK_REACH_Z = 20, 14                # ... and how near a knight it comes down on is crushed
+BALOK_JUMP_X, BALOK_JUMP_Z = 100, 30                 # ... its big jump (the secondary button, no knight to grab)
+BALOK_GRAB_X, BALOK_GRAB_Z = 120, 12                 # ... a knight in front this near is grabbed (the AI's 80-120)
 GUARDIAN_TYPE, KEY_TABLE = 0x04, 0x81e3                # the Guardian (+35h); MAIN's key table (cs:81E3h + scan)
 CHEATS = ([(n, CHEAT_ITEMS, 1 + i, _scans(n)) for i, n in enumerate(CHEAT_ITEM_CODES)] +
           [(n, CHEAT_FIGHT | CHEAT_MAP | 8, 40 + i, _scans(n)) for i, n in enumerate(CHEAT_FIGHT_CODES)] +
           [(n, CHEAT_MAP, 60 + i, _scans(n)) for i, n in enumerate(CHEAT_MAP_CODES)] +
           [('HOTSTUFF', 8, 80, _scans('HOTSTUFF')), ('TOOEASY', 8, 81, _scans('TOOEASY'))] +
-          [(n, 8, 90 + i, _scans(n)) for i, n in enumerate(MONSTER_CODES)])
+          [(n, 8, 90 + i, _scans(n)) for i, n in enumerate(MONSTER_CODES + list(MONSTER_ALIASES))])
 CHEAT_ID = {n: i for n, _, i, _ in CHEATS}
 CHEAT_TIMEOUT = 24                                   # BIOS ticks (1.3 s) between two keys of a code
 # fight flags (cheat_flags)
@@ -193,7 +206,20 @@ FIGHT_CLASH = {'THERECANBEONLYONE': ('JUSTFLESHWOUND', 'IDDQD'), 'JUSTFLESHWOUND
                }
 FIGHT_FLAGS = {'ROCKETMAN': CF_ROCKET, 'JUSTFLESHWOUND': CF_FLESH, 'THERECANBEONLYONE': CF_ONLYONE, 'FORE': CF_FORE,
                'IDDQD': CF_IDDQD, 'ABACABB': CF_ABACABB, 'FINISHHIM': CF_FINISH, 'LUNAR': CF_LUNAR}
-MON_LEAP_X, MON_LEAP_Z = 30, 15                     # DIRTYRAT: a leap's length
+MON_LEAP_X, MON_LEAP_Z, RAT_LEAP_STEPS = 50, 25, 8  # DIRTYRAT: a leap's length and steps (the AI's: 2 a step)
+RAT_HANG_X, RAT_HANG_Z = 30, 25                      # DIRTYRAT: how near the knight it hangs from the tree
+VALLEY_X, VALLEY_Y = (145, 164), (88, 106)            # a knight at these touches the Valley's icon (measured, 1000:0653)
+# D13: the knights the low-HP flash serves: (bit, record, first DAC entry, only in co-op), see COOP_RECOLOUR
+FLASH_KNIGHTS = [(1, 0x6d00, 38, True), (2, 0x6d62, 32, False), (4, 0x6dc4, 35, False)]
+MINE_COUNT, MINE_X0, MINE_SPAN_X, MINE_Z0, MINE_SPAN_Z = 10, 20, 281, 76, 70   # MINEFIELD: x 20-300, depth 76-145
+MINE_REACH_X, MINE_REACH_Z, MINE_CLEAR_X, MINE_CLEAR_Z, MINE_SOUND = 14, 6, 36, 12, 26   # set off; not at the start near a knight; bonfire2
+MINE_BANK, MINE_FRAME, MINE_DRAW_X, MINE_DRAW_Y = 0x893d, 39, -4, 22   # KN3.OB's small black shadow; its place from x, depth
+MINE_TYPES = (0x00, 0x02, 0x06, 0x08, 0x0c, 0x0e, 0x10, 0x12, 0x18, 0x20)   # who sets one off: no dragon, Guardian, objects
+# free part of MAIN's data (zero in the image, above the stack's use): the text, its list, the mines' dummy knight
+KEY_TEXT, KEY_LIST, MINE_HITTER = 0xfe80, 0xff70, 0xff00
+KEY_REGIONS = ((8, 'Forest key: '), (4, 'Wasteland key: '), (2, 'Swamp key: '), (1, 'Moors key: '))   # the lair set-up's order (1E2D)
+TEMPLE_ITEMS, MAP_WALK, MAP_ANY_KEYS = 0xed96, 1, 2
+TARGET_HOLD = 24                                     # D15: a monster's updates it keeps a new knight (pick_target)
 MON_X_MIN, MON_X_MAX, MON_Z_MIN, MON_Z_MAX = 10, 300, 90, 200
 CU_STEP, CU_MAX, CU_SCROLL = 30, 4, 3                 # catchup: a level per 30 points behind, at most 4; from 3 a Scroll of Acquisition
 CU_LOW, CU_BOTH = 10, 25                             # catchup: a potion's chance in % (last life or low HP; both)
@@ -216,6 +242,7 @@ TURN_SHIFT = 10                                      # D25: the standing knight 
 PLAYER_KEYS = ((0x1c, ((0x48, 8), (0x50, 4), (0x4b, 2), (0x4d, 1))), (0x0f, ((0x11, 8), (0x1f, 4), (0x1e, 2), (0x20, 1))),
                (0x30, ((0x17, 8), (0x25, 4), (0x24, 2), (0x26, 1))))   # players 1, 2 and the third key set (I K J L, B)
 KEYS3_CONTROL, KEYS3_SECONDARY = 7, 0x31              # knight +9 for the third key set; its secondary button N
+TURN_SITE, TURN_SOUND = 0xa63f, 0x0f                 # D7's int 65h; the game's menu sound (1000:D6E1)
 SOUND, CHEAT_SOUND = 0x5970, 17                       # 1000:5970 plays a sound id; 17 = SWORDCL (a sword clash)
 HOLD_WAIT = 12                                        # first menu: these keys wait 12 ticks (2/3 s) for a code's next letter
 HOLD_KEYS = (0x20, 0x24, 0x22, 0x30)                  # D (the dragon), J (joystick set-up), G (the Guardian), B (Black Knights)
@@ -242,6 +269,7 @@ UP, DOWN_FORWARD, BACK = 0x10, 0x02, 0x0a            # a knight's strike (+28h; 
 DRAGON_ATE = 0x3eed                                  # K25: the eaten knight's kill (1000:3EEA) returns here
 DRAGON_FRONT = 20                                    # K29: knights stay this far right of the dragon's x (its +54h)
 MUDMAN, MUD_PULLING = 0x02, 0x18                     # the mudman (+35h); +48h bits of one rising under a knight (54C7)
+MUD_HOLD, MUD_REACH_X, MUD_REACH_Z, MUD_GRAB_X = 12, 100, 40, 40   # SWAMPTHING: its hold; its rise beside a knight
 MUD_LET_GO = 0x554e                                  # K25: the mudman's hold ends in a kill (call 1000:0AB2 at 554B)
 DAGGER_OWNER = 0x5c                                  # D19: a dagger's thrower (an object field daggers do not use)
 BLACK_SHIFT = 35                                     # KN*.OB pixels 6-8 -> 41-43
@@ -300,6 +328,7 @@ JOY_A_CONTROL, JOY_B_CONTROL = 5, 6                  # D12: knight +9 for the tw
 JOY_PORT_LIMIT = 0x2000                              # no joystick: its port bits never fall within this many reads
 CHILD_PATH = b'C:\\SAVEHOOK.COM\0'      # the game folder is drive C: in moonstone-dosbox-x.conf
 WAIT_TICKS = 20                          # 20 / 18.2 Hz = 1.1 s; the autosave check runs about every 1.0 s
+SAVE_SLOTS = (91, 92, 93, 94, 96, 97, 98, 99, 100)   # the conf's autosave slots: TURN1-4, FIGHT1-5 (save_wait)
 WAIT_LIMIT_HI = 50                       # gives up after 50 * 65536 loop rounds (several seconds) if ticks stop
 RESERVE_PARAS = 0x100                    # 4 KB kept free for the child program
 SIGNATURE = b'SV'                        # just before the fight handler: tells the child that the hook is installed
@@ -579,12 +608,20 @@ def rules_code(a):
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(SOUND & 0xff, SOUND >> 8)
     a.b(0xb8, CHEAT_SOUND, 0x00); a.near(0xe9, 'call_game')  # mov ax, sound id / 1000:5970
     a.label('sxtm_go')
+    a.b(0x2e, 0x80, 0x3e); a.word('key_show'); a.b(0x00); a.short(0x74, 'tm_no_keys')
+    a.near(0xe9, 'key_stage')                                # IDROPPEDMYKEY's screen
+    a.label('tm_no_keys')
     a.near(0xe8, 'gore_lock')
     a.near(0xe8, 'cheat_map')                                # call cheat_map   CF = 1: call_target, then here again
     a.short(0x73, 'tm_go')
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(TURN_MOVES_SITE & 0xff, TURN_MOVES_SITE >> 8)
     a.near(0xe9, 'call_game')
     a.label('tm_go')
+    a.near(0xe8, 'hawk_guard')                               # call hawk_guard    the Hawk stays out of the Valley
+    a.b(0x2e, 0xf6, 0x06); a.word('map_flags'); a.b(MAP_WALK); a.short(0x74, 'tm_walk')   # SIRWALKSALOT: a human's walk costs nothing
+    a.b(0x56, 0x8b, 0x36, 0xe8, 0x77, 0x83, 0x7c, 0x20, COMPUTER, 0x5e); a.short(0x74, 'tm_walk')
+    a.b(0xc7, 0x06, 0x98, 0xcc, 0x00, 0x00)                  # mov word [0CC98h], 0
+    a.label('tm_walk')
     a.b(0x50, 0xa1, 0xac, 0xcc, 0x2b, 0x06, 0x98, 0xcc)      # push ax / mov ax, [0CCACh] / sub ax, [0CC98h]
     a.short(0x7d, 'tm_set'); a.b(0x33, 0xc0)                 # jge tm_set / xor ax, ax
     a.label('tm_set')
@@ -596,6 +633,7 @@ def rules_code(a):
     # (turn_moves) and the turn's budget ([0CCACh]), for its healing at the day's end (daily_heal)
     a.label('rules_turn_end')
     a.b(0xc7, 0x06, 0xaa, 0xcc, 0x00, 0x00)                  # mov word [0CCAAh], 0   (replaced)
+    a.b(0x2e, 0xc6, 0x06); a.word('keys_shown'); a.b(0x00)   # IDROPPEDMYKEY: until the turn's end
     a.b(0x50, 0x53, 0x52)                                    # push ax bx dx
     a.b(0xa1, 0xe8, 0x77, 0x2d, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)   # mov ax, [77E8h] / sub ax, 6C9Eh
     a.short(0x72, 'te_pop')                                  # jb te_pop
@@ -965,28 +1003,34 @@ def rules_code(a):
     a.b(0xa3, 0x2f, 0xe2, 0x59, 0x5b, 0xc3)                  # mov [0E22Fh], ax / pop cx bx / ret
 
     # --- D12: practice with 3 or 4 knights, two teams ---
-    # practice_mode: cs:[multi] = 3 or 4 when that many players were chosen and their joysticks answer, else 0
+    # practice_mode: cs:[multi] = 3 or 4 when that many players were chosen, else 0. Knights 3 and 4 take the
+    # joysticks that answer (A, then B), then the third key set (cs:[p3_ctl], cs:[p4_ctl]); with 4 chosen and no
+    # joystick, 3 knights
     a.label('practice_mode')
-    a.b(0x50, 0x53, 0x51, 0x52)                              # push ax bx cx dx
+    a.b(0x50, 0x53, 0x51, 0x52, 0x57)                        # push ax bx cx dx di
     a.b(0x2e, 0xc6, 0x06); a.word('multi'); a.b(0x00)        # mov byte cs:[multi], 0
     a.b(0x2e, 0xc6, 0x06); a.word('add_state'); a.b(0x00)    # mov byte cs:[add_state], 0
     a.b(0x8b, 0x1e, CHOSEN_PLAYERS & 0xff, CHOSEN_PLAYERS >> 8)   # mov bx, [0940h]
     a.b(0x83, 0xfb, 0x03)                                    # cmp bx, 3
     a.short(0x72, 'pm_end')                                  # jb pm_end
+    a.b(0xbf); a.word('p3_ctl')                              # mov di, p3_ctl
     a.b(0xb4, 0x01)                                          # mov ah, 1         joystick A, x axis
-    a.near(0xe8, 'joy_present')                              # call joy_present
-    a.short(0x72, 'pm_end')                                  # jc pm_end
-    a.b(0x83, 0xfb, 0x04)                                    # cmp bx, 4
-    a.short(0x72, 'pm_three')                                # jb pm_three
+    a.near(0xe8, 'joy_present'); a.short(0x72, 'pm_no_a')    # call joy_present / jc
+    a.b(0x2e, 0xc6, 0x05, JOY_A_CONTROL, 0x47)               # mov byte cs:[di], 5 / inc di
+    a.label('pm_no_a')
+    a.b(0x83, 0xfb, 0x04); a.short(0x72, 'pm_no_b')          # cmp bx, 4 / jb   (3 chosen: no joystick B)
     a.b(0xb4, 0x04)                                          # mov ah, 4         joystick B, x axis
-    a.near(0xe8, 'joy_present')                              # call joy_present
-    a.short(0x72, 'pm_end')                                  # jc pm_end         (two players, as before)
-    a.b(0x2e, 0xc6, 0x06); a.word('multi'); a.b(0x04)        # mov byte cs:[multi], 4
-    a.short(0xeb, 'pm_end')                                  # jmp pm_end
-    a.label('pm_three')
-    a.b(0x2e, 0xc6, 0x06); a.word('multi'); a.b(0x03)        # mov byte cs:[multi], 3
+    a.near(0xe8, 'joy_present'); a.short(0x72, 'pm_no_b')
+    a.b(0x2e, 0xc6, 0x05, JOY_B_CONTROL, 0x47)               # mov byte cs:[di], 6 / inc di
+    a.label('pm_no_b')
+    a.b(0x2e, 0xc6, 0x05, KEYS3_CONTROL, 0x47)               # mov byte cs:[di], 7 / inc di   (p4_ctl + 1: spare)
+    a.b(0x8b, 0xc7, 0x2d); a.word('p3_ctl')                  # mov ax, di / sub ax, p3_ctl   the inputs found
+    a.b(0x8b, 0xcb, 0x83, 0xe9, 0x02)                        # mov cx, bx / sub cx, 2        the knights wanted
+    a.b(0x3b, 0xc1); a.short(0x76, 'pm_n'); a.b(0x8b, 0xc1)  # cmp ax, cx / jbe / mov ax, cx
+    a.label('pm_n')
+    a.b(0x04, 0x02, 0x2e, 0xa2); a.word('multi')             # add al, 2 / mov cs:[multi], al
     a.label('pm_end')
-    a.b(0x5a, 0x59, 0x5b, 0x58, 0xc3)                        # pop dx cx bx ax / ret
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x58, 0xc3)                  # pop di dx cx bx ax / ret
 
     # joy_present: ah = the port bit of an axis; CF = 0 if it answers (its bit falls), as 1000:82AA reads it
     a.label('joy_present')
@@ -1013,17 +1057,18 @@ def rules_code(a):
     a.b(0x2e, 0x80, 0x3e); a.word('multi'); a.b(0x04)        # cmp byte cs:[multi], 4
     a.short(0x75, 'pa_done')                                 # jne pa_done
     a.b(0x3c, 0x02); a.short(0x74, 'pa_p4')                  # cmp al, 2 / je pa_p4
-    a.b(0x3c, 0x03); a.short(0x74, 'pa_p4_run')              # cmp al, 3 / je pa_p4_run
+    a.b(0x3c, 0x03); a.short(0x75, 'pa_done')                # cmp al, 3 / jne pa_done
+    a.near(0xe9, 'pa_p4_run')                                # jmp pa_p4_run
     a.label('pa_done')
     a.b(0x2e, 0xc6, 0x06); a.word('add_state'); a.b(0x00)    # mov byte cs:[add_state], 0
     a.b(0xc7, 0x06, 0x1c, 0x09, 0x06, 0x00)                  # mov word [91Ch], 6     (replaced instruction)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
-    for knight, control, colour, x, facing, bank in (('p3', JOY_A_CONTROL, 1, 0xfa, 3, 0x8933),
-                                                     ('p4', JOY_B_CONTROL, 3, 0x1e, 1, 0x8949)):
+    for knight, colour, x, facing, bank in (('p3', 1, 0xfa, 3, 0x8933), ('p4', 3, 0x1e, 1, 0x8949)):
         rec = TEAM1[1] if knight == 'p3' else TEAM2[1]
         a.label('pa_' + knight)                              # as InitPractice's knights (1000:296E, 200F)
         a.b(0xbf, rec & 0xff, rec >> 8)                      # mov di, record
-        a.b(0xc6, 0x45, 0x35, 0x06, 0xc6, 0x45, 0x09, control)   # mov byte [di+35h], 6 / mov byte [di+9], control
+        a.b(0xc6, 0x45, 0x35, 0x06, 0x2e, 0xa0); a.word(knight + '_ctl')   # mov byte [di+35h], 6 / mov al, cs:[ctl]
+        a.b(0x88, 0x45, 0x09)                                # mov [di+9], al   its input (practice_mode)
         a.b(0xc7, 0x45, 0x20, colour, 0x00)                  # mov word [di+20h], colour of its team
         a.b(0xc7, 0x45, 0x02, x & 0xff, x >> 8)              # mov word [di+2], x
         a.b(0xc7, 0x45, 0x04, 0x00, 0x00)                    # mov word [di+4], 0
@@ -1099,6 +1144,12 @@ def rules_code(a):
         if name == 'c':
             a.near(0xe9, 'draw_call')                        # jmp draw_call
             a.label('draw_coop')
+            # D19: a Black Knight (a computer knight in a monster slot) wears its own colours, not those of the
+            # knight it goes for (K30 below)
+            a.near(0xe8, 'black_knight')                     # call black_knight
+            a.short(0x75, 'draw_not_bk')                     # jnz draw_not_bk
+            a.near(0xe9, 'draw_black')                       # jmp draw_black
+            a.label('draw_not_bk')
             # K28: the Balok's frames of its hold show the knight (pixels 6-8, which its own frames do not use):
             # in that knight's colours
             a.b(0x80, 0x7f, 0x35, BALOK_TYPE)                # cmp byte [bx+35h], 18h
@@ -1124,6 +1175,21 @@ def rules_code(a):
             # own pixels do not use 6-8): in the colours of the knight the monster goes for (D15's last_target)
             a.b(0x81, 0xfb, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp bx, 6F08h
             a.short(0x72, 'draw_not_monster')                # jb draw_not_monster   a knight, the dragon, none
+            # a mudman holding or pulling a knight (K25: [7B8Ch] 1, 2, 4, 40h; mud_victim): that knight, not the
+            # one it would go for now
+            a.b(0x80, 0x7f, 0x35, MUDMAN); a.short(0x75, 'draw_not_mud')   # cmp byte [bx+35h], 2 / jne
+            a.b(0xf7, 0x06, 0x8c, 0x7b, 0x47, 0x00); a.short(0x74, 'draw_not_mud')   # test word [7B8Ch], 47h / jz
+            a.b(0x2e, 0x83, 0x3e); a.word('mud_victim'); a.b(0x00); a.short(0x74, 'draw_not_mud')
+            a.b(0x2e, 0x8b, 0x1e); a.word('mud_victim')      # mov bx, cs:[mud_victim]
+            a.short(0xeb, 'draw_not_monster')
+            a.label('draw_not_mud')
+            # a ratman hanging a knight or on its back ([779Ch] 8, 20h; rat_victim): that knight
+            a.b(0x80, 0x7f, 0x35, 0x12); a.short(0x75, 'draw_not_rat')   # cmp byte [bx+35h], 12h / jne
+            a.b(0xf7, 0x06, 0x9c, 0x77, 0x28, 0x00); a.short(0x74, 'draw_not_rat')   # test word [779Ch], 28h / jz
+            a.b(0x2e, 0x83, 0x3e); a.word('rat_victim'); a.b(0x00); a.short(0x74, 'draw_not_rat')
+            a.b(0x2e, 0x8b, 0x1e); a.word('rat_victim')      # mov bx, cs:[rat_victim]
+            a.short(0xeb, 'draw_not_monster')
+            a.label('draw_not_rat')
             a.b(0x50, 0x57, 0x8b, 0xc3, 0x8b, 0xfb)          # push ax di / mov ax, bx / mov di, bx
             a.near(0xe8, 'slot_index')                       # call slot_index      bx = slot * 2
             a.b(0x5f); a.short(0x72, 'draw_monster_back')    # pop di / jc draw_monster_back
@@ -1228,6 +1294,7 @@ def rules_code(a):
     a.short(0x74, 'dw_ret')                                  # jz dw_ret
     a.b(0x2e, 0xc6, 0x06); a.word('level'); a.b(0x10)        # mov byte cs:[level], 16
     a.near(0xe8, 'dac_new')                                  # call dac_new
+    a.b(0x2e, 0xc6, 0x06); a.word('flash_state'); a.b(0xff)  # mov byte cs:[flash_state], FFh   knight_flash again
     a.label('dw_ret')
     a.b(0xc7, 0x46, 0x02, 0x4e, 0x5b)                        # mov word [bp+2], 5B4Eh   the routine's ret
     a.near(0xe9, 'rules_done')                               # jmp rules_done
@@ -1298,6 +1365,9 @@ def rules_code(a):
     a.b(0x2e, 0xc6, 0x06); a.word('hotstuff'); a.b(0x01, 0xb4, DRAGON_CHOICE)   # mov ah, 10   the dragon's practice
     a.near(0xe9, 'mk_code')
     a.label('mk_n_hot')
+    for alias, name in MONSTER_ALIASES.items():             # TROGGLIFE: as TROGLIFE
+        a.b(0x3c, CHEAT_ID[alias]); a.short(0x75, f'mk_a_{alias}'); a.b(0xb0, CHEAT_ID[name])
+        a.label(f'mk_a_{alias}')
     for name in MONSTER_CODES:
         a.b(0x3c, CHEAT_ID[name]); a.short(0x75, f'mk_n_{name}')
         if name == 'TROGLIFE':
@@ -1416,10 +1486,11 @@ def rules_code(a):
     a.short(0x75, 'pi_kept')                                 # jne pi_kept        (the second call of a lair)
     a.b(0x51, 0x57, 0x06, 0x0e, 0x07)                        # push cx di es / push cs / pop es
     a.b(0xbf); a.word('last_target')                         # mov di, last_target
-    a.b(0x33, 0xc0, 0xb9, 0x15, 0x00, 0xfc, 0xf3, 0xab)      # xor ax, ax / mov cx, 21 / cld / rep stosw
+    a.b(0x33, 0xc0, 0xb9, 0x2a, 0x00, 0xfc, 0xf3, 0xab)      # xor ax, ax / mov cx, 42 / cld / rep stosw   and target_hold
     a.b(0x07, 0x5f, 0x59)                                    # pop es di cx
     a.b(0x2e, 0xc6, 0x06); a.word('bk_count'); a.b(0x00)     # mov byte cs:[bk_count], 0   D19
     a.b(0x2e, 0xc7, 0x06); a.word('dragon_victim'); a.b(0x00, 0x00)   # mov word cs:[dragon_victim], 0   K25
+    a.b(0x2e, 0xc7, 0x06); a.word('rat_victim'); a.b(0x00, 0x00)      # mov word cs:[rat_victim], 0
     a.label('pi_kept')
     # D19: the B key: Black Knights in black, strong, as many as the knights (one with one player: co-op of one)
     a.b(0x80, 0xfb, BK_CHOICE)                               # cmp bl, 13
@@ -1623,7 +1694,9 @@ def rules_code(a):
     a.b(0x59, 0x5b, 0xc3)                                    # pop cx bx / ret
 
     # pick_target: di = a monster -> ax = the nearest knight standing (by x and depth), kept unless another is more
-    # than the target margin nearer; ax unchanged when no knight stands
+    # than the target margin nearer; ax unchanged when no knight stands. A new knight is kept for TARGET_HOLD of
+    # the monster's updates whatever the distances: a monster between two knights at other depths (blocked in
+    # depth by the knights, sent back in x by hard_step) switched between them at every update and never moved on
     a.label('pick_target')
     a.b(0x53, 0x51, 0x52, 0x56)                              # push bx cx dx si
     a.b(0xbb, 0xff, 0xff, 0x33, 0xc9)                        # mov bx, 0FFFFh (best distance) / xor cx, cx (best)
@@ -1657,26 +1730,36 @@ def rules_code(a):
     a.b(0x3d, MONSTER_COUNT, 0x00)                           # cmp ax, 20
     a.short(0x73, 'tg_pick')                                 # jae tg_pick
     a.label('tg_index')
-    a.b(0xd1, 0xe0, 0x8b, 0xf0)                              # shl ax, 1 / mov si, ax
+    a.b(0xd1, 0xe0, 0x8b, 0xd0, 0x8b, 0xf2)                  # shl ax, 1 / mov dx, ax / mov si, dx   dx = its index
     a.b(0x2e, 0x8b, 0x84); a.word('last_target')             # mov ax, cs:[si+last_target]
     a.b(0x2e, 0x89, 0x8c); a.word('last_target')             # mov cs:[si+last_target], cx   (the best, for now)
     a.b(0x0b, 0xc0)                                          # or ax, ax
-    a.short(0x74, 'tg_pick')                                 # jz tg_pick
+    a.short(0x74, 'tg_new')                                  # jz tg_new
     a.b(0x3b, 0xc1)                                          # cmp ax, cx
     a.short(0x74, 'tg_pick')                                 # je tg_pick
-    a.b(0x56, 0x8b, 0xf0)                                    # push si / mov si, ax   the last knight
+    a.b(0x8b, 0xf0)                                          # mov si, ax   the last knight
     a.b(0x83, 0x7c, 0x38, 0x00)                              # cmp word [si+38h], 0
-    a.short(0x7e, 'tg_last_down')                            # jle tg_last_down
+    a.short(0x7e, 'tg_new')                                  # jle tg_new          down: the best
+    a.b(0x87, 0xf2)                                          # xchg si, dx   si = the index, dx = the last knight
+    a.b(0x2e, 0x83, 0xbc); a.word('target_hold'); a.b(0x00)  # cmp word cs:[si+target_hold], 0
+    a.short(0x74, 'tg_cmp')                                  # je tg_cmp
+    a.b(0x2e, 0xff, 0x8c); a.word('target_hold')             # dec word cs:[si+target_hold]   still held: keep it
+    a.short(0xeb, 'tg_keep')                                 # jmp tg_keep
+    a.label('tg_cmp')
+    a.b(0x87, 0xf2)                                          # xchg si, dx   si = the last knight
     a.near(0xe8, 'distance')                                 # call distance
     a.b(0x52, 0x2e, 0x8a, 0x16); a.word('rules_table', G_TARGET_MARGIN)   # push dx / mov dl, cs:[margin]
     a.b(0x32, 0xf6, 0x03, 0xda, 0x5a)                        # xor dh, dh / add bx, dx / pop dx
     a.b(0x3b, 0xc3)                                          # cmp ax, bx
-    a.short(0x77, 'tg_last_down')                            # ja tg_last_down     clearly farther: switch
-    a.b(0x8b, 0xce, 0x5e)                                    # mov cx, si / pop si
+    a.short(0x77, 'tg_new')                                  # ja tg_new           clearly farther: switch
+    a.b(0x87, 0xf2)                                          # xchg si, dx   si = the index, dx = the last knight
+    a.label('tg_keep')
+    a.b(0x8b, 0xca)                                          # mov cx, dx
     a.b(0x2e, 0x89, 0x8c); a.word('last_target')             # mov cs:[si+last_target], cx   keep it
     a.short(0xeb, 'tg_pick')                                 # jmp tg_pick
-    a.label('tg_last_down')
-    a.b(0x5e)                                                # pop si
+    a.label('tg_new')                                        # a new knight (cx): held a while
+    a.b(0x8b, 0xf2)                                          # mov si, dx
+    a.b(0x2e, 0xc7, 0x84); a.word('target_hold'); a.b(TARGET_HOLD, 0x00)   # mov word cs:[si+target_hold], n
     a.label('tg_pick')
     a.b(0x8b, 0xc1)                                          # mov ax, cx
     a.label('tg_none')
@@ -2552,6 +2635,10 @@ def rules_code(a):
     # turn_haste (1000:A6D2, replaces cmp word [0CCA2h],0 where the turn's budget is doubled by a Scroll of Haste):
     # also for a knight with KNIGHTRIDER (ZF = 0: double)
     a.label('rules_turn_haste')
+    a.b(0x83, 0x3e, 0xa2, 0xcc, 0x01); a.short(0x75, 'th_not_cursed')   # cmp word [0CCA2h], 1 / jne
+    a.b(0xd1, 0x2e, 0xac, 0xcc, 0xc7, 0x46, 0x02, 0xdd, 0xa6)   # shr word [0CCACh], 1 / mov word [bp+2], 0A6DDh   half
+    a.near(0xe9, 'rules_done')
+    a.label('th_not_cursed')
     a.b(0x83, 0x3e, 0xa2, 0xcc, 0x00); a.short(0x75, 'th_flags')   # cmp word [0CCA2h], 0 / jne th_flags
     a.b(0x56, 0x50, 0x8b, 0x36, 0xe8, 0x77)                  # push si ax / mov si, [77E8h]
     a.near(0xe8, 'knight_bit')
@@ -2629,6 +2716,11 @@ def rules_code(a):
     a.b(0xc6, 0x44, 0x3a, 0x03)
     mend('FROGPRINCE')
     mcase('BACKFORSECONDS'); mend('BACKFORSECONDS', LAIRS_SETUP)   # the new game's lair set-up (1000:1E2D) again
+    mcase('SIRWALKSALOT'); a.b(0x2e, 0x80, 0x36); a.word('map_flags'); a.b(MAP_WALK); mend('SIRWALKSALOT')   # on / off
+    mcase('SIRPICKSALOT'); a.b(0x2e, 0x80, 0x36); a.word('map_flags'); a.b(MAP_ANY_KEYS); mend('SIRPICKSALOT')
+    mcase('IDROPPEDMYKEY')
+    a.b(0x2e, 0xc6, 0x06); a.word('key_show'); a.b(0x01, 0x2e, 0xc6, 0x06); a.word('keys_shown'); a.b(0x01)
+    mend('IDROPPEDMYKEY')
     mcase('BLACKDEATH')                                      # the computer's knights as the B key's Black Knights
     a.b(0x2e, 0xc6, 0x06); a.word('bd_on'); a.b(0x01)        # their fights: the TOOEASY rules (hard_flags)
     a.b(0x06, 0x8e, 0x46, 0x04)                              # push es / mov es, [bp+4]   MAIN's code segment
@@ -2659,6 +2751,7 @@ def rules_code(a):
     a.label('cf_no_hot')
     a.near(0xe8, 'cheat_monster')                            # call cheat_monster
     a.near(0xe8, 'air_frame')                                # ROCKETMAN, LUNAR
+    a.near(0xe8, 'mine_frame')                               # MINEFIELD
     a.b(0x2e, 0x80, 0x3e); a.word('hard_eff'); a.b(0x00); a.short(0x74, 'cf_no_hard')
     a.b(0xc7, 0x06, 0xec, 0x77, 0x00, 0x00, 0xc7, 0x06, 0xee, 0x77, 0x00, 0x00)   # TOOEASY: [77ECh] = [77EEh] = 0
     a.label('cf_no_hard')
@@ -2687,6 +2780,10 @@ def rules_code(a):
         a.b(0x80, 0xf9, CHEAT_ID[name]); a.short(0x75, f'cf_n_{name}')
         a.b(0x2e, 0x80, 0x36); a.word('cheat_flags'); a.b(flag)   # xor byte cs:[cheat_flags], flag
         a.label(f'cf_n_{name}')
+    a.b(0x80, 0xf9, CHEAT_ID['MINEFIELD']); a.short(0x75, 'cf_n_mine')   # once a fight
+    a.b(0x2e, 0x83, 0x3e); a.word('mine_live'); a.b(0x00); a.short(0x75, 'cf_n_mine')
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_req'); a.b(0x01)
+    a.label('cf_n_mine')
     a.b(0x80, 0xf9, CHEAT_ID['FORE']); a.short(0x75, 'cf_n_fore')
     a.b(0x2e, 0x80, 0x36); a.word('cheat_flags'); a.b(CF_FORE)
     a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags'); a.b(CF_FORE)
@@ -2972,8 +3069,9 @@ def rules_code(a):
     # player 1 is a ratman (mon_obj, taken from the ratmen in the fight). The ratman's update (1000:30E4) decides at
     # 3150 when no move of its own is going on (its +48h/+49h modes, cleared for this one by cheat_monster): here the
     # keys (1000:83C0, called first and this site again): a direction = a leap that way (the ratmen's own way of
-    # moving: the path record 77CCh, 2B99, then 326B as its own leap), fire = its swing (4, 3730h), fire and down =
-    # its thrust (2, 3642h), else it stands
+    # moving: the path record 77CCh, 2B99, then 326B as its own leap; shorter in time than the AI's), fire = its
+    # swing (4, 3730h), fire and down = its thrust (2, 3642h), the secondary button = its leap up into the tree
+    # (31B5, the AI's; in the tree: rat_tree), else it stands
     a.label('rules_rat_decide')
     a.b(0x8b, 0x3e, 0xe8, 0x77)                              # mov di, [77E8h]   the ratman
     a.b(0x2e, 0x3b, 0x3e); a.word('mon_obj'); a.short(0x74, 'rd_mine')   # cmp di, cs:[mon_obj] / je
@@ -2992,7 +3090,12 @@ def rules_code(a):
     a.b(0x8b, 0x46, 0xfe)                                    # mov ax, [bp-2]   83C0's bx: player 1's bits
     a.b(0xa8, 0x01); a.short(0x74, 'rd_left'); a.b(0xc6, 0x45, 0x08, 0x01)   # right: faces right
     a.label('rd_left')
-    a.b(0xa8, 0x02); a.short(0x74, 'rd_fire'); a.b(0xc6, 0x45, 0x08, 0x03)   # left: faces left
+    a.b(0xa8, 0x02); a.short(0x74, 'rd_sec'); a.b(0xc6, 0x45, 0x08, 0x03)   # left: faces left
+    a.label('rd_sec')
+    a.b(0x50, 0xb0, 0x00); a.near(0xe8, 'sec_input'); a.b(0x58)   # the secondary button: up into the tree
+    a.short(0x74, 'rd_fire')
+    a.b(0x83, 0x3e, 0xae, 0x69, 0x00); a.short(0x74, 'rd_fire')   # cmp word [69AEh], 0 / je   no tree
+    a.b(0xc7, 0x46, 0x02, 0xb5, 0x31); a.near(0xe9, 'rules_done')   # mov word [bp+2], 31B5h   its leap there
     a.label('rd_fire')
     a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d)                        # mov word [bp+2], 2D5Eh   the update's end
     a.b(0xa8, 0x10); a.short(0x74, 'rd_move')
@@ -3021,17 +3124,22 @@ def rules_code(a):
         a.label(f'rl_{name}1')
         a.b(0x81, reg_cmp, hi & 0xff, hi >> 8); a.short(0x7e, f'rl_{name}2'); a.b(mov, hi & 0xff, hi >> 8)
         a.label(f'rl_{name}2')
-    # the path record as the AI fills it (1000:31E4): object, from x, z, height -20; to x, z, ground; 0Eh
+    # the path record as the AI fills it (1000:31E4): object, from x, z, height -20 (from the tree its height); to
+    # x, z, ground; its steps (the AI's 0Eh, fewer: faster)
     a.b(0x89, 0x3e, 0xcc, 0x77, 0x8b, 0x45, 0x02, 0xa3, 0xd0, 0x77, 0x8b, 0x45, 0x06, 0xa3, 0xd2, 0x77)
-    a.b(0xc7, 0x06, 0xd4, 0x77, 0xec, 0xff, 0x89, 0x1e, 0xd6, 0x77, 0x89, 0x0e, 0xd8, 0x77)
-    a.b(0xc7, 0x06, 0xda, 0x77, 0x00, 0x00, 0xc7, 0x06, 0xdc, 0x77, 0x0e, 0x00, 0xc7, 0x06, 0xde, 0x77, 0x00, 0x00)
+    a.b(0x8b, 0x45, 0x04, 0x3d, 0xec, 0xff); a.short(0x7c, 'rl_high')   # mov ax, [di+4] / cmp ax, -20 / jl
+    a.b(0xb8, 0xec, 0xff)                                    # mov ax, -20   from the ground as the AI's (31F6)
+    a.label('rl_high')                                       # (from the tree: its height)
+    a.b(0xa3, 0xd4, 0x77, 0x89, 0x1e, 0xd6, 0x77, 0x89, 0x0e, 0xd8, 0x77)
+    a.b(0xc7, 0x06, 0xda, 0x77, 0x00, 0x00, 0xc7, 0x06, 0xdc, 0x77, RAT_LEAP_STEPS, 0x00)   # RAT_LEAP_STEPS (0Eh)
+    a.b(0xc7, 0x06, 0xde, 0x77, 0x00, 0x00)
     a.b(0xc7, 0x45, 0x4a, 0x1e, 0x00)                        # mov word [di+4Ah], 1Eh
     a.b(0x5a, 0x59, 0x5b)                                    # pop dx cx bx
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x99, 0x2b)   # 2B99h, then 326Bh: the leap as its own
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x6b, 0x32)
     a.near(0xe9, 'call_game')
 
-    # CLUBMEMBER (as DIRTYRAT, a practice with trolls): player 1 is a troll. The troll's update (1000:55D0) decides
+    # CLUBMEMBER (as DIRTYRAT, a practice with trolls; off the play area it walks back in first): player 1 is a troll. The troll's update (1000:55D0) decides
     # at 5605 (call 56E5, the AI's step: +26h as a knight's input bits, ax = 0 when it is close enough to strike):
     # here the keys (83C0, then this site again). A direction = a step that way (5608, the AI's own walk; left and
     # right also turn it), fire = its club swing (4, 5695: 5B50h and its fling), fire and down = its other blow
@@ -3051,6 +3159,15 @@ def rules_code(a):
     a.label('td_keys')
     a.b(0x2e, 0xc6, 0x06); a.word('mon_have'); a.b(0x00)
     a.b(0x8b, 0x46, 0xfe)                                    # mov ax, [bp-2]   player 1's bits
+    # off the play area (beyond MON_X_MIN-MON_X_MAX; a troll stands off the screen's edge, x 400, as it strikes
+    # from there): it walks back in by itself, whatever the direction keys (fire still strikes: a knight in its way
+    # can keep it there), and never walks out
+    a.b(0x81, 0x7c, 0x02, MON_X_MAX & 0xff, MON_X_MAX >> 8); a.short(0x7e, 'td_in_r')   # cmp word [si+2], 300 / jle
+    a.b(0x25, 0x10, 0x00, 0x0c, 0x02); a.short(0xeb, 'td_in')   # and ax, 10h / or al, 2   left (fire kept)
+    a.label('td_in_r')
+    a.b(0x83, 0x7c, 0x02, MON_X_MIN); a.short(0x7d, 'td_in')   # cmp word [si+2], 10 / jge
+    a.b(0x25, 0x10, 0x00, 0x0c, 0x01)                        # and ax, 10h / or al, 1   right (fire kept)
+    a.label('td_in')
     a.b(0xa8, 0x01); a.short(0x74, 'td_left'); a.b(0xc6, 0x44, 0x08, 0x01)   # right: faces right
     a.label('td_left')
     a.b(0xa8, 0x02); a.short(0x74, 'td_fire'); a.b(0xc6, 0x44, 0x08, 0x03)   # left: faces left
@@ -3109,10 +3226,12 @@ def rules_code(a):
     # JUMPSCARE (as DIRTYRAT, a practice with Baloks): player 1 is a Balok. The Balok's update (1000:35A5) decides
     # at 35EC once no jump, hit or hold of its own is going on: here the keys (83C0, then this site again). The
     # Balok moves only by jumps (the path record 77CCh, 2B0A, then 3681 as its own jump): a direction = a hop that
-    # way (left and right also turn it); fire = its swing (4, 363A: 4A0Ah and its fling); fire and down = its grab
-    # (10h, 3659: 4A8Eh, then its bite or squeeze as the game's); the secondary button = its jump attack, forward
-    # (up or down: also farther or nearer). The jump attack kills a knight it comes down on (balok_land); a hop
-    # does not
+    # way (left and right also turn it; up and down farther and nearer); a hop up or down crushes a knight it comes
+    # down on, as the computer's Balok does (balok_land), one only left or right does not; fire = its swing (4,
+    # 363A: 4A0Ah and its fling); fire and down = its grab (10h, 3659: 4A8Eh, then its bite or squeeze as the
+    # game's); the secondary button = with a knight in front within BALOK_GRAB_X (level within BALOK_GRAB_Z) the
+    # same grab, and the knight it holds is crushed to death (balok_crush); else its big jump forward (up or down:
+    # also farther or nearer), which crushes a knight it comes down on
     a.label('rules_balok_decide')
     a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x74, 'bd_mine')   # cmp si, cs:[mon_obj] / je
     a.b(0x83, 0x7d, 0x38, 0x00)                              # cmp word [di+38h], 0   (replaced)
@@ -3132,7 +3251,22 @@ def rules_code(a):
     a.label('bd_sec')
     a.b(0x50, 0xb0, 0x00); a.near(0xe8, 'sec_input'); a.b(0x58)   # push ax / mov al, 0 / call sec_input / pop ax
     a.short(0x74, 'bd_fire')
-    a.b(0x2e, 0xc6, 0x06); a.word('mon_jump'); a.b(0x01)     # the jump attack
+    a.b(0x57)                                                # push di
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rx'); a.b(BALOK_GRAB_X, 0x00)
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rz'); a.b(BALOK_GRAB_Z, 0x00)
+    a.near(0xe8, 'nearest_knight')                           # call nearest_knight   di
+    a.b(0x0b, 0xff); a.short(0x74, 'bd_big')                 # or di, di / jz   none near: the big jump
+    a.b(0x8b, 0x5d, 0x02, 0x3b, 0x5c, 0x02, 0xb3, 0x01)      # mov bx, [di+2] / cmp bx, [si+2] / mov bl, 1
+    a.short(0x7d, 'bd_side'); a.b(0xb3, 0x03)                # jge / mov bl, 3   the side it is on
+    a.label('bd_side')
+    a.b(0x38, 0x5c, 0x08); a.short(0x75, 'bd_big')           # cmp [si+8], bl / jne   behind it: the big jump
+    a.b(0x5f)                                                # pop di
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_crush'); a.b(0x01)    # the crushing grab
+    a.b(0xc7, 0x46, 0x02, 0x59, 0x36)                        # mov word [bp+2], 3659h   the grab
+    a.near(0xe9, 'rules_done')
+    a.label('bd_big')
+    a.b(0x5f)                                                # pop di
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_jump'); a.b(0x01)     # the big jump: it crushes a knight below
     a.b(0x53, 0x51, 0x52, 0x8b, 0x5c, 0x02, 0x8b, 0x4c, 0x06)   # push bx cx dx / mov bx, [si+2] / mov cx, [si+6]
     a.b(0x80, 0x7c, 0x08, 0x01); a.short(0x75, 'bj_l')       # cmp byte [si+8], 1 / jne   forward:
     a.b(0x83, 0xc3, BALOK_JUMP_X); a.short(0xeb, 'bj_z')     # add bx, 100
@@ -3145,6 +3279,7 @@ def rules_code(a):
     a.label('bj_go')
     a.near(0xe9, 'bd_launch')
     a.label('bd_fire')
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_crush'); a.b(0x00)
     a.b(0xa8, 0x10); a.short(0x74, 'bd_move')
     a.b(0xc7, 0x46, 0x02, 0x3a, 0x36)                        # mov word [bp+2], 363Ah   the swing
     a.b(0xa8, 0x04); a.short(0x74, 'bd_done')
@@ -3156,7 +3291,10 @@ def rules_code(a):
     a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d)                        # mov word [bp+2], 2D5Eh   it stands
     a.near(0xe9, 'rules_done')
     a.label('bd_hop')
-    a.b(0x2e, 0xc6, 0x06); a.word('mon_jump'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_jump'); a.b(0x00)     # only left or right: no crush
+    a.b(0xa8, 0x0c); a.short(0x74, 'bd_flat')                # test al, 0Ch / jz   up or down:
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_jump'); a.b(0x01)     # it crushes a knight it comes down on
+    a.label('bd_flat')
     a.b(0x53, 0x51, 0x52, 0x8b, 0x5c, 0x02, 0x8b, 0x4c, 0x06)
     a.b(0xa8, 0x01); a.short(0x74, 'bh_l'); a.b(0x83, 0xc3, BALOK_HOP_X)
     a.label('bh_l')
@@ -3183,9 +3321,10 @@ def rules_code(a):
     a.near(0xe9, 'call_game')
 
     # balok_land (1000:3711, mov si,[77E8h]: the Balok's jump on its way down, low enough; the game then kills its
-    # knight within 10 in x): player 1's Balok kills only by its jump attack, the knight it comes down on (within
-    # BALOK_REACH in x and depth), as the game's (371D: on it, the sound, 0AB2 for [0978h]). The dragon or the
-    # Guardian there takes one blow of the Balok's (its +0Eh) instead of dying
+    # knight within 10 in x): after a hop up or down or its big jump (mon_jump), player 1's Balok crushes the
+    # knight it comes down on (any knight within BALOK_REACH_X in x and BALOK_REACH_Z in depth), as the game's
+    # (371D: on it, the sound, 0AB2 for [0978h]); one a jump. The
+    # dragon or the Guardian there takes one blow of the Balok's (its +0Eh) instead of dying
     a.label('rules_balok_land')
     a.b(0x8b, 0x36, 0xe8, 0x77)                              # mov si, [77E8h]   (replaced)
     a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x74, 'bk_mine')
@@ -3225,13 +3364,24 @@ def rules_code(a):
     a.near(0xe9, 'rules_done')
     a.label('bk_near')                                       # bx = an object: ZF = 1 if standing and under the Balok
     a.b(0x83, 0x7f, 0x38, 0x00); a.short(0x7e, 'bn_no')      # cmp word [bx+38h], 0 / jle
-    for off in (2, 6):
+    for off, reach in ((2, BALOK_REACH_X), (6, BALOK_REACH_Z)):
         a.b(0x8b, 0x47, off, 0x2b, 0x44, off); a.short(0x79, f'bn_abs{off}'); a.b(0xf7, 0xd8)   # mov ax,[bx+o] / sub ax,[si+o] / neg
         a.label(f'bn_abs{off}')
-        a.b(0x3d, BALOK_REACH, 0x00); a.short(0x7f, 'bn_no')   # cmp ax, reach / jg
+        a.b(0x3d, reach, 0x00); a.short(0x7f, 'bn_no')       # cmp ax, reach / jg
     a.b(0x33, 0xc0, 0xc3)                                    # xor ax, ax / ret   ZF = 1
     a.label('bn_no')
     a.b(0x0c, 0x01, 0xc3)                                    # or al, 1 / ret     ZF = 0
+
+    # balok_crush (1000:37FC, mov di,[0978h]: the Balok has shaken the knight it holds; it dies if its HP are gone,
+    # else it is let go): after player 1's crushing grab (the secondary button) the knight held has none left
+    a.label('rules_balok_crush')
+    a.b(0x8b, 0x3e, 0x78, 0x09)                              # mov di, [0978h]   (replaced)
+    a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x75, 'bc_end')   # cmp si, cs:[mon_obj] / jne
+    a.b(0x2e, 0x80, 0x3e); a.word('mon_crush'); a.b(0x00); a.short(0x74, 'bc_end')
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_crush'); a.b(0x00)
+    a.b(0xc7, 0x45, 0x38, 0x00, 0x00)                        # mov word [di+38h], 0   37CD: its bite or squeeze
+    a.label('bc_end')
+    a.near(0xe9, 'rules_done')
 
     # TROGLIFE (as DIRTYRAT; one of the trogg lairs at random): player 1 is a trogg (types 0Ch, 0Eh, 10h; handler
     # 1000:2DEB). It decides at 2E19 (call 56E5, the AI's step): here the keys. A direction = a step that way (2E37,
@@ -3282,9 +3432,9 @@ def rules_code(a):
 
     # SWAMPTHING (as DIRTYRAT, the mudmen's lair): player 1 is a mudman (type 2; handler 1000:52FA). It decides at
     # 5363 (call 56E5) once it is up and holds no one: here the keys. A direction = a step (538B, its own walk);
-    # fire = its blow (546E: 55C4h; a knight it hits it holds, and pulls under unless the knight breaks free with
-    # fire and down); the secondary button (or fire and down) = it sinks into the mud (54B2) and comes up under the
-    # knight it fights, 20-80 away level with it, and pulls it under (54C7, as the game's)
+    # fire = its blow (546E: 55C4h; a knight it hits it holds MUD_HOLD updates, the game's 40 for its own, and pulls
+    # under unless the knight breaks free with fire and down); the secondary button (or fire and down) = it sinks
+    # into the mud (54B2) and comes up beside the nearest knight (mud_rise) and pulls it under
     a.label('rules_mud_decide')
     a.b(0x8b, 0x36, 0xe8, 0x77)                              # mov si, [77E8h]
     a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x74, 'md_mine')
@@ -3328,16 +3478,27 @@ def rules_code(a):
     # player 1's keys, the right ones only for knight 1. In co-op the knight held ([77EAh]) breaks free by its own
     # input (+9: 1 player 2, 5 joystick A, 6 joystick B, 7 the third key set); so player 1 as a mudman cannot let
     # its knight go
+    # SWAMPTHING: player 1's mudman (si) holds a knight MUD_HOLD of its updates at most ([si+0Bh], 40 at 55B1)
     a.label('rules_mud_escape')
+    a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x75, 'held_keys')   # cmp si, cs:[mon_obj] / jne
+    a.b(0x80, 0x7c, 0x0b, MUD_HOLD); a.short(0x76, 'held_keys')   # cmp byte [si+0Bh], MUD_HOLD / jbe
+    a.b(0xc6, 0x44, 0x0b, MUD_HOLD)                          # mov byte [si+0Bh], MUD_HOLD
+    # held_keys (a call 83C0 as the knight a monster holds may break free: [bp+2] = the site + 2): the input of
+    # that knight ([77EAh]), as mud_escape above
+    a.label('held_keys')
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(PLAYER_INPUT & 0xff, PLAYER_INPUT >> 8)
+    a.b(0x50, 0x8b, 0x46, 0x02)                              # push ax / mov ax, [bp+2]
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00); a.short(0x75, 'me_coop')
-    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x0d, 0x55)   # (replaced) on at 550D
-    a.near(0xe9, 'call_game')
+    a.b(0x40); a.short(0xeb, 'me_ret')                       # inc ax   (replaced) on after the call
     a.label('me_coop')
-    a.b(0x2e, 0x80, 0x3e); a.word('mh_have'); a.b(0x00); a.short(0x75, 'me_keys')
+    a.b(0x2e, 0x80, 0x3e); a.word('mh_have'); a.b(0x00); a.short(0x75, 'me_keys_pop')
     a.b(0x2e, 0xc6, 0x06); a.word('mh_have'); a.b(0x01)
-    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x0a, 0x55)   # 83C0, then this site again
+    a.b(0x48, 0x48)                                          # dec ax / dec ax   83C0, then this site again
+    a.label('me_ret')
+    a.b(0x2e, 0xa3); a.word('call_ret'); a.b(0x58)           # mov cs:[call_ret], ax / pop ax
     a.near(0xe9, 'call_game')
+    a.label('me_keys_pop')
+    a.b(0x58)                                                # pop ax
     a.label('me_keys')
     a.b(0x2e, 0xc6, 0x06); a.word('mh_have'); a.b(0x00)
     a.b(0x56, 0x51, 0x8b, 0x36, 0xea, 0x77, 0x8a, 0x4c, 0x09)   # push si cx / mov si, [77EAh] / mov cl, [si+9]
@@ -3552,8 +3713,12 @@ def rules_code(a):
     a.short(0xeb, 'cmo_next')
     a.label('cmo_type')
     a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'cmo_next')
-    a.b(0x83, 0x7c, 0x02, MON_X_MIN); a.short(0x7c, 'cmo_next')   # cmp word [si+2], 10 / jl   still walking in
+    # a ratman still coming in (its AI modes are cleared below) waits; the others take the keys only where their
+    # AI decides anyway (a troll may stand off the screen's edge, x 400, and strike from there)
+    a.b(0x80, 0x7c, 0x35, 0x12); a.short(0x75, 'cmo_in')    # cmp byte [si+35h], 12h / jne
+    a.b(0x83, 0x7c, 0x02, MON_X_MIN); a.short(0x7c, 'cmo_next')   # cmp word [si+2], 10 / jl   still coming in
     a.b(0x81, 0x7c, 0x02, MON_X_MAX & 0xff, MON_X_MAX >> 8); a.short(0x7f, 'cmo_next')
+    a.label('cmo_in')
     a.b(0x80, 0x7c, 0x35, MUDMAN); a.short(0x75, 'cmo_up')   # a mudman:
     a.b(0xf6, 0x44, 0x48, 0x08); a.short(0x74, 'cmo_next')   # test byte [si+48h], 8 / jz   still in the mud
     a.label('cmo_up')
@@ -3701,17 +3866,118 @@ def rules_code(a):
 
     # mud_rise (SWAMPTHING; 1000:54C7, call 3C97 as a mudman comes up out of the mud: level with its knight and
     # 20-80 away, it grabs it from below and pulls it under): player 1's mudman does that only after its own dive
-    # (the secondary button); coming up otherwise (its first rise) it just stands up (54F1)
+    # (the secondary button), and it comes up where it went down: the knight it fights was seldom just there. Now
+    # it comes up MUD_GRAB_X beside the nearest knight standing within MUD_REACH_X in x and MUD_REACH_Z in depth,
+    # level with it, facing it, and pulls it under (54DB, as the game's); with none near it stands up (54F1), as it
+    # does coming up otherwise (its first rise)
     a.label('rules_mud_rise')
-    a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x75, 'mr_game')
+    a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x74, 'mr_mine')
+    a.near(0xe9, 'mr_game')
+    a.label('mr_mine')
     a.b(0x2e, 0x80, 0x3e); a.word('mon_dive'); a.b(0x00); a.short(0x75, 'mr_dive')
+    a.label('mr_stand')
     a.b(0xc7, 0x46, 0x02, 0xf1, 0x54); a.near(0xe9, 'rules_done')   # mov word [bp+2], 54F1h
     a.label('mr_dive')
     a.b(0x2e, 0xc6, 0x06); a.word('mon_dive'); a.b(0x00)
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rx'); a.b(MUD_REACH_X, 0x00)   # mov word cs:[nk_rx], MUD_REACH_X
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rz'); a.b(MUD_REACH_Z, 0x00)   # mov word cs:[nk_rz], MUD_REACH_Z
+    a.near(0xe8, 'nearest_knight')                           # call nearest_knight   di
+    a.b(0x0b, 0xff); a.short(0x74, 'mr_stand')               # or di, di / jz   none near
+    a.b(0x50)                                                # push ax
+    a.b(0x89, 0x3e, 0x78, 0x09, 0x89, 0x3e, 0xea, 0x77)      # mov [0978h], di / mov [77EAh], di
+    a.b(0x8b, 0x45, 0x06, 0x89, 0x44, 0x06)                  # mov ax, [di+6] / mov [si+6], ax   level with it
+    a.b(0x8b, 0x45, 0x02, 0x39, 0x44, 0x02); a.short(0x7c, 'mr_left')   # mov ax, [di+2] / cmp [si+2], ax / jl
+    a.b(0x05, MUD_GRAB_X, 0x00, 0xc6, 0x44, 0x08, 0x03); a.short(0xeb, 'mr_set')   # add ax, 40 / facing left
+    a.label('mr_left')
+    a.b(0x2d, MUD_GRAB_X, 0x00, 0xc6, 0x44, 0x08, 0x01)      # sub ax, 40 / facing right
+    a.label('mr_set')
+    a.b(0x89, 0x44, 0x02, 0x58)                              # mov [si+2], ax / pop ax
+    a.b(0xc7, 0x46, 0x02, 0xdb, 0x54); a.near(0xe9, 'rules_done')   # mov word [bp+2], 54DBh   the pull from below
     a.label('mr_game')
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x97, 0x3c)   # call 3C97 (replaced), on at 54CA
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xca, 0x54)
     a.near(0xe9, 'call_game')
+
+    # nearest_knight (si = a monster; cs:[nk_rx], cs:[nk_rz] = how far in x and depth): di = the nearest knight
+    # standing within both (by x + depth), 0 if none
+    a.label('nearest_knight')
+    a.b(0x50, 0x53, 0x51, 0x52)                              # push ax bx cx dx
+    a.b(0x33, 0xff, 0xba, 0xff, 0xff, 0x33, 0xc9)            # xor di, di / mov dx, 0FFFFh / xor cx, cx
+    a.label('nk_loop')
+    a.b(0x8b, 0xd9, 0xd1, 0xe3)                              # mov bx, cx / shl bx, 1
+    a.b(0x2e, 0x8b, 0x9f); a.word('knight_list')             # mov bx, cs:[bx+knight_list]
+    a.b(0x83, 0x7f, 0x38, 0x00); a.short(0x7e, 'nk_next')    # cmp word [bx+38h], 0 / jle   down
+    for off, reach in ((2, 'nk_rx'), (6, 'nk_rz')):
+        a.b(0x8b, 0x47, off, 0x2b, 0x44, off); a.short(0x79, f'nk_abs{off}'); a.b(0xf7, 0xd8)   # |[bx+o] - [si+o]|
+        a.label(f'nk_abs{off}')
+        a.b(0x2e, 0x3b, 0x06); a.word(reach); a.short(0x7f, 'nk_next')   # cmp ax, cs:[reach] / jg
+        if off == 2:
+            a.b(0x2e, 0xa3); a.word('mr_dist')               # mov cs:[mr_dist], ax
+    a.b(0x2e, 0x03, 0x06); a.word('mr_dist')                 # add ax, cs:[mr_dist]
+    a.b(0x3b, 0xc2); a.short(0x73, 'nk_next')                # cmp ax, dx / jae
+    a.b(0x8b, 0xd0, 0x8b, 0xfb)                              # mov dx, ax / mov di, bx   the nearest yet
+    a.label('nk_next')
+    a.b(0x41, 0x2e, 0x3a, 0x0e); a.word('coop'); a.short(0x72, 'nk_loop')   # inc cx / cmp cl, cs:[coop] / jb
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0xc3)                        # pop dx cx bx ax / ret
+
+    # rat_tree (DIRTYRAT; 1000:32C4, mov si,[77E8h]: a ratman sits in the tree and counts [si+4Ah] down to its jump
+    # at its knight, 3221): player 1's ratman stays there and takes the keys (83C0, then this site again). The
+    # secondary button = it hangs the knight below it (the nearest standing within RAT_HANG_X in x and RAT_HANG_Z in
+    # depth; 3589, as when a knight walks into it, and the knight breaks free with fire and down); fire = its jump
+    # at the knight (32EC); a direction = a leap down that way (as rat_decide's)
+    a.label('rules_rat_tree')
+    a.b(0x8b, 0x36, 0xe8, 0x77)                              # mov si, [77E8h]   (replaced)
+    a.b(0x2e, 0x3b, 0x36); a.word('mon_obj'); a.short(0x74, 'rt_mine')
+    a.near(0xe9, 'rules_done')
+    a.label('rt_mine')
+    a.b(0x2e, 0x80, 0x3e); a.word('mon_have'); a.b(0x00); a.short(0x75, 'rt_keys')
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_have'); a.b(0x01)     # first the keys: 83C0h, then here again
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(PLAYER_INPUT & 0xff, PLAYER_INPUT >> 8)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xc4, 0x32)
+    a.near(0xe9, 'call_game')
+    a.label('rt_keys')
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_have'); a.b(0x00)
+    a.b(0x8b, 0x46, 0xfe)                                    # mov ax, [bp-2]   player 1's bits
+    a.b(0xa8, 0x01); a.short(0x74, 'rt_left'); a.b(0xc6, 0x44, 0x08, 0x01)   # right: faces right
+    a.label('rt_left')
+    a.b(0xa8, 0x02); a.short(0x74, 'rt_sec'); a.b(0xc6, 0x44, 0x08, 0x03)    # left: faces left
+    a.label('rt_sec')
+    a.b(0x50, 0xb0, 0x00); a.near(0xe8, 'sec_input'); a.b(0x58)   # the secondary button?
+    a.short(0x74, 'rt_fire')
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rx'); a.b(RAT_HANG_X, 0x00)
+    a.b(0x2e, 0xc7, 0x06); a.word('nk_rz'); a.b(RAT_HANG_Z, 0x00)
+    a.near(0xe8, 'nearest_knight')                           # call nearest_knight   di
+    a.b(0x0b, 0xff); a.short(0x74, 'rt_stay')                # or di, di / jz   none below
+    a.b(0x89, 0x3e, 0x78, 0x09, 0x89, 0x3e, 0xea, 0x77)      # mov [0978h], di / mov [77EAh], di
+    a.b(0x87, 0xf7)                                          # xchg si, di   3589: di = the ratman, si = the knight
+    a.b(0xc7, 0x46, 0x02, 0x89, 0x35); a.near(0xe9, 'rules_done')   # mov word [bp+2], 3589h   the hanging
+    a.label('rt_fire')
+    a.b(0xa8, 0x10); a.short(0x74, 'rt_move')
+    a.b(0xc7, 0x46, 0x02, 0xec, 0x32); a.near(0xe9, 'rules_done')   # mov word [bp+2], 32ECh   its jump at the knight
+    a.label('rt_move')
+    a.b(0xa8, 0x0f); a.short(0x74, 'rt_stay')
+    a.b(0x83, 0x26, 0x9c, 0x77, 0xfb, 0xc7, 0x44, 0x48, 0x00, 0x00)   # and word [779Ch], 0FFFBh / mov word [si+48h], 0
+    a.b(0x8b, 0xfe); a.near(0xe9, 'rd_leap')                 # mov di, si / jmp rd_leap   out of the tree
+    a.label('rt_stay')
+    a.b(0xc7, 0x44, 0x4a, 0x02, 0x00)                        # mov word [si+4Ah], 2   its count never ends
+    a.near(0xe9, 'rules_done')
+
+    # rat_escape (DIRTYRAT, co-op; 1000:32F9, 335F, call 83C0 while a ratman hangs a knight or rides on its back:
+    # fire and down breaks free): as mud_escape, the knight held (rat_victim, noted by rat_hang and rat_ride) breaks
+    # free by its own input; the game read player 1's keys, and in co-op it held the knight it fights now
+    a.label('rules_rat_escape')
+    a.b(0x50, 0x2e, 0xa1); a.word('rat_victim')              # push ax / mov ax, cs:[rat_victim]
+    a.b(0x0b, 0xc0); a.short(0x74, 're_go')                  # or ax, ax / jz
+    a.b(0xa3, 0x78, 0x09, 0xa3, 0xea, 0x77)                  # mov [0978h], ax / mov [77EAh], ax
+    a.label('re_go')
+    a.b(0x58); a.near(0xe9, 'held_keys')                     # pop ax / jmp held_keys
+    # rat_hang (1000:3597), rat_ride (1000:3576): a ratman takes hold of a knight (si; it hangs it from the tree, or
+    # jumps on its back): noted
+    for name, script in (('rat_hang', 0x3bd4), ('rat_ride', 0x3800)):
+        a.label('rules_' + name)
+        a.b(0xc7, 0x06, 0x3a, 0x78, script & 0xff, script >> 8)   # mov word [783Ah], script   (replaced)
+        a.b(0x2e, 0x89, 0x36); a.word('rat_victim')          # mov cs:[rat_victim], si
+        a.near(0xe9, 'rules_done')
 
     # cheat_fight_end (from fight_end): IDDQD ends, the HP memory is cleared for the next fight
     a.label('cheat_fight_end')
@@ -3728,6 +3994,10 @@ def rules_code(a):
     a.b(0x2e, 0xc6, 0x06); a.word('dragon_ctl'); a.b(0x00)   # HOTSTUFF: this practice only
     a.b(0x2e, 0xc6, 0x06); a.word('mon_ctl'); a.b(0x00)      # DIRTYRAT ...: this fight only
     a.b(0x2e, 0xc6, 0x06); a.word('mon_dive'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('mon_crush'); a.b(0x00)
+    a.b(0x2e, 0xc7, 0x06); a.word('mine_live'); a.b(0x00, 0x00)   # MINEFIELD: this fight only
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_req'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_todo'); a.b(0x00)
     a.b(0x2e, 0x80, 0x3e); a.word('paw_set'); a.b(0x00); a.short(0x74, 'cfe_paw')   # HOTSTUFF's paw: the reaction back
     a.b(0x2e, 0xa1); a.word('paw_saved'); a.b(0xa3, (REACTIONS + PAW_TYPE) & 0xff, (REACTIONS + PAW_TYPE) >> 8)
     a.b(0x2e, 0xc6, 0x06); a.word('paw_set'); a.b(0x00)
@@ -4067,9 +4337,10 @@ def rules_code(a):
     # slumped: di = an object -> ZF = 1 if it is a player's knight drawn from KN*.OB or HE*.OB in the slumped pose
     # (script 130E-134B), bx = its animation
     a.label('slumped')
-    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8); a.short(0x72, 'sl_no')   # cmp di, 6C9Eh / jb
-    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8); a.short(0x77, 'sl_no')   # cmp di, 6DC4h / ja
-    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'sl_no')      # cmp byte [di+35h], 6 / jne
+    a.near(0xe8, 'victim_slot'); a.short(0x72, 'sl_no')      # call victim_slot / jc   a knight or a monster slot
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x74, 'sl_type')    # cmp byte [di+35h], 6 / je   a player's knight
+    a.b(0x80, 0x7d, 0x35, COMPUTER_TYPE); a.short(0x75, 'sl_no')   # or the computer's (a Black Knight)
+    a.label('sl_type')
     a.near(0xe8, 'anim_of'); a.short(0x75, 'sl_no')          # call anim_of / jnz
     a.b(0x50, 0x8b, 0x47, 0x18, 0x3d, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8); a.short(0x74, 'sl_bank')
     a.b(0x3d, HE_BANK & 0xff, HE_BANK >> 8); a.short(0x75, 'sl_pop')
@@ -4136,11 +4407,10 @@ def rules_code(a):
     a.short(0x77, 'de_some')                                 # ja de_some        not 0 or FFFFh
     a.near(0xe9, 'de_done')
     a.label('de_some')
-    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)      # cmp di, 6C9Eh
-    a.short(0x72, 'de_done_1')                               # jb
-    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8)      # cmp di, 6DC4h
-    a.short(0x77, 'de_done_1')                               # ja
-    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'de_done_1')  # cmp byte [di+35h], 6 / jne   a player's knight
+    a.near(0xe8, 'victim_slot'); a.short(0x72, 'de_done_1')  # call victim_slot / jc   a knight or a monster slot
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x74, 'de_type')    # cmp byte [di+35h], 6 / je   a player's knight
+    a.b(0x80, 0x7d, 0x35, COMPUTER_TYPE); a.short(0x75, 'de_done_1')   # or the computer's (a Black Knight)
+    a.label('de_type')
     a.b(0xbb, 0x7e, 0x94, 0xb9, 0x0a, 0x00)                  # mov bx, 947Eh / mov cx, 10   its animation
     a.label('de_slot')
     a.b(0x39, 0x7f, 0x16); a.short(0x74, 'de_found')         # cmp [bx+16h], di / je de_found
@@ -4171,7 +4441,7 @@ def rules_code(a):
     a.near(0xe9, 'de_done')
     a.label('de_table')
     # who hit it and how, as noted at the hit (hit_pair): a strike's +28h may be over by now
-    a.b(0x53); a.near(0xe8, 'knight_slot')                   # push bx / call knight_slot
+    a.b(0x53); a.near(0xe8, 'victim_slot')                   # push bx / call victim_slot
     a.b(0x2e, 0x8b, 0xb7); a.word('last_hitter')             # mov si, cs:[bx+last_hitter]
     a.b(0x2e, 0x8b, 0x87); a.word('last_strike'); a.b(0x5b)  # mov ax, cs:[bx+last_strike] / pop bx
     a.b(0x0b, 0xf6); a.short(0x74, 'de_done_2')              # or si, si / jz
@@ -4224,9 +4494,11 @@ def rules_code(a):
     a.near(0xe9, 'dn_none')
     a.label('dn_have')
     a.b(0x8b, 0xf3)                                          # mov si, bx      the dagger's animation
-    a.b(0xbf, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xb9, 0x04, 0x00)   # mov di, 6C9Eh / mov cx, 4
+    a.b(0xbf, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xb9, 4 + MONSTER_COUNT, 0x00)   # mov di, 6C9Eh / mov cx, 24
     a.label('dn_knight')
-    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'dn_next_1')  # cmp byte [di+35h], 6 / jne
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x74, 'dn_type')    # cmp byte [di+35h], 6 / je
+    a.b(0x80, 0x7d, 0x35, COMPUTER_TYPE); a.short(0x75, 'dn_next_1')   # or a computer's knight
+    a.label('dn_type')
     a.near(0xe8, 'anim_of'); a.short(0x75, 'dn_next_1')      # call anim_of / jnz
     a.b(0x8b, 0x47, 0x18, 0x3d, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8); a.short(0x74, 'dn_bank')   # its bank table
     a.b(0x3d, HE_BANK & 0xff, HE_BANK >> 8); a.short(0x75, 'dn_next_1')
@@ -4269,7 +4541,11 @@ def rules_code(a):
     a.b(0x5e, 0x5f, 0x59, 0x5b, 0x58)                        # pop si di cx bx ax
     a.near(0xe9, 'rules_done')
     a.label('dn_next')
-    a.b(0x83, 0xc7, SLOT_SIZE, 0x49); a.short(0x74, 'dn_none')   # add di, 62h / dec cx / jz dn_none
+    a.b(0x83, 0xc7, SLOT_SIZE)                               # add di, 62h
+    a.b(0x81, 0xff, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8); a.short(0x75, 'dn_count')   # cmp di, 6E26h / jne
+    a.b(0xbf, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)      # mov di, 6F08h   then the monster slots (Black Knights)
+    a.label('dn_count')
+    a.b(0x49); a.short(0x74, 'dn_none')                      # dec cx / jz dn_none
     a.near(0xe9, 'dn_knight')                                # jmp dn_knight
     a.label('dn_none')
     a.b(0x5e, 0x5f, 0x59, 0x5b, 0x58)                        # pop si di cx bx ax
@@ -4308,6 +4584,14 @@ def rules_code(a):
     a.b(0xb1, SLOT_SIZE, 0xf6, 0xf1, 0x32, 0xe4, 0xd1, 0xe0, 0x8b, 0xd8)    # mov cl, 62h / div cl / xor ah, ah / shl ax, 1 / mov bx, ax
     a.b(0x59, 0x58, 0xc3)                                    # pop cx ax / ret
 
+    # victim_slot (D20): di = an object -> bx = its number * 2 (knights 0-3, monster slots 4-23; the Black Knights
+    # of B and BLACKDEATH are monsters), CF = 1 if neither
+    a.label('victim_slot')
+    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'obj_index'); a.b(0x5e)   # push si / mov si, di / call obj_index / pop si
+    a.short(0x72, 'vs_end')                                  # jc vs_end
+    a.b(0x83, 0xfb, 48, 0xf5)                                # cmp bx, 48 / cmc   the dragon: CF = 1
+    a.label('vs_end')
+    a.b(0xc3)
     # de_side: CF = 1 if the blow (si) comes from the side the knight (di, animation bx) faces
     a.label('de_side')
     a.b(0x8b, 0x44, 0x02, 0x2b, 0x45, 0x02)                  # mov ax, [si+2] / sub ax, [di+2]
@@ -4333,13 +4617,474 @@ def rules_code(a):
     a.label('bkq_no')
     a.b(0x50, 0x33, 0xc0, 0x40, 0x58, 0xc3)                  # push ax / xor ax, ax / inc ax / pop ax / ret   ZF = 0
 
+    # bk_collide (1000:A008, cmp word [di+22h],0 in the walk's collision test 9FDF: si moves, di is another fighter
+    # in an animation slot, ZF = 1 = it does not block): in a Black Knight practice two Black Knights never block
+    # each other. With 3-4 knights two came in at the same place (one each side, as many as the knights), and two
+    # bodies that overlap block each other in every direction: they stood there for good
+    a.label('rules_bk_collide')
+    a.b(0x83, 0x7d, 0x22, 0x00); a.short(0x74, 'bcl_flags')  # cmp word [di+22h], 0 / je   (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00); a.short(0x74, 'bcl_nz')   # not a Black Knight practice
+    a.b(0x8b, 0xde); a.near(0xe8, 'black_knight'); a.short(0x75, 'bcl_nz')   # mov bx, si / call black_knight / jnz
+    a.b(0x8b, 0xdf); a.near(0xe8, 'black_knight'); a.short(0x74, 'bcl_flags')  # mov bx, di / call / jz   both: ZF = 1
+    a.label('bcl_nz')
+    a.b(0x83, 0x7d, 0x22, 0x00)                              # cmp word [di+22h], 0   ZF = 0
+    a.label('bcl_flags')
+    a.near(0xe9, 'rules_flags')
+
+    # map_keys (D26; 1000:A536, mov [CC9Ah],bx: the map loop's input, bx = 83C0's bits for a human, the AI's for a
+    # computer knight): after a human's turn start (map_hold, set by the int 65h) the input stays empty while a
+    # direction or fire is still held from the turn before, so the next knight moves only on a new press
+    a.label('rules_map_keys')
+    a.b(0x8b, 0x5e, 0xfe)                                    # mov bx, [bp-2]   the game's bx
+    a.b(0x2e, 0x80, 0x3e); a.word('map_hold'); a.b(0x00); a.short(0x74, 'mk2_set')   # cmp byte cs:[map_hold], 0 / je
+    a.b(0x56, 0x8b, 0x36, 0xe8, 0x77, 0x83, 0x7c, 0x20, COMPUTER, 0x5e)   # push si / mov si, [77E8h] / cmp word [si+20h], 4 / pop si
+    a.short(0x74, 'mk2_set')                                 # je mk2_set   a computer's turn: its own moves
+    a.b(0xf6, 0xc3, 0x1f); a.short(0x74, 'mk2_free')         # test bl, 1Fh / jz mk2_free
+    a.b(0x33, 0xdb, 0x89, 0x5e, 0xfe); a.short(0xeb, 'mk2_set')   # xor bx, bx / mov [bp-2], bx   still held: nothing
+    a.label('mk2_free')
+    a.b(0x2e, 0xc6, 0x06); a.word('map_hold'); a.b(0x00)     # all let go: the keys count again
+    a.label('mk2_set')
+    a.b(0x89, 0x1e, 0x9a, 0xcc)                              # mov [CC9Ah], bx   (replaced)
+    a.near(0xe9, 'rules_done')
+
+    # --- K33: limits and checks ---
+    # game_over (1000:A67B, inc word [0CCAAh], a dead human's turn): the game counted dead humans up to the number of
+    # players, and every normal turn's end cleared the count: a frog's skipped turn did not (one dead, one frog: a
+    # false Game Over on the second day), a computer's did (two dead with a computer between them: no end at all).
+    # Now the game ends when no human knight can play again: none has lives, and none comes back (rules' modes)
+    a.label('rules_game_over')
+    a.b(0x56, 0x51, 0xbe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xb9, 0x04, 0x00)   # push si cx / mov si, 6C9Eh / mov cx, 4
+    a.label('go_loop')
+    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'go_next')   # cmp word [si+20h], 4 / je
+    a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7f, 'go_alive')   # cmp byte [si+31h], 0 / jg
+    a.near(0xe8, 'section'); a.short(0x72, 'go_next')        # call section / jc
+    a.b(0x2e, 0x80, 0x7f, 0x07, MODES['permadeath']); a.short(0x75, 'go_alive')   # cmp byte cs:[bx+7], permadeath / jne
+    a.label('go_next')
+    a.b(0x83, 0xc6, SLOT_SIZE); a.short(0xe2, 'go_loop')     # add si, 62h / loop
+    a.b(0x59, 0x5e, 0xc7, 0x46, 0x02, 0x88, 0xa6)            # pop cx si / mov word [bp+2], 0A688h   Game Over
+    a.near(0xe9, 'rules_done')
+    a.label('go_alive')
+    a.b(0x59, 0x5e, 0xc7, 0x46, 0x02, 0x0d, 0xa6)            # pop cx si / mov word [bp+2], 0A60Dh   the next knight
+    a.near(0xe9, 'rules_done')
+    # loot_hp (1000:CE75, sub [di+38h],ax: a knight's armour is taken): never below 1 (a frog is looted with its wounds)
+    a.label('rules_loot_hp')
+    a.b(0x29, 0x45, 0x38); a.short(0x7f, 'lh_end')           # sub [di+38h], ax / jg
+    a.b(0xc7, 0x45, 0x38, 0x01, 0x00)                        # mov word [di+38h], 1
+    a.label('lh_end')
+    a.near(0xe9, 'rules_done')
+    # auto_loot_hp (1000:0BAD, a computer or the dragon takes armour; ax = the bonus of the winner's OLD armour; the
+    # winner already wears the new one, the loser's +42h is still the armour taken): the loser loses that armour's
+    # bonus, not above 1 HP left, and the winner gains the difference
+    a.label('rules_auto_loot_hp')
+    a.b(0x51, 0x8b, 0xc8, 0x8b, 0x5d, 0x42)                  # push cx / mov cx, ax / mov bx, [di+42h]
+    a.b(0x8a, 0x87, (0xf452 - 0x1b) & 0xff, (0xf452 - 0x1b) >> 8, 0x98)   # mov al, [bx+0F452h-1Bh] / cbw
+    a.b(0x29, 0x45, 0x38); a.short(0x7f, 'al_ok')            # sub [di+38h], ax / jg
+    a.b(0xc7, 0x45, 0x38, 0x01, 0x00)                        # mov word [di+38h], 1
+    a.label('al_ok')
+    a.b(0x2b, 0xc1, 0x01, 0x44, 0x38, 0x59)                  # sub ax, cx / add [si+38h], ax / pop cx
+    a.near(0xe9, 'rules_done')
+    # path_none (1000:2CFB, mov ax,-1: a flying object, ax, has no path slot): the callers store bx, cx, dx as its
+    # place, which were anything: they get the place it is at, so it lands there
+    a.label('rules_path_none')
+    a.b(0x8b, 0xf0, 0x8b, 0x44, 0x02, 0x89, 0x46, 0xfe)      # mov si, ax / mov ax, [si+2] / mov [bp-2], ax   its bx
+    a.b(0x8b, 0x4c, 0x06, 0x8b, 0x54, 0x04, 0xb8, 0xff, 0xff)   # mov cx, [si+6] / mov dx, [si+4] / mov ax, -1
+    a.near(0xe9, 'rules_done')
+    # mythral_table (1000:BC2E, mov cx,[si+2]: the modifier for a donation; above the table's last limit si is past
+    # it, which max_gold above 250 makes possible): the last entry
+    a.label('rules_mythral_table')
+    a.b(0x81, 0xfe, 0x90, 0xe4); a.short(0x72, 'mt_ok')      # cmp si, 0E490h / jb
+    a.b(0xbe, 0x8c, 0xe4)                                    # mov si, 0E48Ch
+    a.label('mt_ok')
+    a.b(0x8b, 0x4c, 0x02); a.near(0xe9, 'rules_done')        # mov cx, [si+2]
+
+    # game_roll: ax = the game's 0-100 roll, as 1000:BF82 (7 random bits, 100-127 minus 27); keeps bx, cx
+    a.label('game_roll')
+    a.near(0xe8, 'game_random')
+    a.b(0x25, 0x7f, 0x00, 0x3d, 0x64, 0x00); a.short(0x72, 'gro_end')   # and ax, 7Fh / cmp ax, 100 / jb
+    a.b(0x2d, 0x1b, 0x00)                                    # sub ax, 27
+    a.label('gro_end')
+    a.b(0xc3)
+
+    # healer (1000:BCAC, the donation [0E243h] is made; custom rules): first the full heal's price if the knight is
+    # hurt or diseased, then the life point's price per life up to max_lives. What cannot buy a whole one is a chance:
+    # 4 of 10 gives the heal 40 % of the time, the 2 left of 27 a life 2/15 of the time. Money nothing can use is
+    # returned. The prices are the game's own immediates (custom rules patch them)
+    a.label('rules_healer')
+    a.b(0x52, 0x57, 0x06, 0x8e, 0x46, 0x04)                  # push dx di es / mov es, [bp+4]   MAIN's code
+    a.b(0x8b, 0x36, 0xe8, 0x77, 0x8b, 0x1e, 0x43, 0xe2)      # mov si, [77E8h] / mov bx, [0E243h]
+    a.b(0x2e, 0x89, 0x1e); a.word('heal_given')              # mov cs:[heal_given], bx
+    a.b(0x33, 0xff)                                          # xor di, di   1 cured, 2 something bought
+    a.b(0x8b, 0x44, 0x38, 0x3b, 0x44, 0x3c); a.short(0x75, 'hl_hp')   # mov ax, [si+38h] / cmp ax, [si+3Ch] / jne
+    a.b(0x83, 0x7c, 0x60, 0x00); a.short(0x74, 'hl_lives')   # cmp word [si+60h], 0 / je
+    a.label('hl_hp')
+    a.b(0x26, 0x8a, 0x0e, 0xdb, 0xbc, 0x32, 0xed)            # mov cl, es:[0BCDBh] / xor ch, ch   the heal's price
+    a.b(0x3b, 0xd9); a.short(0x7c, 'hl_hp_try')              # cmp bx, cx / jl
+    a.b(0x2b, 0xd9); a.short(0xeb, 'hl_heal')                # sub bx, cx / jmp
+    a.label('hl_hp_try')
+    a.near(0xe8, 'heal_roll'); a.b(0xbb, 0x00, 0x00); a.short(0x73, 'hl_end')   # call heal_roll / mov bx, 0 / jnc
+    a.label('hl_heal')
+    a.b(0x8b, 0x44, 0x3c, 0x89, 0x44, 0x38)                  # mov ax, [si+3Ch] / mov [si+38h], ax
+    a.b(0x83, 0xcf, 0x02, 0x83, 0x7c, 0x60, 0x00); a.short(0x74, 'hl_lives')   # or di, 2 / cmp word [si+60h], 0 / je
+    a.b(0xc7, 0x44, 0x60, 0x00, 0x00, 0x83, 0xcf, 0x01)      # mov word [si+60h], 0 / or di, 1
+    a.label('hl_lives')
+    a.b(0x26, 0x8a, 0x0e, 0xee, 0xbc, 0x32, 0xed)            # mov cl, es:[0BCEEh] / xor ch, ch   a life's price
+    a.label('hl_life')
+    a.b(0x8a, 0x44, 0x31, 0x2e, 0x3a, 0x06); a.word('rules_table', G_MAX_LIVES); a.short(0x7d, 'hl_change')   # cap: jge
+    a.b(0x3b, 0xd9); a.short(0x7c, 'hl_life_try')            # cmp bx, cx / jl
+    a.b(0x2b, 0xd9, 0xfe, 0x44, 0x31, 0x83, 0xcf, 0x02); a.short(0xeb, 'hl_life')   # sub bx, cx / inc lives / or di, 2
+    a.label('hl_life_try')
+    a.b(0x0b, 0xdb); a.short(0x74, 'hl_end')                 # or bx, bx / jz
+    a.near(0xe8, 'heal_roll'); a.b(0xbb, 0x00, 0x00); a.short(0x73, 'hl_end')   # call heal_roll / mov bx, 0 / jnc
+    a.b(0xfe, 0x44, 0x31, 0x83, 0xcf, 0x02); a.short(0xeb, 'hl_end')   # inc lives / or di, 2
+    a.label('hl_change')
+    a.b(0x01, 0x5c, 0x32, 0x01, 0x1e, 0x45, 0xe2, 0x33, 0xdb)   # add [si+32h], bx / add [0E245h], bx / xor bx, bx
+    a.label('hl_end')
+    a.b(0x89, 0x1e, 0x43, 0xe2)                              # mov [0E243h], bx
+    # the game's reply (BCF4): bx > 9 thanks, else sorry; cx bit 0: also cured
+    a.b(0xb8, 0x0a, 0x00, 0xf7, 0xc7, 0x02, 0x00); a.short(0x75, 'hl_say')   # mov ax, 10 / test di, 2 / jnz
+    a.b(0x2e, 0x83, 0x3e); a.word('heal_given'); a.b(0x0a); a.short(0x7d, 'hl_say')   # cmp cs:[heal_given], 10 / jge
+    a.b(0xb8, 0x09, 0x00)                                    # mov ax, 9
+    a.label('hl_say')
+    a.b(0x89, 0x46, 0xfe, 0x8b, 0xcf, 0x83, 0xe1, 0x01)      # mov [bp-2], ax / mov cx, di / and cx, 1
+    a.b(0x07, 0x5f, 0x5a, 0xc7, 0x46, 0x02, 0xf4, 0xbc)      # pop es di dx / mov word [bp+2], 0BCF4h
+    a.near(0xe9, 'rules_done')
+    a.label('heal_roll')                                     # bx of cx (bx < cx): CF = 1 with that chance
+    a.near(0xe8, 'game_random')
+    a.b(0x25, 0xff, 0x7f, 0x33, 0xd2, 0xf7, 0xf1, 0x3b, 0xd3, 0xc3)   # and ax, 7FFFh / xor dx, dx / div cx / cmp dx, bx / ret
+
+    # haste_curse (1000:CCCF, mov word [0CCA2h],-1): cursed, [0CCA2h] = 1: the turn's budget is halved (turn_haste)
+    a.label('rules_haste_curse')
+    a.near(0xe8, 'game_roll')
+    a.b(0x2e, 0x3a, 0x06); a.word('rules_table', G_HASTE_CURSE)   # cmp al, cs:[limit]
+    a.b(0xc7, 0x06, 0xa2, 0xcc, 0x01, 0x00)                  # mov word [0CCA2h], 1   (keeps the flags)
+    a.short(0x7e, 'hc_end')                                  # jle hc_end
+    a.b(0xc7, 0x06, 0xa2, 0xcc, 0xff, 0xff)                  # mov word [0CCA2h], -1
+    a.label('hc_end')
+    a.near(0xe9, 'rules_done')
+
+    # wyrm_curse (1000:C03C, mov word [0F37Ah],0, the dragon's target just set to the knight chosen): cursed, the
+    # dragon goes for the reader ([77E8h])
+    a.label('rules_wyrm_curse')
+    a.b(0xc7, 0x06, 0x7a, 0xf3, 0x00, 0x00)                  # (replaced)
+    a.near(0xe8, 'game_roll')
+    a.b(0x2e, 0x3a, 0x06); a.word('rules_table', G_WYRM_CURSE); a.short(0x7f, 'wc_end')   # cmp al, cs:[limit] / jg
+    a.b(0xa1, 0xe8, 0x77, 0xa3, (DRAGON_RECORD + 0x46) & 0xff, (DRAGON_RECORD + 0x46) >> 8)   # mov ax, [77E8h] / mov [dragon+46h], ax
+    a.label('wc_end')
+    a.near(0xe9, 'rules_done')
+
+    # dragon_scroll (1000:0D15, call 2444: the dragon's fight begins, a human's knight): the duels' offer of the Scroll
+    # of Protection (04E8, with the knight as the one attacked), then 04E8 returns to this site. Avoided: the dragon
+    # flies off and the turn ends (113E); else the fight
+    a.label('rules_dragon_scroll')
+    a.b(0x2e, 0x80, 0x3e); a.word('ds_have'); a.b(0x00); a.short(0x75, 'ds_back')
+    a.b(0x2e, 0xc6, 0x06); a.word('ds_have'); a.b(0x01)
+    a.b(0xa1, 0x79, 0x89, 0x2e, 0xa3); a.word('ds_old', 0)   # mov ax, [8979h] / mov cs:[ds_old], ax
+    a.b(0xa1, 0x7b, 0x89, 0x2e, 0xa3); a.word('ds_old', 2)   # mov ax, [897Bh] / mov cs:[ds_old+2], ax
+    a.b(0xa1, 0x78, 0x09, 0xa3, 0x7b, 0x89)                  # mov ax, [0978h] / mov [897Bh], ax
+    a.b(0xc7, 0x06, 0x79, 0x89, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8)   # mov word [8979h], dragon
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xe8, 0x04)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x15, 0x0d)
+    a.near(0xe9, 'call_game')
+    a.label('ds_back')
+    a.b(0x2e, 0xc6, 0x06); a.word('ds_have'); a.b(0x00)
+    a.b(0x8b, 0xd8)                                          # mov bx, ax   its answer
+    a.b(0x2e, 0xa1); a.word('ds_old', 0); a.b(0xa3, 0x79, 0x89)   # [8979h] back
+    a.b(0x2e, 0xa1); a.word('ds_old', 2); a.b(0xa3, 0x7b, 0x89)   # [897Bh] back
+    a.b(0x0b, 0xdb); a.short(0x74, 'ds_fight')               # or bx, bx / jz
+    a.b(0xc7, 0x06, 0xb0, 0xcc, 0x00, 0x00)                  # mov word [0CCB0h], 0   the dragon flies off
+    a.b(0xc7, 0x46, 0x02, 0x3e, 0x11); a.near(0xe9, 'rules_done')   # mov word [bp+2], 113Eh   the turn ends
+    a.label('ds_fight')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x44, 0x24)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x18, 0x0d)
+    a.near(0xe9, 'call_game')
+
+    # in_valley: si = a knight -> CF = 1 if it touches the Valley's icon (x and y measured with 1000:0653)
+    a.label('in_valley')
+    a.b(0x81, 0x7c, 0x5c, VALLEY_X[0], 0x00); a.short(0x7c, 'iv_no')   # cmp word [si+5Ch], x0 / jl
+    a.b(0x81, 0x7c, 0x5c, VALLEY_X[1], 0x00); a.short(0x7f, 'iv_no')
+    a.b(0x83, 0x7c, 0x5e, VALLEY_Y[0]); a.short(0x7c, 'iv_no')
+    a.b(0x83, 0x7c, 0x5e, VALLEY_Y[1]); a.short(0x7f, 'iv_no')
+    a.b(0xf9, 0xc3)                                          # stc / ret
+    a.label('iv_no')
+    a.b(0xf8, 0xc3)                                          # clc / ret
+    # hawk_land (1000:AB7D, add word [si+5Ch],20h, the last step of a cursed Hawk's random place): not in the Valley
+    a.label('rules_hawk_land')
+    a.b(0x83, 0x44, 0x5c, 0x20)                              # (replaced)
+    a.near(0xe8, 'in_valley'); a.short(0x73, 'hk_end')
+    a.b(0xc7, 0x44, 0x5e, VALLEY_Y[0] - 1, 0x00)             # mov word [si+5Eh], y0 - 1   just north of it
+    a.label('hk_end')
+    a.near(0xe9, 'rules_done')
+    # hawk_guard (from turn_moves, every pass of the map loop): the Hawk's flight ([0CC9Eh]) cannot enter the Valley:
+    # the knight goes back to its last place outside. Speedrun mode: as the game
+    a.label('hawk_guard')
+    a.b(0x83, 0x3e, 0x9e, 0xcc, 0x00); a.short(0x75, 'hg_on')
+    a.b(0x2e, 0xc6, 0x06); a.word('hawk_ok'); a.b(0x00, 0xc3)
+    a.label('hg_on')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_EXPLOIT_FIXES); a.b(0x00); a.short(0x75, 'hg_go'); a.b(0xc3)
+    a.label('hg_go')
+    a.b(0x50, 0x56, 0x8b, 0x36, 0xe8, 0x77)                  # push ax si / mov si, [77E8h]
+    a.near(0xe8, 'in_valley'); a.short(0x72, 'hg_in')
+    a.b(0x8b, 0x44, 0x5c, 0x2e, 0xa3); a.word('hawk_pos', 0)   # mov ax, [si+5Ch] / mov cs:[hawk_pos], ax
+    a.b(0x8b, 0x44, 0x5e, 0x2e, 0xa3); a.word('hawk_pos', 2)
+    a.b(0x2e, 0xc6, 0x06); a.word('hawk_ok'); a.b(0x01); a.short(0xeb, 'hg_end')
+    a.label('hg_in')
+    a.b(0x2e, 0x80, 0x3e); a.word('hawk_ok'); a.b(0x00); a.short(0x74, 'hg_end')
+    a.b(0x2e, 0xa1); a.word('hawk_pos', 0); a.b(0x89, 0x44, 0x5c)
+    a.b(0x2e, 0xa1); a.word('hawk_pos', 2); a.b(0x89, 0x44, 0x5e)
+    a.label('hg_end')
+    a.b(0x5e, 0x58, 0xc3)                                    # pop si ax / ret
+
+    # knight_flash (from practice_frame): the game flickers only the knights in [8979h] and [897Bh] at 10 HP or less
+    # (1000:0903, 0960), through the first colours. Knights in the new colours (D13) flash theirs here, white on and
+    # off: DAC entries from FLASH_KNIGHTS, rewritten when the pattern changes. dac_write sets flash_state to redo it
+    a.label('knight_flash')
+    a.near(0xe8, 'colours_active'); a.short(0x75, 'kf_on'); a.b(0xc3)
+    a.label('kf_on')
+    a.b(0x80, 0x3e, 0x7d, 0x89, 0x00); a.short(0x75, 'kf_go'); a.b(0xc3)   # cmp byte [897Dh], 0 / jne   not as it ends
+    a.label('kf_go')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x32, 0xdb)            # push ax bx cx dx si / xor bl, bl
+    a.b(0x1e, 0x33, 0xc0, 0x8e, 0xd8, 0xa0, 0x6c, 0x04, 0x1f)   # push ds / xor ax, ax / mov ds, ax / mov al, [046Ch] / pop ds
+    a.b(0xa8, 0x04); a.short(0x74, 'kf_cmp')                 # test al, 4 / jz   the off part
+    for bit, rec, base, coop_only in FLASH_KNIGHTS:
+        if coop_only:
+            a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00); a.short(0x74, f'kf_n{bit}')
+        a.b(0xa1, (rec + 0x38) & 0xff, (rec + 0x38) >> 8, 0x3d, 0x00, 0x00); a.short(0x7e, f'kf_n{bit}')   # HP <= 0
+        a.b(0x3d, 0x0a, 0x00); a.short(0x7f, f'kf_n{bit}')   # cmp ax, 10 / jg
+        a.b(0x80, 0xcb, bit)                                 # or bl, bit
+        a.label(f'kf_n{bit}')
+    a.label('kf_cmp')
+    a.b(0x2e, 0x3a, 0x1e); a.word('flash_state'); a.short(0x74, 'kf_pop')   # cmp bl, cs:[flash_state] / je
+    a.b(0x2e, 0x88, 0x1e); a.word('flash_state')             # mov cs:[flash_state], bl
+    a.b(0xba, 0xc8, 0x03, 0xb0, NEW_ENTRIES, 0xee)           # mov dx, 3C8h / mov al, 32 / out dx, al
+    a.b(0x2e, 0xc6, 0x06); a.word('level'); a.b(0x10)        # mov byte cs:[level], 16
+    a.near(0xe8, 'dac_new')                                  # all the new colours as they are
+    for bit, rec, base, coop_only in FLASH_KNIGHTS:
+        a.b(0xf6, 0xc3, bit); a.short(0x74, f'kf_s{bit}')    # test bl, bit / jz
+        a.b(0xba, 0xc8, 0x03, 0xb0, base, 0xee, 0x42)        # mov dx, 3C8h / mov al, base / out dx, al / inc dx
+        for shade in (63, 52, 40):
+            a.b(0xb0, shade, 0xee, 0xee, 0xee)               # mov al, shade / out x3
+        a.label(f'kf_s{bit}')
+    a.label('kf_pop')
+    a.b(0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)                  # pop si dx cx bx ax / ret
+
+    # --- MINEFIELD (a fight code) ---
+    # Ten mines at random places on the ground: the knights' small black shadow frame, drawn into the fight's background
+    # ([80B9h] = 0AC00h, copied to the screen every frame), so it stays under everyone and takes no object slot. Spent
+    # mines stay drawn. mine_frame (every fight frame): an object on the ground on a mine sets it off. A human's knight
+    # is crushed as by the troll (16E2h), or gets the plain death where the game's rules forbid that; other enemies
+    # take a deadly blow from a dummy knight (MINE_HITTER) through their own hit reactions. Not the dragon or Guardian
+    a.label('mine_frame')
+    a.b(0x2e, 0x80, 0x3e); a.word('mine_req'); a.b(0x00); a.short(0x74, 'mnf_on')
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_req'); a.b(0x00)
+    a.near(0xe8, 'mine_place')
+    a.label('mnf_on')
+    a.b(0x2e, 0x83, 0x3e); a.word('mine_live'); a.b(0x00); a.short(0x75, 'mnf_go'); a.b(0xc3)
+    a.label('mnf_go')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57)                  # push ax bx cx dx si di
+    a.b(0xbb, ANIM_SLOTS & 0xff, ANIM_SLOTS >> 8, 0xb9, ANIM_COUNT, 0x00)   # mov bx, 947Eh / mov cx, 10
+    a.label('mnf_slot')
+    a.b(0x80, 0x3f, 0x00); a.short(0x74, 'mnf_next_s')       # cmp byte [bx], 0 / je
+    a.b(0x8b, 0x77, 0x16, 0x81, 0xfe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8); a.short(0x72, 'mnf_next_s')   # mov si, [bx+16h] / cmp si, 6C9Eh / jb
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'mnf_next_s')   # cmp word [si+38h], 0 / jle   down
+    a.b(0x83, 0x7c, 0x04, 0x00); a.short(0x75, 'mnf_next_s')   # cmp word [si+4], 0 / jne   in the air
+    a.b(0x8a, 0x44, 0x35)                                    # mov al, [si+35h]
+    for t in MINE_TYPES:
+        a.b(0x3c, t); a.short(0x74, 'mnf_type')
+    a.label('mnf_next_s')
+    a.near(0xe9, 'mnf_next')
+    a.label('mnf_type')
+    a.b(0x3c, MUDMAN); a.short(0x75, 'mnf_scan')             # a mudman in the mud walks on nothing
+    a.b(0xf6, 0x44, 0x48, 0x08); a.short(0x74, 'mnf_next_s')
+    a.label('mnf_scan')
+    a.b(0x33, 0xff, 0xba, 0x01, 0x00)                        # xor di, di / mov dx, 1   mine number * 2, its bit
+    a.label('mnf_mine')
+    a.b(0x2e, 0x85, 0x16); a.word('mine_live'); a.short(0x74, 'mnf_nm')   # test cs:[mine_live], dx / jz
+    a.b(0x8b, 0x44, 0x02, 0x2e, 0x2b, 0x85); a.word('mine_x'); a.short(0x79, 'mnf_ax'); a.b(0xf7, 0xd8)   # |x - mine x|
+    a.label('mnf_ax')
+    a.b(0x3d, MINE_REACH_X, 0x00); a.short(0x7f, 'mnf_nm')
+    a.b(0x8b, 0x44, 0x06, 0x2e, 0x2b, 0x85); a.word('mine_z'); a.short(0x79, 'mnf_az'); a.b(0xf7, 0xd8)   # |depth - mine depth|
+    a.label('mnf_az')
+    a.b(0x3d, MINE_REACH_Z, 0x00); a.short(0x7e, 'mnf_boom')
+    a.label('mnf_nm')
+    a.b(0xd1, 0xe2, 0x83, 0xc7, 0x02, 0x83, 0xff, 2 * MINE_COUNT); a.short(0x72, 'mnf_mine')   # shl dx, 1 / add di, 2 / cmp di, 20 / jb
+    a.near(0xe9, 'mnf_next')
+    a.label('mnf_boom')
+    a.b(0xf7, 0xd2, 0x2e, 0x21, 0x16); a.word('mine_live')   # not dx / and cs:[mine_live], dx   spent
+    a.b(0x2e, 0xc7, 0x06); a.word('snd_id'); a.b(MINE_SOUND, 0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('snd_req'); a.b(0x01)      # the blast, in the next frame
+    a.b(0x80, 0x7c, 0x35, 0x06); a.short(0x74, 'mnf_knight')   # a human's knight?
+    # a script chained to come (the last frames of a swing, op 82h) would cut the hit reaction off after a frame and
+    # leave it standing with no HP: the script goes on, without the chain (set_script clears them)
+    a.b(0x8b, 0x47, 0x02); a.near(0xe8, 'set_script')        # mov ax, [bx+2] / call set_script
+    a.b(0xc7, 0x44, 0x38, 0x01, 0x00)                        # mov word [si+38h], 1
+    a.b(0xc7, 0x44, 0x0e, MINE_HITTER & 0xff, MINE_HITTER >> 8)   # mov word [si+0Eh], the dummy: its hit reaction, with no HP left
+    a.short(0xeb, 'mnf_next')
+    a.label('mnf_knight')
+    a.b(0xc7, 0x44, 0x0c, 0x00, 0x00, 0xc7, 0x44, 0x0e, 0x00, 0x00)   # no hit or touch pending
+    a.b(0xc7, 0x44, 0x38, 0xff, 0xff)                        # mov word [si+38h], -1
+    a.b(0x53); a.near(0xe8, 'obj_index'); a.short(0x72, 'mnf_nk')   # push bx / call obj_index / jc   as an instant kill
+    a.b(0xd1, 0xfb, 0x2e, 0xc6, 0x87); a.word('cheat_killed'); a.b(0x01)   # sar bx, 1 / mov byte cs:[bx+cheat_killed], 1
+    a.label('mnf_nk')
+    a.b(0x5b, 0xb8, PLAIN_DEATH & 0xff, PLAIN_DEATH >> 8)    # pop bx / mov ax, the plain death
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DEATHS); a.b(DEATHS['off']); a.short(0x74, 'mnf_set')
+    a.near(0xe8, 'deaths_gore'); a.short(0x75, 'mnf_set')    # gore on, K18?
+    a.b(0xb8, CRUSH & 0xff, CRUSH >> 8)                      # mov ax, 16E2h   as the troll's crush
+    a.label('mnf_set')
+    a.near(0xe8, 'set_script')                               # bx = its animation
+    a.label('mnf_next')
+    a.b(0x83, 0xc3, ANIM_SIZE)                               # add bx, 24h
+    a.b(0x49); a.short(0x74, 'mnf_end'); a.near(0xe9, 'mnf_slot')   # dec cx / jz / jmp
+    a.label('mnf_end')
+    a.b(0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)            # pop di si dx cx bx ax / ret
+    # mine_place: the ten mines, not within MINE_CLEAR of a knight standing; the dummy knight (ds = MAIN's data)
+    a.label('mine_place')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x06, 0x1e, 0x07, 0xfc)   # push ax bx cx dx si di es / push ds / pop es / cld
+    a.b(0xbf, MINE_HITTER & 0xff, MINE_HITTER >> 8, 0xb9, SLOT_SIZE, 0x00, 0x32, 0xc0, 0xf3, 0xaa)   # the dummy: zeros
+    h = MINE_HITTER
+    a.b(0xc6, 0x06, (h + 0x35) & 0xff, (h + 0x35) >> 8, 0x06)   # type: a knight's
+    a.b(0xc7, 0x06, (h + 0x28) & 0xff, (h + 0x28) >> 8, 0x04, 0x00)   # move: a swing
+    a.b(0xc7, 0x06, (h + 0x1a) & 0xff, (h + 0x1a) >> 8, h & 0xff, h >> 8)   # its damage table: itself
+    a.b(0xc7, 0x06, (h + 0x04) & 0xff, (h + 0x04) >> 8, 0xe7, 0x03)   # ... [+4] = 999 for the swing
+    a.b(0xc7, 0x06, (h + 0x44) & 0xff, (h + 0x44) >> 8, (h + 0x48) & 0xff, (h + 0x48) >> 8)   # items: none
+    a.b(0x33, 0xff)                                          # xor di, di   mine number * 2
+    a.label('mnp_mine')
+    a.b(0xba, 0x08, 0x00)                                    # mov dx, 8   tries
+    a.label('mnp_try')
+    a.near(0xe8, 'game_random')
+    a.b(0x25, 0xff, 0x7f, 0x52, 0x33, 0xd2, 0xb9, MINE_SPAN_X & 0xff, MINE_SPAN_X >> 8, 0xf7, 0xf1)   # and ax, 7FFFh / push dx / xor dx, dx / mov cx, span / div cx
+    a.b(0x83, 0xc2, MINE_X0, 0x8b, 0xda)                     # add dx, x0 / mov bx, dx   x
+    a.near(0xe8, 'game_random')
+    a.b(0x25, 0xff, 0x7f, 0x33, 0xd2, 0xb9, MINE_SPAN_Z, 0x00, 0xf7, 0xf1)   # and ax, 7FFFh / xor dx, dx / mov cx, span / div cx
+    a.b(0x83, 0xc2, MINE_Z0, 0x8b, 0xca, 0x5a)               # add dx, z0 / mov cx, dx   depth / pop dx
+    a.b(0xbe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)            # mov si, 6C9Eh
+    a.label('mnp_k')
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'mnp_kn')     # standing?
+    a.b(0x8b, 0x44, 0x02, 0x2b, 0xc3); a.short(0x79, 'mnp_a1'); a.b(0xf7, 0xd8)   # |its x - x|
+    a.label('mnp_a1')
+    a.b(0x3d, MINE_CLEAR_X, 0x00); a.short(0x7f, 'mnp_kn')
+    a.b(0x8b, 0x44, 0x06, 0x2b, 0xc1); a.short(0x79, 'mnp_a2'); a.b(0xf7, 0xd8)   # |its depth - depth|
+    a.label('mnp_a2')
+    a.b(0x3d, MINE_CLEAR_Z, 0x00); a.short(0x7f, 'mnp_kn')
+    a.b(0x4a); a.short(0x75, 'mnp_try')                      # dec dx / jnz   too near: again (at last, where it fell)
+    a.short(0xeb, 'mnp_set')
+    a.label('mnp_kn')
+    a.b(0x83, 0xc6, SLOT_SIZE, 0x81, 0xfe, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8); a.short(0x72, 'mnp_k')
+    a.label('mnp_set')
+    a.b(0x2e, 0x89, 0x9d); a.word('mine_x'); a.b(0x2e, 0x89, 0x8d); a.word('mine_z')   # mov cs:[di+mine_x], bx / cs:[di+mine_z], cx
+    a.b(0x83, 0xc7, 0x02, 0x83, 0xff, 2 * MINE_COUNT); a.short(0x72, 'mnp_mine')
+    a.b(0x2e, 0xc7, 0x06); a.word('mine_live'); a.b(((1 << MINE_COUNT) - 1) & 0xff, ((1 << MINE_COUNT) - 1) >> 8)
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_todo'); a.b(MINE_COUNT)
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)      # pop es di si dx cx bx ax / ret
+
+    # --- IDROPPEDMYKEY ---
+    # key_stage (from turn_moves): a text screen of who or what holds each key, and back to the map. The lairs holding
+    # one glow on the map until the turn ends (lair_icon). The text goes in a free part of MAIN's data, KEY_TEXT
+    a.label('key_stage')
+    a.b(0x2e, 0xa0); a.word('key_show'); a.b(0x2e, 0xfe, 0x06); a.word('key_show')   # mov al, cs:[key_show] / inc cs:[key_show]
+    a.b(0x3c, 0x01); a.short(0x75, 'kxs_2')
+    a.b(0xb8, 0x2d, 0xa7); a.short(0xeb, 'kxs_call')         # mov ax, 0A72Dh
+    a.label('kxs_2')
+    a.b(0x3c, 0x02); a.short(0x75, 'kxs_3')
+    a.near(0xe8, 'key_text')
+    a.b(0xbe, KEY_LIST & 0xff, KEY_LIST >> 8, 0xb8, 0xc4, 0x90); a.short(0xeb, 'kxs_call')   # mov si, the list / mov ax, 90C4h
+    a.label('kxs_3')
+    a.b(0x3c, 0x03); a.short(0x75, 'kxs_4')
+    a.b(0xb8, 0x25, 0x84); a.short(0xeb, 'kxs_call')         # mov ax, 8425h   fire
+    a.label('kxs_4')
+    a.b(0x3c, 0x04); a.short(0x75, 'kxs_end')
+    a.b(0xb8, 0xbc, 0xa3)                                    # mov ax, 0A3BCh   the map again
+    a.label('kxs_call')
+    a.b(0x2e, 0xa3); a.word('call_target')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(TURN_MOVES_SITE & 0xff, TURN_MOVES_SITE >> 8)
+    a.near(0xe9, 'call_game')
+    a.label('kxs_end')
+    a.b(0x2e, 0xc6, 0x06); a.word('key_show'); a.b(0x00)
+    a.b(0xc7, 0x46, 0x02, MAP_LOOP & 0xff, MAP_LOOP >> 8); a.near(0xe9, 'rules_done')   # on at the map loop's start
+    a.label('key_text')
+    a.b(0x06, 0x1e, 0x07, 0xfc, 0xbf, KEY_TEXT & 0xff, KEY_TEXT >> 8)   # push es / push ds / pop es / cld / mov di, the text
+    for n, (bit, name) in enumerate(KEY_REGIONS):
+        e = KEY_LIST + 10 * n
+        a.b(0x89, 0x3e, e & 0xff, e >> 8)                    # mov [entry], di
+        for off, v in ((2, 0), (4, 0x37 + 0x14 * n), (6, 1), (8, e + 10)):
+            a.b(0xc7, 0x06, (e + off) & 0xff, (e + off) >> 8, v & 0xff, v >> 8)
+        a.b(0xbe); a.word(f'kxt_{n}'); a.near(0xe8, 'kx_copy_cs')
+        a.b(0xb0, bit); a.near(0xe8, 'key_holder')           # mov al, bit / call key_holder
+        a.short(0x72, f'kxt_ds{n}'); a.near(0xe8, 'kx_copy_cs'); a.short(0xeb, f'kxt_e{n}')
+        a.label(f'kxt_ds{n}')
+        a.near(0xe8, 'kx_copy_ds')
+        a.label(f'kxt_e{n}')
+        a.b(0x32, 0xc0, 0xaa)                                # xor al, al / stosb   its end
+    e = KEY_LIST + 10 * len(KEY_REGIONS)
+    for off, v in ((0, 0x0632), (2, 0), (4, 0xb6), (6, 1), (8, 0)):   # the game's "Press fire to continue"
+        a.b(0xc7, 0x06, (e + off) & 0xff, (e + off) >> 8, v & 0xff, v >> 8)
+    a.b(0x07, 0xc3)                                          # pop es / ret
+    a.label('kx_copy_cs')
+    a.b(0x2e, 0xac, 0x0a, 0xc0); a.short(0x74, 'kxc_e'); a.b(0xaa); a.short(0xeb, 'kx_copy_cs')   # lodsb cs: / or al, al / jz / stosb
+    a.label('kxc_e')
+    a.b(0xc3)
+    a.label('kx_copy_ds')
+    a.b(0xac, 0x0a, 0xc0); a.short(0x74, 'kxd_e'); a.b(0xaa); a.short(0xeb, 'kx_copy_ds')
+    a.label('kxd_e')
+    a.b(0xc3)
+    # key_holder (al = a key's bit): CF = 1 si = a knight's name in MAIN's data; CF = 0 si = a text here
+    a.label('key_holder')
+    a.b(0x53, 0x51)                                          # push bx cx
+    for rec in KNIGHTS:
+        a.b(0x8b, 0x1e, (rec + 0x44) & 0xff, (rec + 0x44) >> 8, 0x84, 0x47, 0x14); a.short(0x74, f'kh_n{rec:x}')   # mov bx, [rec+44h] / test [bx+14h], al / jz
+        a.b(0x8b, 0x36, (rec + 0x4c) & 0xff, (rec + 0x4c) >> 8, 0xf9); a.near(0xe9, 'kh_ret')   # mov si, [rec+4Ch] / stc
+        a.label(f'kh_n{rec:x}')
+    r = DRAGON_RECORD + 0x44
+    a.b(0x8b, 0x1e, r & 0xff, r >> 8, 0x84, 0x47, 0x14); a.short(0x74, 'kh_nd')
+    a.b(0xbe); a.word('kxt_dragon'); a.short(0xeb, 'kh_clc')
+    a.label('kh_nd')
+    a.b(0x84, 0x06, (TEMPLE_ITEMS + 0x14) & 0xff, (TEMPLE_ITEMS + 0x14) >> 8); a.short(0x74, 'kh_nt')   # test [temple+14h], al / jz
+    a.b(0xbe); a.word('kxt_temple'); a.short(0xeb, 'kh_clc')
+    a.label('kh_nt')
+    a.b(0xbe, 0x02, 0x00, 0xb9, 0x18, 0x00)                  # mov si, 2 / mov cx, 24   the lairs
+    a.label('kh_lair')
+    a.b(0x8b, 0x1c, 0x84, 0x47, 0x14); a.short(0x75, 'kh_inlair')   # mov bx, [si] / test [bx+14h], al / jnz
+    a.b(0x83, 0xc6, 0x12); a.short(0xe2, 'kh_lair')          # add si, 12h / loop
+    a.b(0xbe); a.word('kxt_none'); a.short(0xeb, 'kh_clc')
+    a.label('kh_inlair')
+    a.b(0xbe); a.word('kxt_lair')
+    a.label('kh_clc')
+    a.b(0xf8)
+    a.label('kh_ret')
+    a.b(0x59, 0x5b, 0xc3)                                    # pop cx bx / ret
+    # lair_icon (1000:A45F, mov ax,14h: a lair's icon on the map): after IDROPPEDMYKEY, this turn, one holding a key glows
+    a.label('rules_lair_icon')
+    a.b(0xb8, 0x14, 0x00)                                    # (replaced)
+    a.b(0x2e, 0x80, 0x3e); a.word('keys_shown'); a.b(0x00); a.short(0x74, 'li_end')
+    a.b(0x8b, 0x1c, 0x80, 0x7f, 0x14, 0x00); a.short(0x74, 'li_end')   # mov bx, [si] / cmp byte [bx+14h], 0 / je
+    a.b(0xb8, 0x1f, 0x00)                                    # mov ax, 1Fh   the glow
+    a.label('li_end')
+    a.near(0xe9, 'rules_done')
+    # valley_keys (1000:0FD2, cmp byte [si+14h],0Fh: all four keys?): SIRPICKSALOT: any number will do
+    a.label('rules_valley_keys')
+    a.b(0x2e, 0xf6, 0x06); a.word('map_flags'); a.b(MAP_ANY_KEYS); a.short(0x74, 'vk_game')
+    a.b(0x3b, 0xf6); a.short(0xeb, 'vk_end')                 # cmp si, si   ZF = 1
+    a.label('vk_game')
+    a.b(0x80, 0x7c, 0x14, 0x0f)                              # (replaced)
+    a.label('vk_end')
+    a.near(0xe9, 'rules_flags')
+
     # spawn_init (1000:2824, call bx: a new monster's fields by its type, [0974h]; di = the object, its place set):
     # a Black Knight practice makes it the next Black Knight instead: a copy of knight n (n = the count so far) as a
     # computer knight, walking in from the left or right. The first sets the counts: as many at once and to defeat
     # as the knights, and the set-up's spawn loop (1000:27F0, cx) makes that many
+    # A monster code's fight (mon_ctl) has player 1's monster only: one at once and one to defeat ([096Ch],
+    # [096Ah]), and the set-up's spawn loop makes just this one
     a.label('rules_spawn_init')
     a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x00)           # cmp byte cs:[bk], 0
     a.short(0x75, 'sp_bk')                                   # jne sp_bk
+    a.b(0x2e, 0x80, 0x3e); a.word('mon_ctl'); a.b(0x00); a.short(0x74, 'sp_game')   # a monster code's fight?
+    a.b(0xc7, 0x06, 0x6c, 0x09, 0x01, 0x00)                  # mov word [096Ch], 1   one at once
+    a.b(0x83, 0x3e, 0x6a, 0x09, 0x01); a.short(0x7e, 'sp_one')   # cmp word [096Ah], 1 / jle
+    a.b(0xc7, 0x06, 0x6a, 0x09, 0x01, 0x00)                  # mov word [096Ah], 1   one to defeat
+    a.label('sp_one')
+    a.b(0x81, 0x7e, 0x08, 0xf7, 0x27); a.short(0x75, 'sp_game')   # cmp word [bp+8], 27F7h   the set-up's loop?
+    a.b(0xb9, 0x01, 0x00)                                    # mov cx, 1   the loop's count: this one is the last
+    a.label('sp_game')
     a.b(0x50, 0xa1, 0x74, 0x09)                              # push ax / mov ax, [0974h]
     a.b(0x2e, 0xa3); a.word('call_target'); a.b(0x58)        # mov cs:[call_target], ax / pop ax
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x26, 0x28)   # mov word cs:[call_ret], 2826h
@@ -4474,9 +5219,8 @@ def rules_code(a):
     a.b(0x0b, 0xc0); a.short(0x74, 'hp_noted')               # or ax, ax / jz hp_noted
     a.b(0x56, 0x57, 0x8b, 0x76, 0x00, 0x8b, 0x74, 0x16)      # push si di / mov si, [bp+0] / mov si, [si+16h]   hitter
     a.b(0x8b, 0x7e, 0xfe, 0x8b, 0x7d, 0x16)                  # mov di, [bp-2] / mov di, [di+16h]   hit
-    a.b(0x81, 0xff, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8); a.short(0x72, 'hp_not_knight')   # cmp di, 6C9Eh / jb
-    a.b(0x81, 0xff, KNIGHTS[3] & 0xff, KNIGHTS[3] >> 8); a.short(0x77, 'hp_not_knight')   # cmp di, 6DC4h / ja
-    a.b(0x53); a.near(0xe8, 'knight_slot')                   # push bx / call knight_slot
+    a.b(0x53); a.near(0xe8, 'victim_slot')                   # push bx / call victim_slot   a knight or a monster
+    a.short(0x72, 'hp_nk_pop')                               # jc hp_nk_pop
     a.b(0x2e, 0x89, 0xb7); a.word('last_hitter')             # mov cs:[bx+last_hitter], si
     a.b(0x50, 0x8a, 0x44, 0x28, 0x8a, 0x64, 0x35)            # push ax / mov al, [si+28h] / mov ah, [si+35h]
     a.b(0x80, 0xfc, DAGGER); a.short(0x75, 'hp_strike')      # cmp ah, 1Ah / jne hp_strike
@@ -4489,6 +5233,9 @@ def rules_code(a):
     a.b(0x5f, 0x5e)                                          # pop di si
     a.label('hp_strike')
     a.b(0x2e, 0x89, 0x87); a.word('last_strike'); a.b(0x58, 0x5b)   # mov cs:[bx+last_strike], ax / pop ax / pop bx
+    a.short(0xeb, 'hp_not_knight')
+    a.label('hp_nk_pop')
+    a.b(0x5b)                                                # pop bx
     a.label('hp_not_knight')
     a.b(0x5f, 0x5e)                                          # pop di si
     a.label('hp_noted')
@@ -4626,6 +5373,28 @@ def rules_code(a):
     # standing the fight goes on; when one has none, the game's own end (as 1000:0238) starts once
     # In practice Esc ends the fight (the game has no key for it): the same end, and then nothing restarts it
     a.label('rules_practice_frame')
+    # MINEFIELD: its mines into the background, one blit per pass of this site, then the page and es back
+    a.b(0x2e, 0x80, 0x3e); a.word('mine_todo'); a.b(0x00); a.short(0x75, 'pfm_draw')
+    a.b(0x2e, 0x80, 0x3e); a.word('mine_busy'); a.b(0x00); a.short(0x74, 'pfm_none')
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_busy'); a.b(0x00)
+    a.b(0x2e, 0xa1); a.word('mine_page'); a.b(0xa3, 0xb9, 0x80)   # [80B9h] back
+    a.b(0x2e, 0x8e, 0x06); a.word('mine_es'); a.short(0xeb, 'pfm_none')
+    a.label('pfm_draw')
+    a.b(0x2e, 0x80, 0x3e); a.word('mine_busy'); a.b(0x00); a.short(0x75, 'pfm_blit')
+    a.b(0x2e, 0xc6, 0x06); a.word('mine_busy'); a.b(0x01)
+    a.b(0xa1, 0xb9, 0x80, 0x2e, 0xa3); a.word('mine_page')   # mov ax, [80B9h] / mov cs:[mine_page], ax
+    a.b(0x2e, 0x8c, 0x06); a.word('mine_es')                 # mov cs:[mine_es], es
+    a.b(0xc7, 0x06, 0xb9, 0x80, 0x00, 0xac)                  # mov word [80B9h], 0AC00h   the background
+    a.label('pfm_blit')
+    a.b(0x2e, 0xfe, 0x0e); a.word('mine_todo')               # dec byte cs:[mine_todo]
+    a.b(0x33, 0xdb, 0x2e, 0x8a, 0x1e); a.word('mine_todo'); a.b(0xd1, 0xe3)   # xor bx, bx / mov bl, cs:[mine_todo] / shl bx, 1
+    a.b(0x2e, 0x8b, 0x87); a.word('mine_x'); a.b(0x05, MINE_DRAW_X & 0xff, (MINE_DRAW_X >> 8) & 0xff, 0x89, 0x46, 0xfe)   # x, as bx
+    a.b(0x2e, 0x8b, 0x8f); a.word('mine_z'); a.b(0x83, 0xc1, MINE_DRAW_Y)   # mov cx, cs:[bx+mine_z] / add cx, y
+    a.b(0xc4, 0x36, MINE_BANK & 0xff, MINE_BANK >> 8, 0xb8, MINE_FRAME, 0x00)   # les si, [bank] / mov ax, frame
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(BLITTER & 0xff, BLITTER >> 8)
+    a.b(0x53, 0x8b, 0x5e, 0x02, 0x4b, 0x4b, 0x2e, 0x89, 0x1e); a.word('call_ret'); a.b(0x5b)   # this site again
+    a.near(0xe9, 'call_game')
+    a.label('pfm_none')
     a.b(0x2e, 0x80, 0x3e); a.word('snd_wait'); a.b(0x00); a.short(0x74, 'sxpf_nw')
     a.b(0x2e, 0xc6, 0x06); a.word('snd_wait'); a.b(0x00, 0x2e, 0xa1); a.word('snd_ax')   # back from the sound: ax again
     a.short(0xeb, 'sxpf_go')
@@ -4635,9 +5404,12 @@ def rules_code(a):
     a.b(0x2e, 0xa3); a.word('snd_ax'); a.b(0x8b, 0x46, 0x02, 0x2d, 0x02, 0x00)   # mov cs:[snd_ax], ax / mov ax, [bp+2] / sub ax, 2
     a.b(0x2e, 0xa3); a.word('call_ret')                      # this site's int 63h again
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(SOUND & 0xff, SOUND >> 8)
-    a.b(0xb8, CHEAT_SOUND, 0x00); a.near(0xe9, 'call_game')  # mov ax, sound id / 1000:5970
+    a.b(0x2e, 0xa1); a.word('snd_id')                        # mov ax, cs:[snd_id]   sound id
+    a.b(0x2e, 0xc7, 0x06); a.word('snd_id'); a.b(CHEAT_SOUND, 0x00)   # (the next is the code's own)
+    a.near(0xe9, 'call_game')                                # 1000:5970
     a.label('sxpf_go')
     a.near(0xe8, 'cheat_fight')                              # call cheat_fight   cheat codes
+    a.near(0xe8, 'knight_flash')                             # call knight_flash  knights 3 and 4 at low HP
     a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION)   # cmp word [0704h], 2
     a.short(0x75, 'pf_play')                                 # jne pf_play          not a practice
     a.b(0x2e, 0x80, 0x3e); a.word('quitting'); a.b(0x00)     # cmp byte cs:[quitting], 0
@@ -4988,14 +5760,15 @@ def rules_code(a):
     a.b(0xb0, 0x03)                                          # mov al, 3       below 3 (the original)
     a.label('village_add')
     a.b(0x38, 0x44, 0x31)                                    # cmp [si+31h], al
-    a.short(0x7d, 'village_end')                             # jge village_end
+    a.short(0x7d, 'village_hp')                              # jge village_hp
     a.b(0xfe, 0x44, 0x31)                                    # inc byte [si+31h]
-    a.short(0xeb, 'village_end')                             # jmp village_end
+    a.short(0xeb, 'village_hp')                              # jmp village_hp
     a.label('village_full')
     a.b(0x38, 0x44, 0x31)                                    # cmp [si+31h], al
     a.short(0x7d, 'village_hp')                              # jge village_hp
     a.b(0x88, 0x44, 0x31)                                    # mov [si+31h], al
-    a.label('village_hp')
+    a.label('village_hp')                                    # full HP whatever the lives (the manual); speedrun: as the game
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_EXPLOIT_FIXES); a.b(0x00); a.short(0x74, 'village_end')
     a.b(0x8b, 0x44, 0x3c, 0x89, 0x44, 0x38)                  # mov ax, [si+3Ch] / mov [si+38h], ax
     a.label('village_end')
     a.b(0x58)                                                # pop ax
@@ -5004,12 +5777,14 @@ def rules_code(a):
 def rules_data(a, table):
     """The int 63h tables: the sites (return address, job) and the settings from rules.py."""
     base, per = struct.unpack_from('<HH', table or rules_default_table(), G_CYCLES)
+    fights = struct.unpack_from('<4H', table or rules_default_table(), G_FIGHT_CYCLES)
+    on = any(f != base for f in fights)                      # else the map's speed in every fight: no change
     a.label('fight_tails')                                   # D17: CONFIG -set cycles=... for 1-4 knights, the map
     for n in range(4):
         a.word(f'fight_tail{n}')
-    for n in range(4):                                       # 1 knight: the map's speed, no change
-        a.label(f'fight_tail{n}'); a.b(cycles_tail(base + per * n if per and n else 0))
-    a.label('map_tail'); a.b(cycles_tail(base if per else 0))
+    for n in range(4):                                       # fight_cycles of 1-4 knights
+        a.label(f'fight_tail{n}'); a.b(cycles_tail(fights[n] if on else 0))
+    a.label('map_tail'); a.b(cycles_tail(base if on else 0))
     a.label('sped'); a.b(0)                                  # 1 after a fight's speed was set
     a.label('down'); a.b(bytes(4))                           # K25: 1 = the knight's fall has been started
     a.label('mud_victim'); a.b(0, 0)                         # K25: the knight the mudman holds
@@ -5041,6 +5816,8 @@ def rules_data(a, table):
     a.label('air_vx'); a.b(bytes(25))                        # ... its speeds (signed)
     a.label('air_vy'); a.b(bytes(25))
     a.label('air_tick'); a.b(0)
+    a.label('p3_ctl'); a.b(JOY_A_CONTROL)                    # D12: knight 3's input (+9), practice_mode
+    a.label('p4_ctl'); a.b(JOY_B_CONTROL, 0)                 # knight 4's, a spare byte
     a.label('fight_begun'); a.b(0)                           # this fight's first frame has been
     a.label('q_codes'); a.b(0, 0)                            # fight codes queued (bit n: CHEAT_FIGHT_CODES[n])
     a.label('q_where'); a.b(0)                               # ... for 1 the next practice fight, 2 the game's
@@ -5059,10 +5836,15 @@ def rules_data(a, table):
     a.label('mon_ctl'); a.b(0)                               # DIRTYRAT...: the type player 1 is (0 = none)
     a.label('mon_obj'); a.b(0, 0)                            # ... its object
     a.label('mon_dive'); a.b(0)                              # SWAMPTHING: 1 = its own dive, the grab may follow
+    a.label('mr_dist'); a.b(0, 0)                            # nearest_knight: a knight's distance in x
+    a.label('nk_rx'); a.b(0, 0)                              # ... how far in x
+    a.label('nk_rz'); a.b(0, 0)                              # ... and in depth
+    a.label('rat_victim'); a.b(0, 0)                         # rat_hang, rat_ride: the knight a ratman holds
     a.label('paw_set'); a.b(0)                               # HOTSTUFF: the paw's reaction set (paw_saved kept)
     a.label('paw_saved'); a.b(0, 0)
     a.label('mh_have'); a.b(0)                               # mud_escape: 1 = the keys read
-    a.label('mon_jump'); a.b(0)                              # JUMPSCARE: 1 = this jump is the jump attack
+    a.label('mon_jump'); a.b(0)                              # JUMPSCARE: 1 = this jump crushes a knight below
+    a.label('mon_crush'); a.b(0)                             # ... 1 = this grab crushes the knight held
     a.label('mon_have'); a.b(0)                              # ... 1 = the keys read, this decision
     a.label('hard_hit'); a.b(bytes(2 * 25))                  # TOOEASY: each object's last counted hit (BIOS tick)
     a.label('day_left'); a.b(bytes(8))                       # rest heal: each knight's movement left at its last turn's end
@@ -5090,8 +5872,8 @@ def rules_data(a, table):
     a.label('key_pending_any'); a.b(0)
     a.label('buf_bits'); a.b(0, 0, 0)                           # D24: each player's fire noted (bits as 83C0), 0 = none
     a.label('buf_tick'); a.b(0, 0, 0, 0, 0, 0)                     # D24: when
-    a.label('last_hitter'); a.b(bytes(8))                    # D20: by knight, the object that hit it last
-    a.label('last_strike'); a.b(bytes(8))                    # D20: by knight, that object's +28h (low) and type (high)
+    a.label('last_hitter'); a.b(bytes(48))                   # D20: by knight or monster slot (victim_slot), what hit it last
+    a.label('last_strike'); a.b(bytes(48))                   # D20: ... that object's +28h (low) and type (high)
     a.label('team_t0'); a.b(0, 0)
     a.label('bk'); a.b(0)                                    # D19: 1 = a Black Knight practice, 2 = the B key's
     a.label('bk_count'); a.b(0)                              # D19: Black Knights made in this fight
@@ -5158,6 +5940,7 @@ def rules_data(a, table):
     a.label('own_strength'); a.b(0)                          # D15: knight 1's own strength and max HP during combine
     a.label('own_max_hp'); a.b(0, 0)
     a.label('last_target'); a.b(bytes(2 * 21))               # D15: each monster's knight (20 slots, the dragon)
+    a.label('target_hold'); a.b(bytes(2 * 21))               # ... updates it keeps a new one whatever the distances
     a.label('coop_knights')                                  # D15: record, control, colour slot, x
     for rec, control, colour, x in COOP_KNIGHTS:
         a.b(struct.pack('<HBBH', rec, control, colour, x))
@@ -5217,7 +6000,7 @@ def make_savehook(rules_table=None):
     a.near(0xe8, 'number_name')                              # call number_name  FIGHT1-5 or TURN1-4, in turn
     a.near(0xe8, 'set_name')                                 # call set_name
     a.near(0xe8, 'refresh')                                  # call refresh      DOSBox-X now sees the new name
-    a.near(0xe8, 'wait')                                     # call wait         autosave happens here
+    a.near(0xe8, 'save_wait')                                # call save_wait    autosave happens here
     a.near(0xe8, 'accept')                                   # call accept       (a loaded autosave resumes here)
     a.near(0xe8, 'mcb')                                      # call mcb
     a.b(0xbe); a.word('old_name')                            # mov si, old_name
@@ -5228,14 +6011,29 @@ def make_savehook(rules_table=None):
     a.b(0xcf)                                                # iret
 
     # --- int 65h: a knight's turn starts on the map (resident) ---
+    # A human's turn is saved first (save_state). Then every turn, the computer's too, plays the game's menu sound
+    # (TURN_SOUND, as 1000:D6E1): the return goes to 1000:5970 with ax = the sound, and 5970 returns to the int 65h
+    # again (TURN_SITE), whose second pass puts the game's ax back and goes on
     a.label('turn_handler')
+    a.b(0x2e, 0x80, 0x3e); a.word('turn_pass'); a.b(0x00); a.short(0x74, 'turn_first')   # cmp byte cs:[turn_pass], 0
+    a.b(0x2e, 0xc6, 0x06); a.word('turn_pass'); a.b(0x00)   # the second pass: after the sound
+    a.b(0x2e, 0xa1); a.word('turn_ax'); a.b(0xcf)            # mov ax, cs:[turn_ax] / iret
+    a.label('turn_first')
     a.b(0x8b, 0x36, 0xe8, 0x77)                              # mov si, [77e8h]       (replaced MAIN instruction)
     a.b(0x83, 0x7c, 0x20, COMPUTER)                          # cmp word [si+20h], 4  computer knight?
-    a.short(0x75, 'turn_save')                               # jne turn_save
-    a.b(0xcf)                                                # iret                  no save for computer turns
-    a.label('turn_save')
+    a.short(0x74, 'turn_sound')                              # je turn_sound         no save for computer turns
+    a.b(0x2e, 0xc6, 0x06); a.word('map_hold'); a.b(0x01)     # mov byte cs:[map_hold], 1   D26: keys let go first
     a.b(0x2e, 0xc7, 0x06); a.word('name_ptr'); a.word('turn_name')    # mov word cs:[name_ptr], turn_name
-    a.near(0xe9, 'save_state')                               # jmp save_state
+    a.b(0x9c, 0x0e); a.near(0xe8, 'save_state')              # pushf / push cs / call save_state   (it irets)
+    a.label('turn_sound')
+    a.b(0x2e, 0xa3); a.word('turn_ax')                       # mov cs:[turn_ax], ax
+    a.b(0x2e, 0xc6, 0x06); a.word('turn_pass'); a.b(0x01)    # mov byte cs:[turn_pass], 1
+    a.b(0x83, 0xec, 0x02, 0x55, 0x8b, 0xec, 0x50)            # sub sp, 2 / push bp / mov bp, sp / push ax
+    a.b(0x8b, 0x46, 0x06, 0x89, 0x46, 0x04)                  # mov ax, [bp+6] / mov [bp+4], ax   the CS, a word lower
+    a.b(0x8b, 0x46, 0x08, 0x89, 0x46, 0x06)                  # mov ax, [bp+8] / mov [bp+6], ax   the flags
+    a.b(0xc7, 0x46, 0x08, TURN_SITE & 0xff, TURN_SITE >> 8)  # mov word [bp+8], A63Fh   5970's return: here again
+    a.b(0xc7, 0x46, 0x02, SOUND & 0xff, SOUND >> 8)          # mov word [bp+2], 5970h
+    a.b(0x58, 0x5d, 0xb8, TURN_SOUND, 0x00, 0xcf)            # pop ax / pop bp / mov ax, sound / iret
 
     # --- int 62h: weapon pick on the duel loot screen (resident); si = winner, di = loser, bp = loser's weapon ---
     a.label('loot_handler')
@@ -5338,6 +6136,49 @@ def make_savehook(rules_table=None):
     a.label('no_alloc')
     a.b(0xc3)                                                # ret
 
+    # save_wait (DS = CS, the name numbered): as wait, but ends as soon as the name's save file has a new date or
+    # time (DOSBox-X's autosave has written it; a loaded save resumes here and ends at once)
+    a.label('save_wait')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x06)            # push ax bx cx dx si di es
+    a.b(0xa0); a.word('turn_name', len(TURN_NAME))           # mov al, [turn_name + 4]   the digit
+    a.b(0x81, 0x3e); a.word('name_ptr'); a.word('fight_name')   # cmp word [name_ptr], fight_name
+    a.short(0x75, 'sw_turn')
+    a.b(0xa0); a.word('fight_name', len(FIGHT_NAME)); a.b(0x04, TURN_SLOTS)   # mov al, [fight_name + 5] / add al, 4
+    a.label('sw_turn')
+    a.b(0x2c, ord('1'), 0x32, 0xe4, 0xb1, 0x04, 0xd3, 0xe0)  # sub al, '1' / xor ah, ah / mov cl, 4 / shl ax, cl
+    a.b(0x05); a.word('save_paths'); a.b(0x8b, 0xf0)         # add ax, save_paths / mov si, ax   its file
+    a.near(0xe8, 'file_stamp')                               # call file_stamp   dx:cx = its date and time now
+    a.b(0x89, 0x16); a.word('sw_stamp', 2); a.b(0x89, 0x0e); a.word('sw_stamp')   # mov [sw_stamp+2], dx / mov [sw_stamp], cx
+    a.b(0xb8, 0x40, 0x00, 0x8e, 0xc0)                        # mov ax, 40h / mov es, ax
+    a.b(0x26, 0x8b, 0x1e, 0x6c, 0x00, 0x8b, 0xfb)            # mov bx, es:[6Ch] / mov di, bx   the last tick seen
+    a.b(0x83, 0xc3, WAIT_TICKS)                              # add bx, WAIT_TICKS
+    a.b(0xc6, 0x06); a.word('sw_spin'); a.b(WAIT_LIMIT_HI)   # mov byte [sw_spin], WAIT_LIMIT_HI
+    a.b(0x33, 0xc9)                                          # xor cx, cx
+    a.label('sw_loop')
+    a.b(0x26, 0xa1, 0x6c, 0x00)                              # mov ax, es:[6Ch]
+    a.b(0x50, 0x2b, 0xc3, 0x58); a.short(0x79, 'sw_done')    # push ax / sub ax, bx / pop ax / jns sw_done   time is up
+    a.b(0x3b, 0xc7); a.short(0x74, 'sw_spin_on')             # cmp ax, di / je sw_spin_on   the same tick
+    a.b(0x8b, 0xf8, 0x51)                                    # mov di, ax / push cx
+    a.near(0xe8, 'file_stamp')                               # call file_stamp
+    a.b(0x3b, 0x0e); a.word('sw_stamp'); a.b(0x59); a.short(0x75, 'sw_done')    # cmp cx, [sw_stamp] / pop cx / jne
+    a.b(0x3b, 0x16); a.word('sw_stamp', 2); a.short(0x75, 'sw_done')            # cmp dx, [sw_stamp+2] / jne   saved
+    a.label('sw_spin_on')
+    a.short(0xe2, 'sw_loop')                                 # loop sw_loop
+    a.b(0xfe, 0x0e); a.word('sw_spin'); a.short(0x75, 'sw_loop')   # dec byte [sw_spin] / jnz   (ticks stopped)
+    a.label('sw_done')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)      # pop es di si dx cx bx ax / ret
+    # file_stamp: si = a file name -> dx = its date, cx = its time (FFFFh both if it cannot be opened); keeps bx, si
+    a.label('file_stamp')
+    a.b(0x53, 0xb8, 0x00, 0x3d, 0x8b, 0xd6, 0xcd, 0x21)      # push bx / mov ax, 3D00h / mov dx, si / int 21h   open
+    a.short(0x72, 'fs_none')
+    a.b(0x8b, 0xd8, 0xb8, 0x00, 0x57, 0xcd, 0x21)            # mov bx, ax / mov ax, 5700h / int 21h   its date, time
+    a.b(0x9c, 0x51, 0x52, 0xb4, 0x3e, 0xcd, 0x21, 0x5a, 0x59, 0x9d)   # pushf / push cx dx / close / pop dx cx / popf
+    a.short(0x73, 'fs_end')
+    a.label('fs_none')
+    a.b(0xb9, 0xff, 0xff, 0x8b, 0xd1)                        # mov cx, FFFFh / mov dx, cx
+    a.label('fs_end')
+    a.b(0x5b, 0xc3)                                          # pop bx / ret
+
     a.label('wait')                                          # wait WAIT_TICKS BIOS ticks
     a.b(0xb8, 0x40, 0x00, 0x8e, 0xc0)                        # mov ax, 40h / mov es, ax
     a.b(0x26, 0x8b, 0x1e, 0x6c, 0x00)                        # mov bx, es:[6Ch]
@@ -5354,6 +6195,38 @@ def make_savehook(rules_table=None):
 
     # --- resident data ---
     a.label('old_name'); a.b(bytes(8))
+    a.label('save_paths')                                    # save_wait: the save files of TURN1-4, FIGHT1-5 (16 bytes each)
+    for slot in SAVE_SLOTS:
+        a.b(f'C:\\SAVE\\{slot}.SAV'.encode().ljust(16, b'\0'))
+    a.label('turn_pass'); a.b(0)                             # int 65h: 1 while the turn sound plays
+    a.label('mine_req'); a.b(0)                              # MINEFIELD: 1 = place them in the next frame
+    a.label('mine_live'); a.b(0, 0)                          # ... a bit for each mine not yet set off
+    a.label('mine_todo'); a.b(0)                             # ... mines still to draw
+    a.label('mine_busy'); a.b(0)                             # ... 1 while they are drawn
+    a.label('mine_page'); a.b(0, 0)
+    a.label('mine_es'); a.b(0, 0)
+    a.label('mine_x'); a.b(bytes(2 * MINE_COUNT))
+    a.label('mine_z'); a.b(bytes(2 * MINE_COUNT))
+    a.label('snd_id'); a.b(CHEAT_SOUND, 0)                   # the next sound of a fight's frame
+    a.label('map_flags'); a.b(0)                             # SIRWALKSALOT, SIRPICKSALOT (on until typed again)
+    a.label('key_show'); a.b(0)                              # IDROPPEDMYKEY: the screen's stage, 0 = none
+    a.label('keys_shown'); a.b(0)                            # ... 1 = the lairs with keys glow
+    for n, (bit, name) in enumerate(KEY_REGIONS):
+        a.label(f'kxt_{n}'); a.b(name.encode() + bytes(1))
+    a.label('kxt_dragon'); a.b(b'the Dragon' + bytes(1))
+    a.label('kxt_temple'); a.b(b'the High Temple' + bytes(1))
+    a.label('kxt_lair'); a.b(b'a glowing lair' + bytes(1))
+    a.label('kxt_none'); a.b(b'nowhere' + bytes(1))
+    a.label('heal_given'); a.b(0, 0)                         # healer: the donation made
+    a.label('ds_have'); a.b(0)                               # dragon_scroll: 1 = the offer has been made
+    a.label('ds_old'); a.b(bytes(4))                         # ... [8979h], [897Bh] as they were
+    a.label('hawk_ok'); a.b(0)                               # hawk_guard: 1 = hawk_pos is a place outside the Valley
+    a.label('hawk_pos'); a.b(bytes(4))
+    a.label('flash_state'); a.b(0xff)                        # knight_flash: the knights flashing now (FFh: redo)
+    a.label('map_hold'); a.b(0)                              # D26: 1 = a human's new turn, keys not yet let go
+    a.label('turn_ax'); a.b(0, 0)                            # ... the game's ax
+    a.label('sw_stamp'); a.b(bytes(4))                       # the file's time and date when the wait began
+    a.label('sw_spin'); a.b(0)
     a.label('fight_name'); a.b((FIGHT_NAME + b'1').ljust(8, b'\0'))   # the digit is number_name's
     a.label('turn_name'); a.b((TURN_NAME + b'1').ljust(8, b'\0'))
     a.label('slot_next'); a.b(0, 0)                          # next turn and fight number - 1 (SAVEHOOK.SLT)

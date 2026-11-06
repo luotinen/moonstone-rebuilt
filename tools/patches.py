@@ -289,6 +289,38 @@ PATCHES = {
                   # in depth figures stop 14 apart, not 20 (the hits reach 10)
                   ((0x1000, 0xa0ab), bytes.fromhex('83f914'), bytes.fromhex('83f90e'))],
     },
+    'K32': {
+        'title': 'The computer knights\' lair choice ruined its own table (code audit, 6 Nov 2026). The bubble sort of '
+                 'the 24 lairs by distance (1000:A986) swaps a pair, but its last store goes to [si+4] where [si+6] is '
+                 'meant: a pointer lands in a distance field and a lair is lost at every swap, leaving about 4 different '
+                 'lairs of 24 (emulated). A9AA: mov [si+4],cx becomes mov [si+6],cx',
+        'bytes': [((0x1000, 0xa9aa), bytes.fromhex('894c04'), bytes.fromhex('894c06'))],
+    },
+    'K33': {
+        'title': 'Limits and checks (code audit, 6 Nov 2026). Game over only when no human knight can play again, not '
+                 'by a count that frogs and computer turns upset (A67B). HP never below 1 from losing armour (CE75, '
+                 '0BAD), and automatic loot moves the HP of the armour actually taken (0BAD). A flight with no free path '
+                 'slot lands where it is, not at a stale position (2CFB). Mythral\'s table is not read past its end '
+                 '(BC2E). Limits tested with >=, not =: daggers from loot (CE1A, CE26), gold from loot (CEF8); a dragon '
+                 'fight is skipped for lives <= 0, not only 0 (0D13). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xa67b), bytes.fromhex('ff06aacc'), bytes.fromhex('cd639090')),
+                  ((0x1000, 0xce75), bytes.fromhex('294538'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x0bad), bytes.fromhex('294538014438'), bytes.fromhex('cd6390909090')),
+                  ((0x1000, 0x2cfb), bytes.fromhex('b8ffff'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xbc2e), bytes.fromhex('8b4c02'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xce1a), bytes.fromhex('7421'), bytes.fromhex('7d21')),
+                  ((0x1000, 0xce26), bytes.fromhex('740e'), bytes.fromhex('7d0e')),
+                  ((0x1000, 0xcef8), bytes.fromhex('740a'), bytes.fromhex('7d0a')),
+                  ((0x1000, 0x0d13), bytes.fromhex('740e'), bytes.fromhex('7e0e'))],
+    },
+    'D26': {
+        'title': 'A new turn waits for the keys to be let go (user request 6 Nov 2026): a player still holding a '
+                 'direction (or fire) as the turn changed moved the next knight on the map at once. At a human\'s '
+                 'turn start (D7\'s int 65h, 1000:A63F) SAVEHOOK.COM notes it, and the map loop\'s input (1000:A536, '
+                 'mov [CC9Ah],bx after 83C0) stays empty until no direction or fire is held. Needs SAVEHOOK.COM '
+                 'resident',
+        'bytes': [((0x1000, 0xa536), bytes.fromhex('891e9acc'), bytes.fromhex('cd639090'))],
+    },
     'D24': {
         'title': 'Responsive controls (user request 4 Nov 2026). The game reads its key table once a frame (two BIOS '
                  'ticks, about 110 ms), so a key tapped between two reads was lost, and a knight reads its input only '
@@ -384,15 +416,28 @@ PATCHES = {
                   ((0x1000, 0x3e3b), bytes.fromhex('b21a'), bytes.fromhex('cd63')),
                   ((0x1000, 0x3e40), bytes.fromhex('c7451a2a77'), bytes.fromhex('cd63909090')),
                   # the B key's knights' daggers do double (1000:44C2)
-                  ((0x1000, 0x44c2), bytes.fromhex('294538'), bytes.fromhex('cd6390'))],
+                  ((0x1000, 0x44c2), bytes.fromhex('294538'), bytes.fromhex('cd6390')),
+                  # Black Knights walk through each other (1000:A008, the walk's collision test): two that came in
+                  # at the same place blocked each other for good
+                  ((0x1000, 0xa008), bytes.fromhex('837d2200'), bytes.fromhex('cd639090'))],
+    },
+    'K31': {
+        'title': 'A dagger thrown to the left never left the fight (found in the user\'s play test, 6 Nov 2026): '
+                 'its handler (1000:3E6F) ends it only when its x is between -10 and 0, and it flies 20 a frame, so '
+                 'most daggers skipped that window and flew on for good. The daggers filled the fight\'s 20 object '
+                 'slots and no new one could be thrown (1000:2A1E finds no free slot). It now ends once x is -10 or '
+                 'less (3E7D: jle becomes jge)',
+        'bytes': [((0x1000, 0x3e7d), bytes.fromhex('7e'), bytes.fromhex('7d'))],
     },
     'D17': {
         'title': 'CPU speed for fights (Moonstone Rebuilt; user request after a play test: fights with 2-4 knights '
                  'are slow because the game draws every sprite itself and runs out of DOSBox-X cycles). At the start '
                  'of every fight (the fight save, 1000:0307, D6) SAVEHOOK.COM runs DOSBox-X\'s own CONFIG -set '
-                 'cycles=... with default_cycles + additional_cycles_per_knight for every knight past the first (custom '
-                 'rules; default 4000 + 1000: 1-4 knights 4000-7000), and at its end (1000:0ABE, mov word [0942h],0, '
-                 'becomes int 63h) back to default_cycles, the conf\'s value. 0 per knight changes nothing; speedrun '
+                 'cycles=... with fight_cycles for the fight\'s 1-4 knights (custom rules; default 2600, 3250, 3500, '
+                 '3750, as D23 made drawing cheaper; one number: + additional_cycles_per_knight for every knight past '
+                 'the first), and at its end (1000:0ABE, mov word [0942h],0, '
+                 'becomes int 63h) back to default_cycles, the conf\'s value. fight_cycles = default_cycles and 0 per knight '
+                 'change nothing; speedrun '
                  'mode too. Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x0abe), bytes.fromhex('c70642090000'), bytes.fromhex('cd6390909090'))],
     },

@@ -3,7 +3,7 @@
 ## 0.7.0 (unreleased)
 
 * Cheat codes (`cheat_codes = yes` in `custom_rules.ini`, the default): typed in the item screen, in a fight or on
-  the map, and in the first menu TOOEASY (harder fights) and the monster codes, which start a practice fight with player 1 as one of its monsters: HOTSTUFF (the dragon), DIRTYRAT (a ratman), CLUBMEMBER (a troll), JUMPSCARE (a Balok), TROGLIFE (a trogg) and SWAMPTHING (a mudman), with as many knights as players chosen (with 4, five people play: a third key set I J K L, B, N); D, J, G and B wait two thirds of a second in the first menu for a code's next letter (a code's keys may be 1.3 s apart); the monster is player 1's once it has walked in (or come up out of the mud), and knight 1 leaves the screen unseen; the troll and the troggs: up and fire = the overhead blow, else the push or sideways blow; HOTSTUFF's dragon pushes a close knight away with its paw at once; SWAMPTHING's mudman grabs from below only after its own sinking; a code typed whole plays the sword clash sound; the list is in CHEATS.md.
+  the map, and in the first menu TOOEASY (harder fights) and the monster codes, which start a practice fight with player 1 as one of its monsters: HOTSTUFF (the dragon), DIRTYRAT (a ratman), CLUBMEMBER (a troll), JUMPSCARE (a Balok), TROGLIFE or TROGGLIFE (a trogg) and SWAMPTHING (a mudman), with as many knights as players chosen (with 4, five people play: a third key set I J K L, B, N); D, J, G and B wait two thirds of a second in the first menu for a code's next letter (a code's keys may be 1.3 s apart); the monster is player 1's once it has walked in (or come up out of the mud) and it is the fight's only monster, and knight 1 leaves the screen unseen; the troll and the troggs: up and fire = the overhead blow, else the push or sideways blow; HOTSTUFF's dragon pushes a close knight away with its paw at once; DIRTYRAT's ratman leaps quickly, and from the tree (the secondary button) it hangs the knight below it; JUMPSCARE's Balok crushes a knight it hops onto up or down (not left or right), and the secondary button grabs and crushes the knight in front of it, or with none in reach makes a big jump that crushes; SWAMPTHING's mudman holds a knight for a shorter time, and after its own sinking (the secondary button) it comes up beside the nearest knight and pulls it under; a knight a ratman or a mudman holds breaks free on its own keys; CLUBMEMBER's troll no longer attacks by itself from the screen's edge, and it walks back onto the screen; a code typed whole plays the sword clash sound; the list is in CHEATS.md.
 * Item screen codes DANUBLESS (full HP, else a life, else a healing potion), PUTARINGONIT (a Ring of Protection)
   and MOONMAX (strength, constitution and endurance 5).
 * ROCKETMAN flies on the secondary button (the knight walks and strikes in the air); new fight code LUNAR: moon
@@ -76,6 +76,47 @@
   recolouring made faster too, a fight takes about a third fewer instructions (measured on fight saves: 370 000 ->
   238 000 a frame with four knights). Two knight pieces drawn with fewer colour planes (KN3.OB 31, KN4.OB 25) now
   take each knight's own colours; they always showed in the first knight's.
+* D6, D7: shorter pause before every turn and fight. The automatic save waited a fixed 1.1 s, and DOSBox-X often
+  wrote the save twice in that time; the wait now ends as soon as the save has been written.
+* D7: every turn on the map (the computer's too) starts with the game's menu sound, so a turn change can be heard.
+* D12: practice with 3 or 4 players chosen started a two-player practice unless every extra player had a game
+  controller. Players 3 and 4 now take the controllers that are connected, and one of them the third key set
+  (I J K L to move, B to attack, N the secondary button); 4 players chosen with no controller give three knights.
+* D20: the Black Knights now get the new deaths too, both the purple one of a one-player practice and the black
+  ones of the B key and BLACKDEATH: a dagger, a thrust or an up strike on a Black Knight on its knees gave the
+  game's beheading.
+* D17: fights ran too fast after D23. A new custom rule `fight_cycles` sets a fight's speed with 1, 2, 3 and 4
+  knights: 2600, 3250, 3500, 3750 cycles (were 4000-7000; play tests: 3250 right for two knights, 4550 too fast
+  for four). Given one number, each knight past the first adds `additional_cycles_per_knight` (650). The map and
+  menus keep `default_cycles` (4000).
+* D19: in a practice with 3-4 players the Black Knights (key 0 and the B key) were drawn in the colours of the
+  knight each went for, which changed as they changed knights; they wear their own purple or black again. Two of
+  them came in at the same place and, overlapping, blocked each other for good (they never attacked); Black
+  Knights now walk through each other (`1000:A008`).
+* New cheat codes: MINEFIELD (a fight code: ten hidden mines that blow up knights and kill monsters), and on the map
+  SIRWALKSALOT (unlimited walking for humans), IDROPPEDMYKEY or IDROPPEDMYKEYS (where the four keys are) and
+  SIRPICKSALOT (the Valley with any number of keys).
+* The manual's rules (custom rules, not in speedrun mode): the healer takes 10 gp for the heal and 15 gp per life up
+  to `max_lives`, what is left is a chance at the next one (4 gp: 40 %; 27 gp: heal, life, 2/15 for another), and
+  money nothing can use is returned; the home village always restores full hit points; new cursed Scrolls of Haste
+  (half movement) and the Wyrm (the dragon goes for the reader), `haste_curse_chance` and `wyrm_curse_chance`, 12.5 %;
+  the Scroll of the Hawk cannot enter the Valley of the Gods; the Scroll of Protection also works against the dragon.
+* D28: in practices with 3-4 knights all knights flicker at 10 hit points or less.
+* K32: the computer knights kept to a few lairs: their lair sort lost most of the 24 lairs. They now choose among the
+  nearest ones as intended.
+* K33: limits and checks: no false Game Over with a dead knight and a frog, and no endless game when two dead knights
+  have a computer knight between them; hit points stay above 0 when armour is taken, and automatic loot moves the
+  right armour's hit points; a monster with no free flight slot lands where it is; Mythral with a large donation
+  (`max_gold` above 250) no longer always fails; loot follows the dagger limit `max_daggers`.
+* D26: on the map a new turn waits until the keys are let go: a direction still held from the turn before no
+  longer moves the next knight; it moves on the next press.
+* K31: a dagger thrown to the left never left the fight (the game ended it only between x -10 and 0, and it flies
+  20 a frame); the daggers filled the fight's object slots, and then no new dagger appeared when thrown.
+* D15: a monster between two knights at other depths (a mudman among four knights) switched knights at every step
+  and stood still: blocked in depth by the knights, it backed off from one towards the other. A monster now keeps a
+  new knight for a moment before it may switch again.
+* K25: the knight a mudman holds and pulls under is drawn in its own colours (the frames showed the knight the
+  mudman would go for now: holding blue, red's death was shown); the same for a ratman's hold.
 * D21: dragon debug mode for testing (`dragon_debug_mode = 1` in `custom_rules.ini`, off by default): on the map
   the keys 1-4 make knight 1-4 the dragon's target, and Enter starts the dragon fight when the knight whose turn it
   is stands under the dragon.

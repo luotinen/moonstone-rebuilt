@@ -102,8 +102,9 @@ skip the intro.
   Second player: W, A, S and D (up, left, down, right) plus Tab. The original used X for down; Moonstone Rebuilt
   changes it to S (D9).
 * **Practice:** with 1 player chosen in the menu, *Practice* is you against a Black Knight played by the computer
-  (D11); with 2 players it is two players against each other, as in the original. With 3 or 4 players and one or
-  two game controllers (D12-D14):
+  (D11); with 2 players it is two players against each other, as in the original. With 3 or 4 players (D12-D14),
+  players 3 and 4 use the game controllers that are connected, and one of them can use the keys I J K L (move),
+  B (attack) and N instead; with 4 players chosen and no controller, three knights fight:
   * **Enter** on *Practice*: everyone against everyone until one knight is left, each in its own colour (blue,
     green, orange, red; with custom rules the colours of `[Knight1_blue]`, `[Knight3_green]`, `[Knight2_orange]` and `[Knight4_red]`).
   * **Space**, anywhere in the first menu: two teams, player 1 (arrows + Enter) with controller 1 against player 2
@@ -111,8 +112,7 @@ skip the intro.
     teammates cannot hurt each other. With 1 or 2 players Space starts the normal practice (the Black Knight, or
     the two players against each other).
 * **Practice against monsters** (D14, D15): in the first menu press a number. The monsters come as in their lair,
-  several at a time. With 2-4 players chosen all the knights fight on the same side (3-4 need one or two game
-  controllers, as above): they cannot hurt each other, every monster goes for the knight nearest to it, and the
+  several at a time. With 2-4 players chosen all the knights fight on the same side (players 3-4 as above): they cannot hurt each other, every monster goes for the knight nearest to it, and the
   fight goes on while one knight stands; the knights' strength and hit points are added up, so more monsters come
   at a time. Esc ends a practice fight. `custom_rules.ini`, `[Practice]`, can give each key another lair (the list is there) and set whether
   knights or daggers hurt each other:
@@ -200,7 +200,7 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Death mode per knight:** `permadeath` (the original), `reincarnation` (starts again from its starting values at its start), `respawn` (back at its start with full life points, keeps the rest) or `invulnerable` (never loses the last life point; a winner still takes items).
 * **Saves:** `save_mode` = `autosave_and_manual` (as before), `autosave_only`, `manual_only` or `none`. DOSBox-X still takes F11+S, but with `autosave_only` or `none` loading such a save stops the game at the next turn, fight or roll, with LOADAUTO or NOSAVES in the title bar. `prevent_savescumming = on`: loading a save does not change how the tavern dice, Math, Mythral and the scroll curses turn out.
 * **Computer knights:** experience every moon phase, the free visit to Math the Wizard, experience for a duel win.
-* **Global:** ratmen disease, curse chances, gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
+* **Global:** ratmen disease, curse chances (Hawk, Protection, Haste, Wyrm), gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
 * **Treasure, Math and Mythral:** the dragon's hoard (`grows` with its victories, `reset` each game, or `keep` as the original), what the lairs hold (gold, magic items or both), the gold amount, the chance of each magic item (lairs, Math, the dragon's hoard and the High Temple's stock), what Math the Wizard gives and his frog days and irritation, and Mythral's chance of success for each size of donation. Tables the game could roll on forever (for example only one kind of magic item) are refused.
 * **Practice:** what each practice key 1-0 starts (monster type or the Black Knight, the lair's ground, monsters to defeat, how many at once), whether knights' blows and daggers hurt other knights, and whether monsters go for the nearest knight or the first.
 * **Parents:** `age_rating` (see the note at the top).
@@ -210,7 +210,7 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Catch-up** (`catchup = yes`, the default): in the game (not practice) a human knight well behind the leading
   human knight finds more in a lair's chest the first time it wins it (gold, magic items, and when far behind a
   Scroll of Acquisition), and a knight on its last life or low on hit points sometimes finds a healing potion.
-* **Fight speed:** DOSBox-X's speed (`default_cycles`, 4000, as on the map) and how much each knight past the first adds in a fight (`additional_cycles_per_knight`, 1000), as fights with several knights need more.
+* **Fight speed:** DOSBox-X's speed on the map and in the menus (`default_cycles`, 4000), in a fight with 1, 2, 3 and 4 knights (`fight_cycles`: 2600, 3250, 3500, 3750), as fights with several knights need more; given one number, each knight past the first adds `additional_cycles_per_knight` (650).
 * **Speedrun mode** (`speedrun_mode = on`): every other setting in the file is ignored. The game runs with the default rules and all the fixes, except where runs rely on the game's own behaviour: every hit on the dragon and the Guardian counts, the dragon's target can be rerolled from the item screen, the extra-turn glitch, the healing potion after the Guardian, the Moonstone damage bonus as in the original, and the dragon's hoard kept from game to game. Scrolls are never cursed in speedrun mode, so bad luck cannot spoil a run, and there is no catch-up loot or anti-cheese (the game's own exploits stay). Records still need the unmodified game.
 * **Monsters:** the hit recovery of the dragon and the Guardian (fix K6: after a hit, further hits do not count for this long), the hit points and damage of every monster, the ratmen by moon phase, the Guardian and the dragon, and the least damage the dragon does against Talismans of the Wyrm.
 * **Prices:** the weapon and armour shops (the computer knights pay the same), the healer and every High Temple item. The prices on screen follow; selling at the temple pays half, as in the game.

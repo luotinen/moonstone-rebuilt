@@ -29,3 +29,7 @@
 __pycache__/
 # Setup.bat: the Python package unicorn, when Python does not have it
 /_python/
+
+# Private copy of the copyrighted manual: never in the release
+*DO-NOT-DISTRIBUTE*
+manual-ocr*
