@@ -286,6 +286,9 @@ PATCHES = {
         'bytes': [((0x1000, 0x3f83), bytes.fromhex('c6450801'), bytes.fromhex('cd639090')),
                   ((0x1000, 0x3f92), bytes.fromhex('c6450803'), bytes.fromhex('cd639090')),
                   ((0x1000, 0x3fac), bytes.fromhex('8b36e877'), bytes.fromhex('cd639090')),
+                  # an attack with up or down just after a turn is read with the facing from before it (1000:40AC):
+                  # back + up threw no dagger, as the back direction had turned the knight first
+                  ((0x1000, 0x40ac), bytes.fromhex('807d0803'), bytes.fromhex('cd639090')),
                   # in depth figures stop 14 apart, not 20 (the hits reach 10)
                   ((0x1000, 0xa0ab), bytes.fromhex('83f914'), bytes.fromhex('83f90e'))],
     },
@@ -419,7 +422,10 @@ PATCHES = {
                   ((0x1000, 0x44c2), bytes.fromhex('294538'), bytes.fromhex('cd6390')),
                   # Black Knights walk through each other (1000:A008, the walk's collision test): two that came in
                   # at the same place blocked each other for good
-                  ((0x1000, 0xa008), bytes.fromhex('837d2200'), bytes.fromhex('cd639090'))],
+                  ((0x1000, 0xa008), bytes.fromhex('837d2200'), bytes.fromhex('cd639090')),
+                  # a computer knight throws only from the screen, one dagger in the air at a time, and not at
+                  # every decision (1000:4D45, cmp byte [si+34h],0 before its throw)
+                  ((0x1000, 0x4d45), bytes.fromhex('807c3400'), bytes.fromhex('cd639090'))],
     },
     'K31': {
         'title': 'A dagger thrown to the left never left the fight (found in the user\'s play test, 6 Nov 2026): '
@@ -509,7 +515,8 @@ def _intr_skip_code():
         c[pos:pos + 2] = bytes([flag & 0xff, flag >> 8])
     for pos, label in fix.items():
         rel = labels[label] - (pos + 1)
-        assert -128 <= rel < 128
+        if not -128 <= rel < 128:
+            raise ValueError(f'INTR.EXE: short jump to {label} is out of range ({rel})')
         c[pos] = rel & 0xff
     return bytes(c), relocs
 

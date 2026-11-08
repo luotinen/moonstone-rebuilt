@@ -417,13 +417,15 @@ def install(game, exe):
     for name in D20_NAMES:
         if name not in deaths: continue                   # a reserved slot (up_forward): left empty
         code = script(deaths[name])
-        assert len(code) <= D20_SIZE[name], (name, len(code))
+        if len(code) > D20_SIZE[name]:
+            raise ValueError(f'the death script {name} needs {len(code)} bytes, its area has {D20_SIZE[name]}')
         at = image + D20[name]
         if any(exe[at:at + D20_SIZE[name]]) and exe[at:at + len(code)] != code:
             raise ValueError(f'MAIN.EXE: DS:{D20[name]:04X} is not free')
         exe[at:at + D20_SIZE[name]] = code + bytes(D20_SIZE[name] - len(code))
     code = marker_script(deaths['marker'])                # D22
-    assert len(code) <= MARKER_SIZE, len(code)
+    if len(code) > MARKER_SIZE:
+        raise ValueError(f'the marker script needs {len(code)} bytes, its area has {MARKER_SIZE}')
     at = image + MARKER_SCRIPT
     if any(exe[at:at + MARKER_SIZE]) and exe[at:at + len(code)] != code:
         raise ValueError(f'MAIN.EXE: DS:{MARKER_SCRIPT:04X} is not free')

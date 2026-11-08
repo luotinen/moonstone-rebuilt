@@ -74,7 +74,8 @@ def find_smf(data):
     _, ntracks, _ = struct.unpack('>HHH', data[i+8:i+14])
     j = i + 14
     for _ in range(ntracks):
-        assert data[j:j+4] == b'MTrk'
+        if data[j:j+4] != b'MTrk':
+            raise ValueError(f'no MIDI track at offset {j}')
         j += 8 + struct.unpack('>I', data[j+4:j+8])[0]
     return data[i:j]
 

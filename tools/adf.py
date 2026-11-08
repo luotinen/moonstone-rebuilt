@@ -6,6 +6,19 @@ BLOCK, ROOT = 512, 880
 T_HEADER, T_DATA, T_LIST = 2, 8, 16
 ST_ROOT, ST_DIR, ST_FILE = 1, 2, -3 & 0xffffffff
 
+def extract_path(out, path):
+    """Where a file of the disk goes under the folder out. Names come from the disk image, so a name that could lead
+    outside the folder (.., a drive, a backslash) raises ValueError."""
+    parts = path.split('/')
+    for part in parts:
+        if not part.rstrip('. ') or any(c in part for c in '\\:') or any(ord(c) < 32 for c in part):
+            raise ValueError(f'unsafe file name on the disk: {path!r}')
+    root = os.path.abspath(out)
+    dest = os.path.abspath(os.path.join(root, *parts))
+    if os.path.commonpath([root, dest]) != root or dest == root:
+        raise ValueError(f'unsafe file name on the disk: {path!r}')
+    return dest
+
 class Adf:
     """A damaged image raises ValueError: block numbers outside the disk, wrong block types and chains that loop."""
     def __init__(self, path):
@@ -91,6 +104,6 @@ if __name__ == '__main__':
         data = adf.read(h)
         print(f'{len(data):8}  {p}')
         if out:
-            dest = os.path.join(out, *p.split('/'))
+            dest = extract_path(out, p)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             open(dest, 'wb').write(data)

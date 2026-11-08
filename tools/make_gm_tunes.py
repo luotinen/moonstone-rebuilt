@@ -13,7 +13,8 @@ def main(game, out):
         smf = find_smf(module)
         start = module.find(smf)
         gm = to_general_midi(smf)
-        assert len(gm) == len(smf)
+        if len(gm) != len(smf):
+            raise ValueError(f'{path}: the General MIDI version changed the length of the music')
         disk, name = os.path.basename(os.path.dirname(path)), os.path.basename(path)
         os.makedirs(f'{out}/{disk}', exist_ok=True)
         target = f'{out}/{disk}/A{name[1:]}'

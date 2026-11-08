@@ -89,15 +89,26 @@ def main(arg=None):
     if rules_on:                                              # custom rules (D10) checked before anything changes
         import rules
         ini = os.path.join(HERE, 'custom_rules.ini')
+        if not os.path.exists(ini):                           # rules.install makes it from the default
+            ini = os.path.join(HERE, 'custom_rules-default.ini')
         try:
-            if os.path.exists(ini):
-                rules.table(rules.read_ini(ini))
+            r = rules.read_ini(ini)
+            rules.table(r)
+            rules.age_check(HERE, r, setup=True)
         except rules.RulesError as e:
             raise SystemExit(f'custom_rules.ini: {e}\nNothing was changed. Correct custom_rules.ini (or use '
                              'Custom_rules_off.bat or Custom_rules_reset.bat) and run Setup.bat again.')
 
     import rules as age                                       # the age rating's PARENTAL.LCK, once
     age.age_init(HERE)
+    # Start.bat, Fixes_On.bat and Custom_rules_on.bat refuse while this exists: only a setup that finishes removes it
+    unfinished = [os.path.join(HERE, age.INSTALLING), os.path.join(HERE, age.SETUP_FLAG)]   # (the setup's own one last)
+    write(unfinished[1], b'the setup has not finished\r\n')
+    def default_rules():                                      # the default set is in place: custom rules off, setup over
+        for path in [os.path.join(HERE, name) for name in ('CUSTOM_RULES.FLG', os.path.join('_fixes', 'rules', 'MAIN.EXE'),
+                                                           os.path.join('_fixes', 'rules', 'SAVEHOOK.COM'))] + unfinished:
+            if os.path.exists(path):
+                os.remove(path)
     for f in files:                                           # 2. game files
         if f['path'] not in ('MAIN.EXE', 'INTR.EXE'):
             copy(os.path.join(gog, f['path']), os.path.join(HERE, f['path']))
@@ -132,6 +143,7 @@ def main(arg=None):
     make_gm_tunes.main(gog, os.path.join(music, 'gm'))
     from make_savehook import make_savehook
     write(os.path.join(HERE, 'SAVEHOOK.COM'), make_savehook())
+    write(os.path.join(fixed, 'SAVEHOOK.COM'), make_savehook())
     if not os.path.exists(os.path.join(HERE, 'MOON.CFG')):
         write(os.path.join(HERE, 'MOON.CFG'), b'SOUND=SOUNDBLASTER\r\nYGUARD=11234\r\n')
     music_conf = os.path.join(HERE, 'music.conf')
@@ -158,14 +170,22 @@ def main(arg=None):
     say('  installed: ' + ('original programs (Fixes_Off.bat)' if use == original else 'fixed programs'))
     if rules_on:                                              # custom rules (D10), if Custom_rules_on.bat is in use
         try:
-            rules.install(HERE)
+            rules.install(HERE, setup=True)
             say('  custom rules from custom_rules.ini: on' + (' (with Fixes_On.bat)' if use == original else ''))
         except rules.RulesError as e:                         # the default set stays in use, and nothing says otherwise
-            for name in ('CUSTOM_RULES.FLG', os.path.join('_fixes', 'rules', 'MAIN.EXE')):
-                if os.path.exists(os.path.join(HERE, name)):
-                    os.remove(os.path.join(HERE, name))
+            default_rules()
             raise SystemExit(f'custom_rules.ini: {e}\nThe game is set up with the default rules (custom rules off). '
                              'Correct custom_rules.ini and run Custom_rules_on.bat.')
+        except OSError as e:
+            if os.path.exists(unfinished[0]):                 # the undo failed: the programs may not belong together
+                raise SystemExit(f'Could not write the game\'s files ({e}), and the setup did not finish. Close DOSBox-X '
+                                 'and run Setup.bat again. Start.bat will not start the game until it has finished.')
+            default_rules()
+            raise SystemExit(f'Could not write the game\'s files ({e}). The game is set up with the default rules (custom '
+                             'rules off). Close DOSBox-X and run Custom_rules_on.bat.')
+    for path in unfinished:
+        if os.path.exists(path):
+            os.remove(path)
 
     disk1 = os.path.join(HERE, 'amiga', 'Moonstone_Disk1.adf')  # 6. optional Amiga music
     if os.path.exists(disk1):

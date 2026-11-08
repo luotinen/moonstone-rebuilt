@@ -1,5 +1,113 @@
 # Changelog
 
+## 0.8.0 (unreleased)
+
+* K16 and K16_permanent replace the vanilla beheading with the plain fall, including cheat finishers,
+  in every death animation mode. Gore off also suppresses the pending vanilla beheading.
+* Start.bat refuses to launch with a missing PARENTAL.LCK until custom rules are rebuilt at K12,
+  even if flags from a previously installed higher rating remain.
+* CPU speed settings now reject values above the 16-bit storage limit (65535), including all four
+  expanded fight speeds after additional_cycles_per_knight, with a configuration error before installation.
+* Haste and Wyrm curse rolls use the deterministic curse stream with prevent_savescumming enabled,
+  and the same save checkpoints as Hawk and Protection.
+* Custom_rules_on.bat changes the programs as one step: everything is written next to its target first, and if a
+  file cannot be replaced (DOSBox-X still running) the old ones are put back. If that cannot be done or the change
+  stops half way, INSTALLING.FLG stays and Start.bat and Fixes_On.bat refuse until the change is made.
+* A Setup.bat that stops half way, or whose custom rules step cannot undo a failed change, leaves SETUP.FLG. Start.bat,
+  Fixes_On.bat and Custom_rules_on.bat then refuse until Setup.bat has finished.
+* Setup.bat compares the age rating with PARENTAL.LCK before it changes anything: a rating above the lock leaves the
+  working installation as it was (it used to replace MAIN.EXE and turn the custom rules off first).
+* Start.bat refuses custom rules whose MAIN.EXE or SAVEHOOK.COM is not their own pair (`_fixes/rules`). Fixes_On.bat
+  installs that pair, and stops if the custom rules are on but their programs are missing (it used the default
+  MAIN.EXE and reported success).
+* Start.bat stops if its AdLib fallback or the Amiga music set cannot be copied; it used to say AdLib and start the
+  game with the old music settings.
+* `save_mode = autosave_only` and `none`: only a SAVEHOOK.CHK that is not there starts a new token. Any other failure
+  to open, read, write or close it, or a short file, stops the game like a loaded save (a read-only folder used to let
+  every save through).
+* `prevent_savescumming = on`: the dice, Math, Mythral and curse streams start when the game's knights are set up, so
+  a save made before a stream's first roll fixes that roll too, and a stream no longer restarts after a zero.
+* The automatic saves (slots 91-94 and 96-100) work again: none had been made since D20 (0.6.0). SAVEHOOK.COM ran
+  itself as a child program to make DOSBox-X see the save's name, and DOSBox-X starts a program only with its file
+  size free; D20's 9 KB for the knights' pieces left too little beside the game. The child is now SAVEHOOK.RUN, five
+  bytes that SAVEHOOK.COM writes when it starts.
+* The Black Knights (purple and black) and the other computer knights throw a dagger only from the screen, with
+  none of their own in the air, and at one decision in four; they threw at every decision when over 100 away, even
+  from off the screen as they came in, and the Black Knights never run out.
+* IDDQD works for every player's knight against monsters, co-op included; with players' knights against each
+  other it does nothing (it used to need a lone knight, and also worked knight against knight).
+* TOOHARD (the first menu): easier fights, the players' knights lose half the hit points of an ordinary hit and in
+  co-op the monsters go for a healthier knight first; JUSTRIGHT: the game's fights again. TOOEASY now stays on
+  when typed again (JUSTRIGHT turns it off).
+* The map's choices (with custom rules on) are in a fixed order: the place or the lair first, then "Battle with"
+  a knight, then "Lair with" a knight.
+* D33 (in progress; `coop_lairs = full`, `shared` or `off`, full by default): co-op lairs on the map. When a player's knight stops at a
+  lair with other players' knights next to it, the choices add "Lair with" that knight, or with 2-3 of them "Lair
+  together (N knights)": all fight the lair's monsters together (the co-op practice's rules: the monsters go for
+  the nearest knight, the fight goes on while one stands), friendly fire on. Knights 3 and 4 take the joysticks
+  that answer, then the third key set (I J K L, B); without a joystick at most 3 knights. With several knights to
+  fight and no room (or 2-3 partners) they become one "Battle with ..." that lists them. A fallen knight loses a
+  life as in a lone fight; the lair is won while one stands, and each knight standing gets the lair's chest in
+  turn (in a drawn order), the gold and items put back for each, the keys and Moonstones to the first. With
+  `shared`, one chest a little fuller (`extra_loot_per_knight`, 50 % for each knight past the first), opened first
+  by the knight whose turn it was and then in a drawn order: a click on the gold takes the gold divided by the
+  knights (the last one all that is left), an item one at a time, the rest to the next. Every knight wears its own
+  player colour in the fight (its colour slot, not the practice's record colours; knight 1 has entries 44-46).
+  Played: two knights fought a lair together, one fell and the fight went on; the chest first opened twice for the
+  same knight (the item screen's knight is [8979h]), fixed. After the chests the visit's knight is the active one
+  again (it was always knight 1).
+* D34: dynamic difficulty (`dynamic_difficulty = on`, on by default; off = the game's own). Every player's knight has a level
+  from -5 to +5, shown after its name on the item screen. Lairs and fights with computer knights (the Black Knights
+  included) count: a win won easily (over half the hit points and 2 lives or more left) raises it by one, below 0
+  every such win, from 0 up only every other win in a row (the 2nd, 4th, ...); a loss ends the run and lowers it by one, but not when lost to the lair's last
+  monster or with 5 lives or more. Up, in those fights: the monsters walk a little quicker and hit a little harder
+  (3 % a level, 15 % at +5), and a lair's chest holds less gold (5 % a level). Down: fewer monsters in a lair (10 %
+  a level, at least one unless it was cleared), walking a little slower and hitting a little softer (3 % a level;
+  a deadly blow stays deadly), a Balok's crush and a mudman's grab from below miss now and then (10 % a level) and
+  a mudman's hold lasts longer (10 % a level); a lair's chest holds more gold (5 % a level) and a Potion of Healing
+  in one chest in four at -5 (5 % a level). In a co-op lair the fight's level is the knights' average.
+* Catch-up and dynamic difficulty together give at most +50 % of a lair's own gold, at most one more Potion of
+  Healing in a chest and only to a knight that has none (catch-up's magic item that would be a potion is another
+  item then), and a Scroll of Acquisition only to a knight that has none.
+* D35: sword enchantments (`sword_enchantments = on`, on by default). One lair chest in ten, and the dragon's hoard
+  one time in ten, holds an enchantment (shown as the knight's own sword, "Enchantment of ..."); never where the Sword of
+  Sharpness is. Clicking it puts it on the knight's own sword, replacing one it had, and the sword's text on the
+  item screen becomes "<sword> of <enchantment>"; the Sword of Sharpness and the computer's knights take none. It
+  is lost with that sword (a better one bought, or the sword lost to a knight that wins), and a knight that takes
+  the sword takes it too. Smite: the overhead chop three times the damage (the game's: twice). Dragonbane: twice
+  against the dragon. Fireblock: no burns from the dragon's fire while the knight blocks. Gore (only with gore on;
+  its effects stop while gore is off): three times the blood at every hit, and a knight it kills dies at once by
+  the blow's death animation (as FINISHHIM). Troggbane: kills troggs at one blow. Desertbane: twice against Baloks
+  and hammer troggs. Swampbane: twice against mudmen, kills trolls at one blow. Ratbane: kills ratmen and axe
+  troggs at one blow.
+* The item screen's pointer moves by the time a direction is held, not by the screen's loop: a press moves it one
+  step (2) at once, then after 4 ticks 3 a tick, after 12 ticks 6 a tick (short moves used to be hard to aim).
+* The dagger throw's turn undo (back + up + fire just after a turn) now needs up or down held as the knight turns:
+  a turn made with the back direction alone stays, so back, then up + the new forward + fire is the upward thrust
+  the new way (against ratmen it threw a dagger the old way).
+* D31: every sword shows in a tint of its own (a request of Rob Anderson's, the game's author): the long sword
+  blackened steel with a black iron grip (red looked like blood), the broadsword bronze, the claymore the game's bright steel and the Sword of
+  Sharpness a glowing blue-white blade with a gold hilt. The sword is always drawn from KN4.OB, so only its four
+  colours move, to palette entries 48-59 (the game uses 0-31); they follow the fades. No new graphics or memory.
+  The armour the same way, in the knight's greys (helmet, collar, arms, legs; entries 60-71): padded armour the
+  game's bright steel, chain mail brass, plate mail a cool blue-grey iron, battle armour blackened steel with a
+  gold trim.
+* Controls (D24): a back direction pressed without fire waits `input_chord` ticks (2, about 0.1 s) before it turns
+  the knight, so back + up + fire and back + down + fire keep the facing whatever key comes first; a direction let
+  go up to 3 ticks before the fire key still counts with it (unless one of the same axis is held). `input_log = on`
+  writes every fight's key presses, the input read for each move and the attacks picked to INPUT.LOG, and
+  `tools/input_log.py` shows them with the time from fire to attack.
+* The dagger throw (back + up + fire) works: pressing back first turned the knight (D25), so the attack was read
+  as forward + up, the upward thrust the other way. An attack with up or down and left or right within a quarter
+  of a second of a turn is now read with the facing from before the turn, and the turn is undone. Up + forward +
+  fire, facing that way, is the upward thrust as before.
+* MINEFIELD: the Black Knights are blown up by a mine as the players' knights are (they took a deadly blow).
+* MINEFIELD: a knight sets a mine off only with its feet on the mark, whichever way it faces (it went off with the
+  knight's body over the mark). The second and fourth knights' blast now shows their own colours, not the first knight's.
+* `tools/adf.py` refuses to extract a file whose name on the disk image could lead outside the output folder.
+* The build's checks of its own output (jump ranges, duplicate labels, hook addresses, script sizes) also work under
+  `python -O`.
+
 ## 0.7.0 – Parental controls, Gore Off mode, Responsive controls
 
 * Cheat codes (`cheat_codes = yes` in `custom_rules.ini`, the default): typed in the item screen, in a fight or on

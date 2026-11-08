@@ -200,12 +200,25 @@ G_AGE = G_CATCHUP + 1                         # byte: [Parental] age_rating: 12 
 G_FIGHT_CYCLES = G_AGE + 1                    # 4 words: DOSBox-X cycles of a fight with 1-4 knights (D17)
 G_HASTE_CURSE = G_FIGHT_CYCLES + 8            # signed byte: roll <= this: a Scroll of Haste is cursed (-1 never)
 G_WYRM_CURSE = G_HASTE_CURSE + 1              # signed byte: the same for a Scroll of the Wyrm
-TABLE_SIZE = G_WYRM_CURSE + 1
+G_INPUT_CHORD = G_WYRM_CURSE + 1              # byte: input_chord (D24): BIOS ticks a turn waits for its attack, 0 = off
+G_INPUT_LOG = G_INPUT_CHORD + 1               # byte: input_log (D24), 1 = INPUT.LOG after every fight
+G_COOP_LAIRS = G_INPUT_LOG + 1                # byte: coop_lairs (D33), COOP_MODES
+G_COOP_EXTRA = G_COOP_LAIRS + 1               # byte: extra_loot_per_knight (D33), percent
+G_DYNAMIC = G_COOP_EXTRA + 1                  # byte: dynamic_difficulty (D34), 1 = on
+G_ENCHANT = G_DYNAMIC + 1                     # byte: sword_enchantments (D35), 1 = on
+G_ENCH_CHANCE = G_ENCHANT + 1                 # byte: sword_enchantment_chance (D35), percent
+ENCH_CHANCE_DEFAULT = 10
+TABLE_SIZE = G_ENCH_CHANCE + 1
+COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
+COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
+INPUT_CHORD_DEFAULT = 2
 # age_rating: (rating, permanent lock). PARENTAL.LCK holds the highest rating allowed in this installation: the setup
 # writes 18 once (a new installation, or the first setup of 0.7.0 over an older one: _fixes/PARENTAL.INIT), a
 # permanent rating lowers it for good, and a missing file counts as 12 (deleting it locks the game to K12)
 AGE_RATINGS = {'k12_permanent': (12, 12), 'k12': (12, 0), 'k16_permanent': (16, 16), 'k16': (16, 0), 'k18': (18, 0)}
 AGE_LOCK, AGE_INIT = 'PARENTAL.LCK', os.path.join('_fixes', 'PARENTAL.INIT')
+INSTALLING = 'INSTALLING.FLG'                          # swap_files: a change of the programs is under way or did not finish
+SETUP_FLAG = 'SETUP.FLG'                               # Setup is under way or did not finish; only a finished Setup removes it
 # on_E_rest_heal (G_REST): none = the game's daily healing (a quarter of the missing HP); full = also the E key
 # restores full HP; fixed_and_endurance and fixed_only = the daily healing is fixed % of the missing HP (at least
 # 1), plus endurance % times the share of the movement (endurance) the knight had left when its last turn ended
@@ -260,6 +273,14 @@ HOOKS = [
     (0x0fd2, '807c140f', 'valley_keys'),                # SIRPICKSALOT: the Valley with any number of keys
     (0xa45f, 'b81400', 'lair_icon'),                    # IDROPPEDMYKEY: the lairs holding keys glow
     (0x3711, '8b36e877', 'balok_land'),                 #   ... and its hop lands on a knight
+    (0x55b1, 'c6440b28', 'dd_hold'),                    # D34: a mudman's hold lasts longer in a fight down
+    (0xd08c, 'e831b3', 'pointer'),                      # D36: the item screen's pointer moves by the time held
+    (0x43d1, 'c744281000', 'fireblock'),                # D35: the dragon's fire on a knight
+    (0x2da4, '83fa107502d1e0', 'ench_hit'),             # D35: a knight's blow's damage (the chop's double, the banes)
+    (0xc8e5, '837c0400', 'ench_icon'),                  # D35: a chest's or the hoard's enchantment, as the magic sword's
+    (0xc51d, 'a3a4e4', 'ench_name'),                    # D35: the item screen's sword: its enchanted name
+    (0xcd9f, '83fb047503', 'ench_take'),                # D35: an enchantment taken from the chest
+    (0xce91, '8b6d40', 'ench_tkwp'),                    # D35: a sword taken from a knight takes its enchantment
     (0x37fc, '8b3e7809', 'balok_crush'),                #   ... and its crushing grab (the secondary button)
     (0x112e, '807c31037d0480443101', 'village'),        # home village druids
     (0x0add, '806c3101', 'lives_si'), (0x0aed, '806d3101', 'lives_di'),   # fight lost
@@ -270,6 +291,15 @@ HOOKS = [
     (0xa3cd, '8b4520', 'colour_di'),                    # map icon of the knight whose turn it is: mov ax,[di+20h]
     (0x0732, '3d15007506837d200075c63d16007506837d200175bb3d17007506837d200275b03d18007506837d200375a5', 'place'),
     (0xcc0f, '268b5e12268b4e10', 'sell'),               # item screen click: mov bx,es:[bp+12h] / mov cx,es:[bp+10h]
+    # D33 co-op lairs: the map's choices (the list's end, a line's text, the choice made)
+    (0x08ca, '33c0', 'coop_list'), (0xb137, '837f0402', 'coop_text'), (0xb089, '3e8b4600', 'coop_pick'),
+    # ... the lair's set-up (call 1F2C), its end (test word [0942h],1), its chest (call BFAC with ax = 2)
+    (0x058b, 'e89e19', 'coop_setup'), (0x0597, 'f70642090100', 'coop_end'), (0x05c6, 'e8e3b9', 'coop_loot'),
+    # ... a shared chest: a click on the gold (TKGP, call D6E1) and its loop (dec word [di], a gold piece out)
+    (0xced3, 'e80b08', 'gold_click'), (0xcefa, 'ff0d', 'gold_step'),
+    # D34 dynamic difficulty: a knight fight's set-up (call 2066) and end (mov word [0424h],0), the item screen's
+    # knight panel after its name (mov si,[0E490h])
+    (0x0422, 'e8411c', 'dd_duel'), (0x0428, 'c70624040000', 'dd_duel_end'), (0xc2b7, '8b3690e4', 'dd_show'),
 ]                                                       # map places: villages 15h-18h react only to their knight
 # Reward rolls (only patched for prevent_savescumming or the checked save modes): call rel16 -> int 63h / nop. The
 # handler sets the game's random state (DS:E22F) from a stream of its own, one per kind, that advances only at these
@@ -301,6 +331,9 @@ def hook_bytes(where, old, kind):
 class RulesError(Exception):
     pass
 
+class SetupUnfinished(RulesError):
+    pass
+
 def _fight_cycles(cp, sec, per, bounds):
     """fight_cycles: 1-4 numbers, the cycles of a fight with 1, 2, 3, 4 knights; past the last one given, each
     knight adds additional_cycles_per_knight (one number: that and more per knight, as before)."""
@@ -314,6 +347,9 @@ def _fight_cycles(cp, sec, per, bounds):
         raise RulesError(f'[{sec}] fight_cycles = {raw}: must be 1-4 numbers {lo}-{hi}, separated by commas')
     while len(vals) < 4:
         vals.append(vals[-1] + per)
+    if not all(lo <= v <= hi for v in vals):
+        raise RulesError(f'[{sec}] fight_cycles = {raw}: all four expanded speeds must be {lo}-{hi} '
+                         '(including additional_cycles_per_knight)')
     return tuple(vals)
 
 def _get(cp, sec, key, conv, lo=None, hi=None):
@@ -371,8 +407,8 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
                 'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50),
-                'default_cycles': (100, 100000), 'additional_cycles_per_knight': (0, 20000),
-                'fight_cycles': (100, 100000)}
+                'default_cycles': (100, 65535), 'additional_cycles_per_knight': (0, 20000),
+                'fight_cycles': (100, 65535)}
 
 def ticks(tenths):
     """Tenths of a second -> BIOS ticks (18.2 a second), as SAVEHOOK.COM counts them."""
@@ -429,6 +465,17 @@ def read_ini(path):
     r['deaths'] = _get(cp, g, 'death_animations', _choice(DEATHS)) if cp.has_option(g, 'death_animations') else 0
     r['dragon_debug'] = _get(cp, g, 'dragon_debug_mode', int, 0, 1) if cp.has_option(g, 'dragon_debug_mode') else 0
     r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
+    r['input_chord'] = (_get(cp, g, 'input_chord', int, 0, 6) if cp.has_option(g, 'input_chord')
+                        else INPUT_CHORD_DEFAULT)
+    r['input_log'] = _get(cp, g, 'input_log', _onoff) if cp.has_option(g, 'input_log') else 0
+    r['coop_lairs'] = (_get(cp, g, 'coop_lairs', _choice(dict(COOP_MODES, on=1))) if cp.has_option(g, 'coop_lairs')
+                       else COOP_DEFAULT)
+    r['coop_extra'] = (_get(cp, g, 'extra_loot_per_knight', int, 0, 100) if cp.has_option(g, 'extra_loot_per_knight')
+                       else COOP_EXTRA_DEFAULT)
+    r['dynamic'] = _get(cp, g, 'dynamic_difficulty', _onoff) if cp.has_option(g, 'dynamic_difficulty') else 1
+    r['enchant'] = _get(cp, g, 'sword_enchantments', _onoff) if cp.has_option(g, 'sword_enchantments') else 1
+    r['ench_chance'] = (_get(cp, g, 'sword_enchantment_chance', int, 0, 100) if cp.has_option(g, 'sword_enchantment_chance')
+                        else ENCH_CHANCE_DEFAULT)
     r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
                    _get(cp, g, 'additional_cycles_per_knight', int, *rb['additional_cycles_per_knight']))
     r['fight_cycles'] = (_fight_cycles(cp, g, r['cycles'][1], rb['fight_cycles'])
@@ -523,7 +570,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'dynamic_difficulty', 'sword_enchantments', 'sword_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
                  'merchant_selling',
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -608,6 +655,13 @@ def table(r=None):
     t[G_HASTE_CURSE] = roll_threshold(r.get('haste_curse', 0) if r else 0) & 0xff
     t[G_WYRM_CURSE] = roll_threshold(r.get('wyrm_curse', 0) if r else 0) & 0xff
     t[G_INPUT_BUFFER] = r.get('input_buffer', 1) if r else 1
+    t[G_INPUT_CHORD] = r.get('input_chord', INPUT_CHORD_DEFAULT) if r else INPUT_CHORD_DEFAULT
+    t[G_INPUT_LOG] = r.get('input_log', 0) if r else 0
+    t[G_COOP_LAIRS] = r.get('coop_lairs', COOP_DEFAULT) if r else 0
+    t[G_COOP_EXTRA] = r.get('coop_extra', COOP_EXTRA_DEFAULT) if r else 0
+    t[G_DYNAMIC] = r.get('dynamic', 1) if r else 0
+    t[G_ENCHANT] = r.get('enchant', 1) if r else 0
+    t[G_ENCH_CHANCE] = r.get('ench_chance', ENCH_CHANCE_DEFAULT) if r else 0
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------
@@ -810,36 +864,85 @@ def build(game, r):
     img = apply(exe[header:], main_patches(r, exe[header:]))
     return exe[:header] + img, make_savehook(table(r))
 
-def install(game):
+def install(game, setup=False):
     """Applies custom_rules.ini (made from custom_rules-default.ini if missing): _fixes/rules/MAIN.EXE, SAVEHOOK.COM,
     CUSTOM_RULES.FLG,
-    and MAIN.EXE unless the game is in original mode. Raises RulesError (nothing written) for a bad value."""
+    and MAIN.EXE unless the game is in original mode. Raises RulesError (nothing written) for a bad value, and
+    SetupUnfinished unless setup is true while a Setup has not finished: its game files cannot be vouched for here."""
+    if not setup and os.path.exists(os.path.join(game, SETUP_FLAG)):
+        raise SetupUnfinished('the setup did not finish')
     ini = os.path.join(game, 'custom_rules.ini')
     if not os.path.exists(ini):
         shutil.copyfile(os.path.join(game, 'custom_rules-default.ini'), ini)
     r = read_ini(ini)
     lock_path = os.path.join(game, AGE_LOCK)             # a permanent age rating: never above it again
+    age_check(game, r)
     old_lock = age_limit(game)
-    if r['age'] > old_lock:
-        raise RulesError(f'[Parental] age_rating: this installation allows at most K{old_lock} for good '
-                         f'({AGE_LOCK}); only a new installation allows a higher rating')
     new_lock = min(old_lock, r['age_lock'] or 18)
     exe, hook = build(game, r)
     from make_savehook import make_savehook
-    os.makedirs(os.path.join(game, '_fixes', 'rules'), exist_ok=True)
     # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here.
-    # The programs first, the flag last: if a write fails, the flag does not claim rules that are not in place
+    # _fixes/rules holds the matching pair: Fixes_On.bat installs it and Start.bat compares against it
     writes = [(os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), make_savehook()),
-              (os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), ('SAVEHOOK.COM', hook)]
+              (os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), (os.path.join('_fixes', 'rules', 'SAVEHOOK.COM'), hook),
+              ('SAVEHOOK.COM', hook)]
     on = not os.path.exists(os.path.join(game, 'ORIGINAL.FLG'))
     if on:
         writes.append(('MAIN.EXE', exe))
-    for name, data in writes + [('CUSTOM_RULES.FLG', b'custom rules\r\n')]:
-        open(os.path.join(game, name), 'wb').write(data)
     # a permanent age rating: Start.bat then starts the game only with the fixes and the custom rules in place, and
     # Custom_rules_off.bat, Custom_rules_reset.bat and Fixes_Off.bat refuse
-    open(lock_path, 'w').write(f'{new_lock} the highest age rating allowed in this installation\n')
+    lock = f'{new_lock} the highest age rating allowed in this installation\n'.encode()
+    swap_files(game, writes + [('CUSTOM_RULES.FLG', b'custom rules\r\n'), (AGE_LOCK, lock)])
     return on
+
+def swap_files(game, files):
+    """Puts (name, data) files in place as one change. Everything is first written next to its target, so a full disk
+    or a read-only folder changes nothing. If a replacement fails (a program holds the file open), the files already
+    replaced are put back. INSTALLING.FLG exists during the change and stays if the process dies or the undo fails:
+    Start.bat and Fixes_On.bat then refuse until a new install. A marker that was already there stays after an undo too:
+    the undo only brings back that unfinished state. A change that finishes removes it. Raises OSError."""
+    pairs = [(os.path.join(game, name), data) for name, data in files]
+    marker = os.path.join(game, INSTALLING)
+    unfinished_before = os.path.exists(marker)
+    def remove(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    try:
+        for path, data in pairs:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path + '.new', 'wb') as f:
+                f.write(data)
+        with open(marker, 'wb') as f:
+            f.write(b'a change of the programs has not finished\r\n')
+    except OSError:
+        for path, _ in pairs:
+            remove(path + '.new')
+        raise
+    done = []
+    try:
+        for path, _ in pairs:
+            existed = os.path.exists(path)
+            if existed:
+                shutil.copyfile(path, path + '.old')
+            os.replace(path + '.new', path)
+            done.append((path, existed))
+    except OSError:
+        for path, existed in reversed(done):             # an undo that fails leaves the marker: Start.bat refuses
+            if existed:
+                os.replace(path + '.old', path)
+            else:
+                os.remove(path)
+        for path, _ in pairs:
+            remove(path + '.new')
+            remove(path + '.old')
+        if not unfinished_before:
+            os.remove(marker)
+        raise
+    for path, _ in pairs:
+        remove(path + '.old')
+    os.remove(marker)
 
 def age_limit(game):
     """The highest age rating PARENTAL.LCK allows (12, 16 or 18); a missing or unreadable file allows 12."""
@@ -847,6 +950,15 @@ def age_limit(game):
         return min(18, max(12, int(open(os.path.join(game, AGE_LOCK)).read().split()[0])))
     except (OSError, ValueError, IndexError):
         return 12
+
+def age_check(game, r, setup=False):
+    """Raises RulesError if the rules r ask for more than PARENTAL.LCK allows. setup: before age_init, which would
+    write 18 for an installation that has never had a lock."""
+    never_set = not os.path.exists(os.path.join(game, AGE_INIT)) and not os.path.exists(os.path.join(game, AGE_LOCK))
+    limit = 18 if setup and never_set else age_limit(game)
+    if r['age'] > limit:
+        raise RulesError(f'[Parental] age_rating: this installation allows at most K{limit} for good '
+                         f'({AGE_LOCK}); only a new installation allows a higher rating')
 
 def age_init(game):
     """The setup: a new installation (or the first of 0.7.0 over an older one) allows K18 (PARENTAL.LCK = 18)."""
@@ -859,9 +971,16 @@ def age_init(game):
     open(marker, 'w').write('PARENTAL.LCK set up\n')
 
 if __name__ == '__main__':
+    target = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(HERE)
     try:
-        on = install(os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(HERE))
+        on = install(target)
+    except SetupUnfinished:
+        raise SystemExit('The setup did not finish. Run Setup.bat first. Nothing was changed.')
     except RulesError as e:
         raise SystemExit(f'custom_rules.ini: {e}\nNothing was changed.')
+    except OSError as e:
+        raise SystemExit(f'Could not write the game\'s files ({e}). Close DOSBox-X and run this again. ' +
+                         ('The change did not finish, so Start.bat will not start the game until it does.'
+                          if os.path.exists(os.path.join(target, INSTALLING)) else 'Nothing was changed.'))
     print('Custom rules from custom_rules.ini are on. Restart the game (DOSBox-X) for them to take effect.' if on else
           'Custom rules from custom_rules.ini are set, but the game is in original mode: Fixes_On.bat turns them on.')
