@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 – Timed Defence, Horses & Co-op Lairs (unreleased)
+## 0.8.0 – Timed Defence, Horses & Co-op Lairs
 
 * Knights at 10 HP or less all glow the same way: their colours pulse lighter and back at the blue knight's pace (orange and the knights of 3-4 player and co-op practices no longer flash white; green no longer pulses faster; red dims as in the original). Black, purple, grey and white knights and the computer's knights do not glow. A knight healed above 10 HP stops glowing.
 * DAGGERFALL's daggers are the thrown dagger turned point down (a new piece in KN3.OB: **run Setup.bat again**).
