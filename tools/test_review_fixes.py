@@ -267,12 +267,13 @@ class SetupFlow(unittest.TestCase):
         sys.path.insert(0, str(ROOT / 'setup'))
         self.addCleanup(sys.path.remove, str(ROOT / 'setup'))
         import setup as installer
-        import death_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
+        import death_frames, horse_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
         with patch.object(installer, 'HERE', str(game)), patch.object(installer, 'check_gog', lambda g: []), \
                 patch.object(installer, 'find_gog', lambda a: str(game)), patch.object(make_voc_rates, 'FILES', []), \
                 patch.object(make_main_exe, 'make_main_exe', main_exe), \
                 patch.object(make_intr_exe, 'make_intr_exe', lambda gog, fixes=None: b'FIXED_INTR'), \
                 patch.object(death_frames, 'install', lambda here, exe: exe), \
+                patch.object(horse_frames, 'install', lambda here: None), \
                 patch.object(make_gm_tunes, 'main', lambda gog, out: None), \
                 patch.object(hook, 'make_savehook', lambda table=None: b'DEFAULT_HOOK'), \
                 patch('rules.build', lambda g, r: (b'RULES_MAIN', b'RULES_HOOK')), \
@@ -796,38 +797,6 @@ class InputSettings(unittest.TestCase):
             ini.write_text(source.replace('extra_loot_per_knight = 50', 'extra_loot_per_knight = 101'), encoding='utf-8')
             with self.assertRaisesRegex(rules.RulesError, 'extra_loot_per_knight'):
                 rules.read_ini(ini)
-
-    def test_sword_enchantments_setting(self):
-        source = (ROOT / 'custom_rules-default.ini').read_text(encoding='utf-8')
-        self.assertEqual(rules.table(rules.read_ini(ROOT / 'custom_rules-default.ini'))[rules.G_ENCHANT], 1)   # on
-        self.assertEqual(rules.table(None)[rules.G_ENCHANT], 0)                        # no custom rules: none
-        line = 'sword_enchantments = on'
-        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
-            ini = Path(folder) / 'custom_rules.ini'
-            for text, value in (('off', 0), ('on', 1), (None, 1)):                     # None: an older ini
-                ini.write_text(source.replace(line, ';' if text is None else 'sword_enchantments = ' + text), encoding='utf-8')
-                self.assertEqual(rules.table(rules.read_ini(ini))[rules.G_ENCHANT], value, text)
-            t = rules.table(rules.read_ini(ROOT / 'custom_rules-default.ini'))
-            self.assertEqual(t[rules.G_ENCH_CHANCE], 10)
-            for text, value in (('100', 100), ('0', 0)):
-                ini.write_text(source.replace('sword_enchantment_chance = 10', 'sword_enchantment_chance = ' + text), encoding='utf-8')
-                self.assertEqual(rules.table(rules.read_ini(ini))[rules.G_ENCH_CHANCE], value, text)
-            ini.write_text(source.replace('sword_enchantment_chance = 10', ';'), encoding='utf-8')
-            self.assertEqual(rules.table(rules.read_ini(ini))[rules.G_ENCH_CHANCE], 10)       # an older ini
-            ini.write_text(source.replace('sword_enchantment_chance = 10', 'sword_enchantment_chance = 101'), encoding='utf-8')
-            with self.assertRaisesRegex(rules.RulesError, 'sword_enchantment_chance'):
-                rules.read_ini(ini)
-
-    def test_dynamic_difficulty_setting(self):
-        source = (ROOT / 'custom_rules-default.ini').read_text(encoding='utf-8')
-        self.assertEqual(rules.table(rules.read_ini(ROOT / 'custom_rules-default.ini'))[rules.G_DYNAMIC], 1)   # on
-        self.assertEqual(rules.table(None)[rules.G_DYNAMIC], 0)                        # no custom rules: none
-        line = 'dynamic_difficulty = on'
-        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
-            ini = Path(folder) / 'custom_rules.ini'
-            for text, value in (('off', 0), ('on', 1), (None, 1)):                     # None: an older ini
-                ini.write_text(source.replace(line, ';' if text is None else 'dynamic_difficulty = ' + text), encoding='utf-8')
-                self.assertEqual(rules.table(rules.read_ini(ini))[rules.G_DYNAMIC], value, text)
 
     def test_log_report(self):
         import input_log

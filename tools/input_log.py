@@ -6,12 +6,16 @@ entries, 6 bytes each: the BIOS tick (18.2 a second), the kind, a knight number 
   3 input read: a knight's direction and fire bits as the game read them, and as SAVEHOOK passed them on (input_buffer,
     the directions let go just before fire, input_chord's wait: 0)
   4 attack: the bits the attack was picked from, and the facing (1 right, 3 left)
+  5 defence (D46): the struck knight (255: a computer's), 1 if the blow was defended, the blow's move
+  6 stagger (D46): the staggered knight, the script its animation runs then (0: no animation found)
+  7 attack start (D46): a knight's move and its record's slot (0-3 knights, 4-23 monster slots)
 For every attack the tool shows how long after the last fire key it started (the latency players feel; with two
 players pressing at once, the nearer press counts).
 Usage: python -I tools/input_log.py [INPUT.LOG]"""
 import struct, sys
 
-KINDS = {1: 'key down', 2: 'key up', 3: 'input', 4: 'attack'}
+KINDS = {1: 'key down', 2: 'key up', 3: 'input', 4: 'attack', 5: 'defence', 6: 'stagger', 7: 'attack start'}
+BLOWS = {2: 'lunge', 4: 'swing', 6: 'dagger', 0xa: 'backward thrust', 0xc: 'upward thrust', 0x10: 'overhead chop'}
 KEYS = {0x1c: 'Enter (P1 fire)', 0x48: 'Up', 0x50: 'Down', 0x4b: 'Left', 0x4d: 'Right',
         0x0f: 'Tab (P2 fire)', 0x11: 'W', 0x1f: 'S', 0x1e: 'A', 0x20: 'D',
         0x30: 'B (P3 fire)', 0x17: 'I', 0x25: 'K', 0x24: 'J', 0x26: 'L'}
@@ -72,6 +76,14 @@ def report(data, out=print):
                 lat = f', {delay * TICK_MS:.0f} ms after fire' if delay is not None else ''
                 out(f'  {t:5}  attack    knight {who}: {bits_text(a)} facing {"right" if b == 1 else "left"}'
                     f' = {attack(a, b)}{lat}')
+            elif kind == 5:
+                whom = 'a computer knight' if who == 255 else f'knight {who}'
+                out(f'  {t:5}  defence   {whom}: {"defended" if a else "not defended"} against {BLOWS.get(b, hex(b))}')
+            elif kind == 6:
+                whom = 'a computer knight' if who == 255 else f'knight {who}'
+                out(f'  {t:5}  stagger   {whom}: its animation now runs {hex(a | b << 8) if a | b else "(none found)"}')
+            elif kind == 7:
+                out(f'  {t:5}  starts    slot {b}: {BLOWS.get(a, hex(a))}')
             else:
                 out(f'  {t:5}  kind {kind}: {who} {a} {b}')
         if latencies:

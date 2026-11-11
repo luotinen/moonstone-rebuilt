@@ -299,6 +299,13 @@ PATCHES = {
                  'lairs of 24 (emulated). A9AA: mov [si+4],cx becomes mov [si+6],cx',
         'bytes': [((0x1000, 0xa9aa), bytes.fromhex('894c04'), bytes.fromhex('894c06'))],
     },
+    'K34': {
+        'title': 'A lair\'s monster count overwritten by a later fight (code audit, 9 Nov 2026). A lair fight leaves [898Dh] = 2 '
+                 'until the next turn starts (B1B0), and the end of every fight (039E) stores the fight\'s own monster count in '
+                 'the last lair when it is 2: a dragon attack in the same turn changed that lair. The end of the fight now '
+                 'shifts the word right (2 becomes 1, which no check matches) and stores the count only if it was 2',
+        'bytes': [((0x1000, 0x039e), bytes.fromhex('833e8d8902750b'), bytes.fromhex('d12e8d8990740b'))],   # shr word [898Dh],1 / nop / je
+    },
     'K33': {
         'title': 'Limits and checks (code audit, 6 Nov 2026). Game over only when no human knight can play again, not '
                  'by a count that frogs and computer turns upset (A67B). HP never below 1 from losing armour (CE75, '
@@ -362,6 +369,16 @@ PATCHES = {
                  'dragon flies over it in its turn (1000:A5BB), and Enter only runs the action of a place (B000). '
                  'mov di,6E26h at 1000:A5BB becomes int 63h. Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0xa5bb), bytes.fromhex('bf266e'), bytes.fromhex('cd6390'))],
+    },
+    'D38': {
+        'title': 'Horses\' pictures (custom rules): the merchant\'s and map icons\' banks are loaded from KH.CEL and MH.C, '
+                 'the game\'s KI.CEL and MI.C with the horses after their own frames (horse_frames.py); the original program '
+                 'keeps the originals. The area of those banks (1000:869E) grows by C0h paragraphs to hold them',
+        'bytes': [(('DS', 0x8b03), b'ki.cel', b'kh.cel'), (('DS', 0x8b0a), b'mi.c', b'mh.c'),
+                  ((0x1000, 0x869f), bytes.fromhex('8009'), bytes.fromhex('400a')),
+                  # with EMS the files are cached at fixed places (DS:828A: page group, offset, size) and po.cel's copy
+                  # overwrote MH.C past MI.C's 4810 bytes: MH.C moves to the free end of group 2 (after FO1.T; 36A0h there)
+                  (('DS', 0x83ce), bytes.fromhex('18000000ca12'), bytes.fromhex('02006049fd15'))],
     },
     'D20': {
         'title': 'New deaths (user request 1 Nov 2026): a knight hit again in the slumped pose of its fall (script '

@@ -6,7 +6,7 @@ HE3.OB, the other look) and appended to those banks; the scripts that draw them 
 Usage: python -I tools/death_frames.py <game dir> [preview.png]   (the preview needs Pillow and msfmt.py)"""
 import os, random, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE
+from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE, DF_PIC
 
 BANK = 8                                  # KN3.OB in the knights' bank table (DS:8933, loaded at 1000:8B10)
 FIRST = 64                                # KN3.OB's own frames are 0-63; the new ones follow
@@ -111,9 +111,11 @@ def frame_planes(img):
     return 0x100 | used, bytes(out)
 
 
-def bank_with(data, new):
-    """The bank with the frames `new` after its own."""
+def bank_with(data, new, keep=None):
+    """The bank with the frames `new` after its own (its first `keep` only: an older install's pieces dropped)."""
     frames, raw = read_bank(data)
+    if keep is not None and len(frames) > keep:
+        raw = raw[:frames[keep][0]]; frames = frames[:keep]
     raw = bytearray(raw)
     for img in new:
         mask, planes = frame_planes(img)
@@ -384,10 +386,16 @@ def script(frames, sound=0x09):
     return bytes(s)
 
 
+def falling_dagger(game):
+    """D58 (DAGGERFALL): the thrown dagger (KN4.OB frame 10) turned a quarter: hilt up, blade down."""
+    return rot_cw(bank_frames(open(os.path.join(game, 'DISKB', 'KN4.OB'), 'rb').read())[10])
+
+
 def added_bytes(game):
     """How much KN3.OB grows in memory (frames' headers and planes): the knights' bank area must hold it."""
     data = open(os.path.join(game, 'DISKB', 'KN3.OB'), 'rb').read()
     new, _ = make(bank_frames(data)[:FIRST])
+    new = new + [falling_dagger(game)]
     return sum(10 + len(frame_planes(a)[1]) for a in new)
 
 
@@ -400,10 +408,17 @@ def install(game, exe):
         data = open(path, 'rb').read()
         frames, _ = read_bank(data)
         new, made = make(bank_frames(data)[:FIRST])
-        if name == 'KN3.OB': deaths = made
+        if name == 'KN3.OB':
+            deaths = made
+            new = new + [falling_dagger(game)]               # D58: DAGGERFALL's dagger, the last
+            if FIRST + len(new) - 1 != DF_PIC:
+                raise ValueError(f'the falling dagger is KN3.OB frame {FIRST + len(new) - 1}, SAVEHOOK.COM draws {DF_PIC}')
         else: new = new[:-len(made['marker'])]           # D22's hit marker is drawn from KN3.OB only (last)
         if len(frames) == FIRST:
             data = bank_with(data, new)
+            with open(path, 'wb') as f: f.write(data)
+        elif len(frames) > FIRST and len(frames) != FIRST + len(new):   # an older install's pieces: made again
+            data = bank_with(data, new, keep=FIRST)
             with open(path, 'wb') as f: f.write(data)
         elif len(frames) != FIRST + len(new):
             raise ValueError(f'{path}: {len(frames)} frames, expected {FIRST} or {FIRST + len(new)}')

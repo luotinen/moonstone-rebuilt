@@ -106,6 +106,7 @@ The exact formulas *(not in the manual; `1000:028D`, `1000:02E7`)*:
   * Armour bonus: padded 0, chain mail 10, plate mail 20, battle armour 30.
 * **Movement per turn** = 16 × (2 × endurance + 4, + 2 for chain mail or battle armour).
   * [Plate mail gives no movement bonus, although chain mail and battle armour do. Probably an original slip; kept.]
+  * [With custom rules the armour's value comes from `custom_rules.ini`: by default padded 0, chain mail -1, plate mail -2, battle armour -4.]
 * **Armour does not reduce damage.** It only raises the maximum hit points. The manual doesn't say this.
 
 ### Hit points and life points
@@ -259,6 +260,16 @@ The manual only says that at least 10 gp improves your chances. The real odds of
       `1000:B4CA`.)
   * [The tavern's Exit button reacts only a little to the right of where it is drawn; not yet fixed.]
 * **Merchant:** sells daggers, weapons and armour *(see 12)*.
+  * [Custom rules: click your own sword, armour or horse on your side to sell it for half its price (`merchant_selling`):
+    you get the starting sword or padded armour instead, and a sold horse is gone, which brings the armour's weight back.
+    Click a worse sword, armour or horse on the merchant's side to get it free in exchange (`merchant_trade_in`).
+    Buying a better one credits half of the old one's price, also between black charger and dappled horse.
+    The Sword of Sharpness is not exchanged; the High Temple buys it for half its price and then sells it.]
+  * [Custom rules: also horses, in the bottom row of the goods. See the table in 12. A knight has one horse at a time, shown on its panel;
+    a new one replaces the old, and the same horse cannot be bought twice. A horse adds movement,
+    makes rough ground less slow, and takes away the armour's movement penalty. It is never lost, not by death or
+    looting. While its knight moves on the map the horse is shown instead of the helmet. With `horses = off` there are no
+    horses and the armour gives the movement bonus set for that case.]
 
 ### Home village
 
@@ -342,7 +353,7 @@ When the knight turns round, forward and back swap.
 Other things to know:
 
 * Monsters' damage is fixed per monster *(see 9)*. Armour does not reduce it.
-* A knight that starts to flicker has 10 hit points or fewer left. *(manual p. 15)*
+* A knight that starts to flicker (its colours pulse lighter and back) has 10 hit points or fewer left; one healed above 10 stops. *(manual p. 15)*
 * Many monsters have a special attack that leaves the knight helpless; the special defence (down + fire) counters it.
 
 ## 9. Monsters
@@ -454,6 +465,16 @@ scroll in advance: there is a random chance each time a scroll is read *(`1000:C
 | Wyrm | the dragon attacks you | [original: never. Custom rules: 1 read in 8] |
 
 ## 12. Prices
+
+[Custom rules: horses at the merchant. The first three are always on sale, the last two appear on 10 % of town visits, one or the other (rolled as you enter the town). Black charger and dappled horse count as equal in an exchange.]
+
+| Horse | Price | Movement | Forest, swamp | Mountains, map edges |
+|---|---|---|---|---|
+| Brown | 20 gp | +1 | 1/2 speed | 1/4 speed |
+| Light | 40 gp | +2 | 3/4 speed | 1/2 speed |
+| Armoured | 60 gp | +3 | 7/8 speed | 3/4 speed |
+| Black charger | 80 gp | +3 | full speed | full speed |
+| Dappled | 80 gp | +5 | 7/8 speed | 3/4 speed |
 
 **Merchant** (both cities) *(manual p. 8; same in the program's texts)*:
 

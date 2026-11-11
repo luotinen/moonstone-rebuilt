@@ -21,6 +21,12 @@ from patches import PATCHES, image_offset
 
 SECTIONS = ['Knight1_blue', 'Knight2_orange', 'Knight3_green', 'Knight4_red', 'Black']
 WEAPONS = {'long_sword': 0x16, 'broadsword': 0x17, 'claymore': 0x18, 'sword_of_sharpness': 0x19}
+ARMOUR_MOVE_DEFAULT = (0, -1, -2, -4)                  # D37: each armour's movement with horses on (a knight's movement: endurance * 2 + 4 + this)
+ARMOUR_BONUS_DEFAULT = (0, 2, 0, 2)                    # D38: the same with horses off
+# D38: horses: (name for the ini, shop text, price, movement, speed in forest and swamp, in mountains and at the edges, in eighths)
+HORSES = (('brown', 'Brown horse', 20, 1, 4, 2), ('light', 'Light horse', 40, 2, 6, 4), ('armoured', 'Armoured horse', 60, 3, 7, 6),
+          ('black', 'Black charger', 80, 3, 8, 8), ('dappled', 'Dappled horse', 80, 5, 7, 6))
+HORSE_TEXT_SIZE, HORSE_CHANCE_DEFAULT = 30, 10
 ARMOURS = {'padded': 0x1b, 'chain_mail': 0x1c, 'plate_mail': 0x1d, 'battle_armour': 0x1e}
 MODES = {'permadeath': 0, 'reincarnation': 1, 'respawn': 2, 'invulnerable': 3}
 VILLAGE = {'below_3': 0, 'below_max': 1, 'full': 2}
@@ -97,6 +103,28 @@ COLOUR_SITES = [((0x4822, 0x4827, 0x482c), (0xb699, 0xb69e, 0xb6a3, 0xb6a8), (0x
                 ((0x4864, 0x4869, 0x486e), (0xb6ea, 0xb6ef, 0xb6f4, 0xb6f9), (0xc1d3, 0xc1d8)),
                 ((0x484e, 0x4853, 0x4858), (0xb6cf, 0xb6d4, 0xb6d9, 0xb6de), (0xc1bf, 0xc1c4)),
                 ((0x4878, 0x487d, 0x4882), (), (0xc1e1, 0xc1e6))]
+# D61: the low-HP glow's target words for +20h = 0-4 (KnightGlowColours 1000:09A5; the game's glow steps each fight
+# word to its target and back). The named colours keep the game's targets (red dims); black, the computer's slot 4,
+# near-blacks (nearest named colour black), greys / white (R = G = B) and purples (B >= R > G) do not pulse: targets =
+# words.
+GLOW_SITES = [(0x09b0, 0x09b5, 0x09ba), (0x09c6, 0x09cb, 0x09d0), (0x09f2, 0x09f7, 0x09fc), (0x09dc, 0x09e1, 0x09e6),
+              (0x0a02, 0x0a07, 0x0a0c)]
+GLOW_WORDS = {'blue': (0x00c, 0x009, 0x006), 'orange': (0xfa0, 0xe70, 0xc50), 'green': (0xae8, 0x6b5, 0x473),
+              'red': (0xd00, 0x900, 0x500)}
+GLOW_SPEED_SITE = 0x0973                                # knight 2's first entry (mov cx,1): 2 as knight 1's (0915)
+
+def glow_words(colour, slot):
+    """The three low-HP glow target words of a knight's colour in colour slot +20h = slot."""
+    fight, *_, icon = colour_words(colour)
+    if slot == 4 or colour == 'black':
+        return fight
+    if colour in GLOW_WORDS:
+        return GLOW_WORDS[colour]
+    rgb = [int(d, 16) for d in colour[1:]]
+    r, g, b = rgb
+    if icon == COLOURS['black'][3] or r == g == b or b >= r > g:       # near-black, grey / white, purple
+        return fight
+    return tuple(sum(min((w >> s & 15) + 2, 15) << s for s in (8, 4, 0)) for w in fight)   # lighter, 15 at most
 
 # Prices. Shop prices are 8-bit signed operands (cmp/sub word [si+32h],nn), so at most 127: (name, human shop
 # compare, human shop subtract, computer knight's compare, computer knight's price word).
@@ -204,14 +232,43 @@ G_INPUT_CHORD = G_WYRM_CURSE + 1              # byte: input_chord (D24): BIOS ti
 G_INPUT_LOG = G_INPUT_CHORD + 1               # byte: input_log (D24), 1 = INPUT.LOG after every fight
 G_COOP_LAIRS = G_INPUT_LOG + 1                # byte: coop_lairs (D33), COOP_MODES
 G_COOP_EXTRA = G_COOP_LAIRS + 1               # byte: extra_loot_per_knight (D33), percent
-G_DYNAMIC = G_COOP_EXTRA + 1                  # byte: dynamic_difficulty (D34), 1 = on
-G_ENCHANT = G_DYNAMIC + 1                     # byte: sword_enchantments (D35), 1 = on
+G_ENCHANT = G_COOP_EXTRA + 1                  # byte: sword_enchantments (D35), 1 = on
 G_ENCH_CHANCE = G_ENCHANT + 1                 # byte: sword_enchantment_chance (D35), percent
 ENCH_CHANCE_DEFAULT = 10
-TABLE_SIZE = G_ENCH_CHANCE + 1
+G_ARMOUR_MOVE = G_ENCH_CHANCE + 1             # 4 signed bytes: movement of padded, chain, plate, battle (D37)
+G_ARM_ENCH = G_ARMOUR_MOVE + 4                # byte: armour_enchantments (D37), 1 = on
+G_ARM_CHANCE = G_ARM_ENCH + 1                 # byte: armour_enchantment_chance (D37), percent
+G_DISEASE = G_ARM_CHANCE + 1                  # byte: 1 = the ratmen's disease is on (Venomproof has a use)
+G_HORSES = G_DISEASE + 1                      # byte: horses (D38), 1 = on
+G_HORSE_CHANCE = G_HORSES + 1                 # byte: rare_horse_chance, percent
+G_HORSE_PRICE = G_HORSE_CHANCE + 1            # 5 words: each horse's price
+G_HORSE_MOVE = G_HORSE_PRICE + 10             # 5 signed bytes: movement
+G_HORSE_SOFT = G_HORSE_MOVE + 5               # 5 bytes: forest and swamp speed, eighths
+G_HORSE_HARD = G_HORSE_SOFT + 5               # 5 bytes: mountains and edges speed, eighths
+G_HORSE_TEXT = G_HORSE_HARD + 5               # 5 texts of HORSE_TEXT_SIZE bytes (the shop's hover)
+G_INPUT_RECENT = G_HORSE_TEXT + 5 * HORSE_TEXT_SIZE   # byte: input_recent_direction (D39), BIOS ticks, 0 = off
+G_TRADE_IN = G_INPUT_RECENT + 1               # byte: 1 = worse goods at the merchant are free in exchange (D40)
+G_HORSE_SELL = G_TRADE_IN + 1                 # 5 texts of HORSE_TEXT_SIZE bytes (the knight's own horse, hover)
+G_BUY = G_HORSE_SELL + 5 * HORSE_TEXT_SIZE    # 6 words: the merchant's full prices (SELL_ITEMS order), D42
+G_COMPUTER = G_BUY + 12                       # byte: computer_knights (D44), 0 = none in the game
+G_BK_AI = G_COMPUTER + 1                      # byte: black_knight_ai (D45), 1 = smart, 0 = classic
+G_BK_HEAL = G_BK_AI + 1                       # byte: a full heal's price at the healer (D45: smart knights pay it)
+G_TD = G_BK_HEAL + 1                          # byte: timed_defence (D46), 1 = on
+G_TD_WINDOW = G_TD + 1                        # byte: defence_window, BIOS ticks
+G_TD_FAST = G_TD_WINDOW + 1                   # byte: fast_swing_time, ticks
+G_TD_STAGGER = G_TD_FAST + 1                  # byte: stagger_time, ticks
+G_TD_PURPLE = G_TD_STAGGER + 1                # 2 bytes: a Purple Knight's percent: correct, mistimed
+G_TD_BLACK = G_TD_PURPLE + 2                  # 2 bytes: a Black Knight's percent: correct, mistimed
+G_TD_PAUSE = G_TD_BLACK + 2                   # byte: computer_defence_pause, attacks
+TD_DEFAULTS = {'defence_window': 18, 'fast_swing_time': 30, 'stagger_time': 16, 'purple_knight_defence': 15,
+               'purple_knight_mistimed': 10, 'black_knight_defence': 25, 'black_knight_mistimed': 15, 'computer_defence_pause': 2}
+G_CHOP_CHEESE = G_TD_PAUSE + 1                # byte: from anticheese (D46): 2 = chop rule for all, 1 = knights only, 0 = none
+ANTICHEESE = {'yes': 2, 'true': 2, 'blackknights_only': 1, 'no': 0, 'false': 0}   # 2: all the rules; 1: knights keep out from under a chop; 0: none
+TABLE_SIZE = G_CHOP_CHEESE + 1
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
+INPUT_RECENT_DEFAULT = 3
 # age_rating: (rating, permanent lock). PARENTAL.LCK holds the highest rating allowed in this installation: the setup
 # writes 18 once (a new installation, or the first setup of 0.7.0 over an older one: _fixes/PARENTAL.INIT), a
 # permanent rating lowers it for good, and a missing file counts as 12 (deleting it locks the game to K12)
@@ -260,7 +317,8 @@ HOOKS = [
     (0x35ec, '837d3800', 'balok_decide'),               # JUMPSCARE: player 1's Balok decides by the keys
     (0x2e19, 'e8c928', 'trogg_decide'),                 # TROGLIFE: player 1's trogg decides by the keys
     (0x4e97, '8b36e877', 'mon_walk'),                   # LUNAR: the monsters' walk (trolls, troggs) at half speed
-    (0x3ab4, '8b4428', 'dragon_hit'),                   # TOOEASY: the dragon answers a knight's blow
+    (0x3ab4, '8b4428', 'dragon_hit'),                   # D46 anticheese: a knight's blow on the dragon: a run of them may end in its bite
+    (0x389c, '830e867710', 'dragon_long'), (0x39a6, '8bc7', 'dragon_depth'),   # D46 anticheese: the long fire's depth reach
     (0x05b6, 'c745080100', 'lair_loot'),                # catchup: a lair won the first time, before its chest
     (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
     (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
@@ -273,13 +331,26 @@ HOOKS = [
     (0x0fd2, '807c140f', 'valley_keys'),                # SIRPICKSALOT: the Valley with any number of keys
     (0xa45f, 'b81400', 'lair_icon'),                    # IDROPPEDMYKEY: the lairs holding keys glow
     (0x3711, '8b36e877', 'balok_land'),                 #   ... and its hop lands on a knight
-    (0x55b1, 'c6440b28', 'dd_hold'),                    # D34: a mudman's hold lasts longer in a fight down
     (0xd08c, 'e831b3', 'pointer'),                      # D36: the item screen's pointer moves by the time held
     (0x43d1, 'c744281000', 'fireblock'),                # D35: the dragon's fire on a knight
     (0x2da4, '83fa107502d1e0', 'ench_hit'),             # D35: a knight's blow's damage (the chop's double, the banes)
     (0xc8e5, '837c0400', 'ench_icon'),                  # D35: a chest's or the hoard's enchantment, as the magic sword's
     (0xc51d, 'a3a4e4', 'ench_name'),                    # D35: the item screen's sword: its enchanted name
     (0xcd9f, '83fb047503', 'ench_take'),                # D35: an enchantment taken from the chest
+    (0xa6c4, '8a453e', 'turn_move'),                    # D37: a turn's movement: the armour's value from the ini
+    (0x0d59, 'e89d82', 'horse_town_w'), (0x0e14, 'e8cb81', 'horse_town_h'),   # D40: slot 4 is rolled as a town is entered
+    (0xc3be, 'e8beb9', 'gold5'), (0xb32b, 'e851ca', 'gold5'), (0xbdcb, 'e8b1bf', 'gold5'), (0x0bbe, '014432', 'gold_add'),   # D41
+    (0x0de4, 'e8f9a3', 'visit_tavern'), (0x0e93, 'e84aa3', 'visit_tavern'), (0x0df6, 'e8b3b1', 'visit_merchant'), (0x0ea5, 'e804b1', 'visit_merchant'), (0x0eb4, 'e8f5b0', 'visit_merchant'),   # D43: max_gold as these are left
+    (0xb4c7, '014432', 'gold_add'),                     # D43: the dice's wins, up to 32767 until the tavern is left
+    (0xb491, '8b4432', 'gold999'), (0xb4e3, '8b4432', 'gold999'),   # D41: the dice result's three-character field
+    (0xc55c, '8b3690e4', 'horse_panel'),                # D40: the knight's own horse on its panel
+    (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
+    (0xa918, 'be2ac4', 'horse_terrain'),
+    (0xc8d7, 'be266e', 'arm_icon'), (0xc54a, 'a3a4e4', 'arm_name'), (0xce5b, '8b6d42', 'arm_tkar'),   # D37: armour enchantments
+    (0xa643, 'c744460000', 'arm_danu'), (0xa5f1, 'e83901', 'arm_dragon'), (0x4405, '8a4f08', 'arm_fire'),
+    (0x42a7, 'c7063a78483a', 'arm_venom'), (0xcb04, 'bf7989', 'arm_target'),
+    (0xadcc, '837c4600', 'arm_ai_wyrm'), (0xadf6, '837c4600', 'arm_ai_acq'), (0xcd2e, 'e832de', 'arm_hawk'),
+    (0xcd71, 'c70630090100', 'arm_prot'),
     (0xce91, '8b6d40', 'ench_tkwp'),                    # D35: a sword taken from a knight takes its enchantment
     (0x37fc, '8b3e7809', 'balok_crush'),                #   ... and its crushing grab (the secondary button)
     (0x112e, '807c31037d0480443101', 'village'),        # home village druids
@@ -287,6 +358,21 @@ HOOKS = [
     (0x0d03, '806c3101', 'lives_si'),                   # computer knight robbed by the dragon
     (0x0fff, '806c3102', 'lives_si'),                   # Guardian: two more
     (0x122f, '806c3101', 'lives_si'),                   # ratmen disease
+    (0x40ca, '894528', 'td_move'),                      # D46: a knight's move starts: the block's or dodge's time, the fast swing
+    (0x441f, '833efc7700', 'td_check'), (0x4d6c, '833efc7700', 'td_check'),   # D46: a knight struck by a knight (a human's, a computer's)
+    (0x42d8, '833efc7700', 'td_monster'), (0x432a, '833efc7700', 'td_monster'),   # D46: a knight blocking a trogg, a spear trogg
+    (0x4302, '294538', 'td_trogg'), (0x4da1, '294538', 'td_cdmg'),   # D46: damage
+    (0x4b85, '8936e877', 'bk_down'),                    # D46: a computer knight whose extended death is over stays down
+    (0x4c93, 'c744280800', 'td_bk_block'),              # D46: BKBlock's own block is replaced by the roll at the hit
+    (0x08f8, '833e120400', 'glow_k1'), (0x0955, '833e180400', 'glow_k2'),   # D61: KnightGlowOn: the low-HP glow stops above 10 HP
+    (0x15b5, 'f7c31000', 'choose_keys'),                # D53: Select Knight: Esc back to the first menu; D52: the practice scores cleared
+    (0x4bcd, '0bc0', 'bk_track'),                       # D45: a Black Knight in a fight, after its MonsterTrack
+    (0xa9b6, 'bed2cc', 'bk_lair'),                      # D45: a computer knight picks a lair from the sorted list
+    (0xabd7, '837c4600', 'bk_target'),                  # D45: where a computer knight walks (four keys: Stonehenge)
+    (0xae78, '8b36e877', 'bk_shop'),                    # D45: what a computer knight wants from town (weak: a heal)
+    (0xafa3, '8b36e877', 'bk_town'),                    # D45: a computer knight in town
+    (0x00df, 'e9cea3', 'no_computer'),                  # D44: a new campaign's last step (jmp A4B0), the knights are set
+    (0xa410, '3bfe742a', 'map_others'),                 # D44: the map draws the other knights: none for removed ones
     (0x08d4, '8b4420', 'colour_si'), (0xa417, '8b4420', 'colour_si'),   # map icons: mov ax,[si+20h]
     (0xa3cd, '8b4520', 'colour_di'),                    # map icon of the knight whose turn it is: mov ax,[di+20h]
     (0x0732, '3d15007506837d200075c63d16007506837d200175bb3d17007506837d200275b03d18007506837d200375a5', 'place'),
@@ -297,9 +383,6 @@ HOOKS = [
     (0x058b, 'e89e19', 'coop_setup'), (0x0597, 'f70642090100', 'coop_end'), (0x05c6, 'e8e3b9', 'coop_loot'),
     # ... a shared chest: a click on the gold (TKGP, call D6E1) and its loop (dec word [di], a gold piece out)
     (0xced3, 'e80b08', 'gold_click'), (0xcefa, 'ff0d', 'gold_step'),
-    # D34 dynamic difficulty: a knight fight's set-up (call 2066) and end (mov word [0424h],0), the item screen's
-    # knight panel after its name (mov si,[0E490h])
-    (0x0422, 'e8411c', 'dd_duel'), (0x0428, 'c70624040000', 'dd_duel_end'), (0xc2b7, '8b3690e4', 'dd_show'),
 ]                                                       # map places: villages 15h-18h react only to their knight
 # Reward rolls (only patched for prevent_savescumming or the checked save modes): call rel16 -> int 63h / nop. The
 # handler sets the game's random state (DS:E22F) from a stream of its own, one per kind, that advances only at these
@@ -352,6 +435,11 @@ def _fight_cycles(cp, sec, per, bounds):
                          '(including additional_cycles_per_knight)')
     return tuple(vals)
 
+def _bk_ai(raw):
+    return {'classic': 0, 'smart': 1}[raw.lower()]
+_bk_ai.allowed = ['classic', 'smart']
+
+
 def _get(cp, sec, key, conv, lo=None, hi=None):
     if not cp.has_option(sec, key):
         raise RulesError(f'[{sec}] {key} is missing')
@@ -373,6 +461,9 @@ def _choice(table):
     return conv
 
 _onoff = _choice({'on': 1, 'off': 0, 'true': 1, 'false': 0})
+
+# Settings of earlier versions: an older ini file may still have them, and they are ignored
+REMOVED_SETTINGS = {'dynamic_difficulty'}
 
 # Allowed values (all checked before anything is written). Values above the game's own limits are allowed (user
 # decision); the bounds only keep each value inside what its storage and the screens can hold:
@@ -397,9 +488,9 @@ KNIGHT_BOUNDS = {'strength': (1, 99), 'constitution': (1, 99), 'endurance': (1, 
                  'hp_bonus': (0, 900), 'gold': (0, 20000), 'experience': (0, 20000), 'daggers': (0, 99),
                  'keys': (0, 4), **{name: (0, 1) for name, _ in MOONSTONE_BITS},
                  **{name: (0, 9) for name, _ in ITEMS}}
-SPEEDRUN_GAME = ('healer', 'dragon_scroll', 'hawk_land')   # speedrun mode keeps the game's own behaviour here
+SPEEDRUN_GAME = ('healer', 'dragon_scroll', 'hawk_land', 'bk_track', 'bk_lair', 'bk_target', 'bk_shop', 'bk_town')   # speedrun mode keeps the game's own behaviour here
 RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 100), 'haste_curse_chance': (0, 100),
-                'wyrm_curse_chance': (0, 100), 'max_gold': (0, 20000),
+                'wyrm_curse_chance': (0, 100), 'max_gold': (0, 32767),
                 'max_lives': (1, 99), 'moon_days': (1, 100), 'xp_per_stat': (1, 1000), 'weapon_damage': (0, 100),
                 'armour_hp': (0, 100), 'xp_per_moon_phase': (0, 100), 'duel_win_xp': (0, 100),
                 'ring_of_protection_hp': (0, 100), 'shop_price': (0, 127), 'temple_price': (0, 999),
@@ -457,8 +548,7 @@ def read_ini(path):
     r['rest_fixed'] = _get(cp, g, 'rest_heal_fixed_percentage', int, 0, 100)
     r['rest_endurance'] = _get(cp, g, 'rest_heal_endurance_percentage', int, 0, 100)
     r['cheats'] = _get(cp, g, 'cheat_codes', _choice({'no': 0, 'yes': 1})) if cp.has_option(g, 'cheat_codes') else 1
-    r['anticheese'] = (_get(cp, g, 'anticheese', _choice({'false': 0, 'true': 1, 'no': 0, 'yes': 1}))
-                       if cp.has_option(g, 'anticheese') else 0)
+    r['anticheese'] = _get(cp, g, 'anticheese', _choice(ANTICHEESE)) if cp.has_option(g, 'anticheese') else 2
     r['catchup'] = (_get(cp, g, 'catchup', _choice({'off': 0, 'no': 0, 'yes': 1, 'on': 1}))
                     if cp.has_option(g, 'catchup') else 1)
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
@@ -467,13 +557,21 @@ def read_ini(path):
     r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
     r['input_chord'] = (_get(cp, g, 'input_chord', int, 0, 6) if cp.has_option(g, 'input_chord')
                         else INPUT_CHORD_DEFAULT)
+    r['input_recent'] = (_get(cp, g, 'input_recent_direction', int, 0, 6) if cp.has_option(g, 'input_recent_direction')
+                         else INPUT_RECENT_DEFAULT)
     r['input_log'] = _get(cp, g, 'input_log', _onoff) if cp.has_option(g, 'input_log') else 0
     r['coop_lairs'] = (_get(cp, g, 'coop_lairs', _choice(dict(COOP_MODES, on=1))) if cp.has_option(g, 'coop_lairs')
                        else COOP_DEFAULT)
     r['coop_extra'] = (_get(cp, g, 'extra_loot_per_knight', int, 0, 100) if cp.has_option(g, 'extra_loot_per_knight')
                        else COOP_EXTRA_DEFAULT)
-    r['dynamic'] = _get(cp, g, 'dynamic_difficulty', _onoff) if cp.has_option(g, 'dynamic_difficulty') else 1
+    r['computer_knights'] = _get(cp, g, 'computer_knights', _onoff) if cp.has_option(g, 'computer_knights') else 1
+    r['black_knight_ai'] = _get(cp, g, 'black_knight_ai', _bk_ai) if cp.has_option(g, 'black_knight_ai') else 1
+    r['timed_defence'] = _get(cp, g, 'timed_defence', _onoff) if cp.has_option(g, 'timed_defence') else 0
+    for key, default in TD_DEFAULTS.items():
+        r[key] = _get(cp, g, key, int, 0, 100) if cp.has_option(g, key) else default
     r['enchant'] = _get(cp, g, 'sword_enchantments', _onoff) if cp.has_option(g, 'sword_enchantments') else 1
+    r['arm_enchant'] = _get(cp, g, 'armour_enchantments', _onoff) if cp.has_option(g, 'armour_enchantments') else 1
+    r['arm_chance'] = _get(cp, g, 'armour_enchantment_chance', int, 0, 100) if cp.has_option(g, 'armour_enchantment_chance') else ENCH_CHANCE_DEFAULT
     r['ench_chance'] = (_get(cp, g, 'sword_enchantment_chance', int, 0, 100) if cp.has_option(g, 'sword_enchantment_chance')
                         else ENCH_CHANCE_DEFAULT)
     r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
@@ -489,6 +587,17 @@ def read_ini(path):
     r['weapon_damage'] = [_get(cp, w, name, int, *rb['weapon_damage']) for name in WEAPONS]
     a = 'Armour'
     r['armour_hp'] = [_get(cp, a, f'{name}_hp', int, *rb['armour_hp']) for name in ARMOURS]
+    def opt(sec, key, conv, default, *bounds):            # a setting older ini files do not have
+        return _get(cp, sec, key, conv, *bounds) if cp.has_option(sec, key) else default
+    r['horses'] = opt(g, 'horses', _onoff, 1)
+    r['horse_chance'] = opt(g, 'rare_horse_chance', int, HORSE_CHANCE_DEFAULT, 0, 100)
+    r['trade_in'] = opt(g, 'merchant_trade_in', _onoff, 1)
+    r['horse_list'] = [(text, opt(g, f'{name}_horse_price', int, price, 0, 999), opt(g, f'{name}_horse_movement', int, move, -20, 20),
+                        opt(g, f'{name}_horse_forest_swamp_speed', int, soft, 1, 8), opt(g, f'{name}_horse_mountains_edges_speed', int, hard, 1, 8))
+                       for name, text, price, move, soft, hard in HORSES]
+    r['armour_move'] = [opt(a, f'{name}_movement_penalty_with_horses', int, d, -20, 20) if r['horses'] else
+                        opt(a, f'{name}_movement_bonus_without_horses', int, b, -20, 20)
+                        for name, d, b in zip(ARMOURS, ARMOUR_MOVE_DEFAULT, ARMOUR_BONUS_DEFAULT)]
     r['ring_hp'] = _get(cp, a, 'ring_of_protection_hp', int, *rb['ring_of_protection_hp'])
     c = 'Combat'
     r['moves'] = {name: _get(cp, c, name, int, *rb['move_damage']) for name, _ in MOVES}
@@ -570,11 +679,12 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'dynamic_difficulty', 'sword_enchantments', 'sword_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
-                 'merchant_selling',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
+                 'merchant_selling', 'merchant_trade_in', 'horses', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
+                 *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
-             w: set(WEAPONS), a: {f'{name}_hp' for name in ARMOURS} | {'ring_of_protection_hp'},
+             w: set(WEAPONS), a: {f'{name}_hp' for name in ARMOURS} | {f'{name}_movement_penalty_with_horses' for name in ARMOURS} | {f'{name}_movement_bonus_without_horses' for name in ARMOURS} | {'ring_of_protection_hp'},
              c: {name for name, _ in MOVES} | {'max_daggers'},
              p: {name for name, *_ in SHOP} | {f'temple_{name}' for name, _ in TEMPLE}
                 | {'healer_full_heal', 'healer_life_point'},
@@ -592,7 +702,7 @@ def read_ini(path):
         if sec not in known:
             raise RulesError(f'unknown section [{sec}]')
         for key in cp.options(sec):
-            if key not in known[sec]:
+            if key not in known[sec] and not (sec == g and key in REMOVED_SETTINGS):
                 raise RulesError(f'[{sec}] {key}: unknown setting')
     return r
 
@@ -624,7 +734,7 @@ def table(r=None):
     t[G_REST_FIXED] = r['rest_fixed'] if r else 0
     t[G_REST_ENDURANCE] = r['rest_endurance'] if r else 0
     t[G_CHEATS] = r.get('cheats', 1) if r else 0
-    t[G_ANTICHEESE] = r.get('anticheese', 0) if r else 0
+    t[G_ANTICHEESE] = 1 if r and r.get('anticheese', 0) == 2 else 0   # the older rules: only with yes
     t[G_CATCHUP] = r.get('catchup', 1) if r else 0
     t[G_AGE] = r.get('age', 18) if r else 18
     t[G_VILLAGE] = r['village_heal'] if r else 0
@@ -641,6 +751,7 @@ def table(r=None):
     prices = r['shop'] if r else {'dagger': 2, 'broadsword': 10, 'claymore': 25, 'chain_mail': 30, 'plate_mail': 50,
                                   'battle_armour': 75}
     struct.pack_into('<6H', t, G_SELL, *(prices[name] // 2 for name in SELL_ITEMS))
+    struct.pack_into('<6H', t, G_BUY, *(prices[name] for name in SELL_ITEMS))
     t[G_HOARD] = r['hoard'] if r else HOARD_MODES['grows']
     for n, choice in enumerate(r['practice'] if r else PRACTICE_DEFAULTS):
         t[G_PRACTICE + n] = 0xff if choice == 'black_knight' else choice - 1
@@ -656,12 +767,38 @@ def table(r=None):
     t[G_WYRM_CURSE] = roll_threshold(r.get('wyrm_curse', 0) if r else 0) & 0xff
     t[G_INPUT_BUFFER] = r.get('input_buffer', 1) if r else 1
     t[G_INPUT_CHORD] = r.get('input_chord', INPUT_CHORD_DEFAULT) if r else INPUT_CHORD_DEFAULT
+    t[G_INPUT_RECENT] = r.get('input_recent', INPUT_RECENT_DEFAULT) if r else INPUT_RECENT_DEFAULT
     t[G_INPUT_LOG] = r.get('input_log', 0) if r else 0
     t[G_COOP_LAIRS] = r.get('coop_lairs', COOP_DEFAULT) if r else 0
     t[G_COOP_EXTRA] = r.get('coop_extra', COOP_EXTRA_DEFAULT) if r else 0
-    t[G_DYNAMIC] = r.get('dynamic', 1) if r else 0
+    t[G_COMPUTER] = r.get('computer_knights', 1) if r else 1
+    t[G_BK_AI] = r.get('black_knight_ai', 1) if r else 0
+    t[G_BK_HEAL] = r.get('healer_heal', 10) if r else 10
+    t[G_CHOP_CHEESE] = r.get('anticheese', 0) if r else 0
+    t[G_TD] = r.get('timed_defence', 0) if r else 0
+    for at, key in ((G_TD_WINDOW, 'defence_window'), (G_TD_FAST, 'fast_swing_time'), (G_TD_STAGGER, 'stagger_time'), 
+                    (G_TD_PURPLE, 'purple_knight_defence'), (G_TD_PURPLE + 1, 'purple_knight_mistimed'), (G_TD_BLACK, 'black_knight_defence'),
+                    (G_TD_BLACK + 1, 'black_knight_mistimed'), (G_TD_PAUSE, 'computer_defence_pause')):
+        t[at] = r.get(key, TD_DEFAULTS[key]) if r else TD_DEFAULTS[key]
     t[G_ENCHANT] = r.get('enchant', 1) if r else 0
     t[G_ENCH_CHANCE] = r.get('ench_chance', ENCH_CHANCE_DEFAULT) if r else 0
+    struct.pack_into('<4b', t, G_ARMOUR_MOVE, *(r.get('armour_move', ARMOUR_MOVE_DEFAULT) if r else (0, 2, 0, 2)))
+    t[G_ARM_ENCH] = r.get('arm_enchant', 1) if r else 0
+    t[G_ARM_CHANCE] = r.get('arm_chance', ENCH_CHANCE_DEFAULT) if r else 0
+    t[G_DISEASE] = 1 if r and r.get('ratmen_disease') else 0
+    t[G_HORSES] = r.get('horses', 1) if r else 0          # D38
+    t[G_HORSE_CHANCE] = r.get('horse_chance', HORSE_CHANCE_DEFAULT) if r else 0
+    t[G_TRADE_IN] = r.get('trade_in', 1) if r else 0      # D40
+    horses = r.get('horse_list') if r else None
+    horses = horses or [(text, price, move, soft, hard) for _, text, price, move, soft, hard in HORSES]
+    for i, (text, price, move, soft, hard) in enumerate(horses):
+        struct.pack_into('<H', t, G_HORSE_PRICE + 2 * i, price)
+        struct.pack_into('<b', t, G_HORSE_MOVE + i, move)
+        t[G_HORSE_SOFT + i], t[G_HORSE_HARD + i] = soft, hard
+        data = f'Buy {text} for {price} GP'.encode()
+        t[G_HORSE_TEXT + i * HORSE_TEXT_SIZE:G_HORSE_TEXT + i * HORSE_TEXT_SIZE + len(data)] = data
+        data = f'Sell {text} for {price // 2} GP'.encode()
+        t[G_HORSE_SELL + i * HORSE_TEXT_SIZE:G_HORSE_SELL + i * HORSE_TEXT_SIZE + len(data)] = data
     return bytes(t)
 
 # --- MAIN.EXE patches -------------------------------------------------------------------------------------------------
@@ -722,8 +859,14 @@ def main_patches(r, img):
             continue
         new, _ = hook_bytes(where, old, kind)
         out.append((where, bytes.fromhex(old), new))
-    for site in (0xb4cd, 0xb4d4, 0xba11, 0xba18, 0xcef6, 0xd060, 0xd068):   # gold cap 150: dice, Math, loot, sale
+    for site in (0xb4cd, 0xb4d4, 0xba11, 0xba18, 0xcef6):   # gold cap 150: dice, Math, loot
         imm(site, 2, r['max_gold'])
+    for site in (0xd060, 0xd068):                        # D43: the High Temple's sale only stops at 32767; max_gold as it is left
+        imm(site, 2, 0x7fff)
+    for site, old, new in ((0xb4cf, 0x7e, 0xeb), (0xba13, 0x7c, 0x72), (0xd062, 0x7e, 0x76)):   # D41: the cap's test unsigned, so a sum past 32767 is capped
+        out.append((site, bytes([old]), bytes([new])))
+    for site in (0xbdc6, 0xbdcf):                        # D41: the donation screen's gold in E4B4h, its own buffer has four bytes
+        out.append((site, b'\x3f\xe2', b'\xb4\xe4'))
     if r['speedrun']:                                    # K24 undone: the damage bonus as the game
         out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes'] + PATCHES['K32']['bytes']]
     # the secondary button: a controller's button 2 (joystick A's, B's) no longer fires as button 1 does
@@ -756,6 +899,9 @@ def main_patches(r, img):
         for words, sites in zip((fight, item, status), COLOUR_SITES[i]):
             for value, site in zip(words, sites):
                 imm(site, 2, value)
+        for value, site in zip(glow_words(k['colour'], i), GLOW_SITES[i]):   # D61: the low-HP glow's targets
+            imm(site, 2, value)
+    imm(GLOW_SPEED_SITE, 2, 2)                           # D61: both knights' glows at the same speeds 2, 1, 1
     for name, cmp_h, sub_h, cmp_ai, price_ai in SHOP:   # shops: the human's check and payment, the computer's
         v = r['shop'][name]
         imm(cmp_h, 1, v, True); imm(sub_h, 1, v, True); imm(cmp_ai, 1, v, True)

@@ -2,6 +2,26 @@
 
 ## 0.8.0 (unreleased)
 
+* Knights at 10 HP or less all glow the same way: their colours pulse lighter and back at the blue knight's pace (orange and the knights of 3-4 player and co-op practices no longer flash white; green no longer pulses faster; red dims as in the original). Black, purple, grey and white knights and the computer's knights do not glow. A knight healed above 10 HP stops glowing.
+* DAGGERFALL's daggers are the thrown dagger turned point down (a new piece in KN3.OB: **run Setup.bat again**).
+* New cheat codes, each for one fight: DARTS (endless daggers), DAGGERFALL (first menu or map: daggers rain from the sky
+  in the next fight) and LIGHTSABER (a white line along the blade, glowing in the knight's dark colour; a blow that lands kills: a chop
+  splits in two, a normal attack beheads, a thrust runs through). See CHEATS.md.
+* MINEFIELD: the mines lie across the whole width, from the screen's bottom up to as high as the knights' feet can go, and show for five seconds before they turn invisible
+  (they still go off).
+* Practice: when a practice fight is of a kind played before (the same choice and the same knights), the score shows
+  at the top of the screen, e.g. "3 - 2" (monsters or computer knights - players; the dragon's number red, the
+  Guardian's turquoise), or one number for each knight in its own colour, in the order the knights start from the
+  left (green - orange - blue), in fights between players. It is counted and shown as soon as a fight's winner is
+  known. A new campaign (the knight selection screen) clears all scores.
+* Esc on the Select Knight screen goes back to the first menu (custom rules).
+* New cheat code BEATEMUP (first menu: every practice fight until the game is started again; map: the next fight): hit point bars at the top of the screen, a yellow
+  one for the monsters or computer knights together and one for each knight (or team) in its colour.
+* First menu: D, J, G, B and P no longer start their practice when they come right after a code's letters (a code
+  mistyped, as BEATEMPUP, or left unfinished).
+* D47: the Black Knights of a practice (keys 0 and B) keep a black or purple cloak with the game's own steel, as in the Amiga demo; those of the B key carry the claymore. In the campaign computer knights show the gear they have got, also a Sword of Sharpness, and BLACKDEATH gives the claymore unless the knight holds that sword.
+* New custom rule `timed_defence` (on by default in the shipped ini): a block or dodge only counts if made after the attack's animation has begun. A block in time stops a swing, staggers the attacker and speeds your next swing; one made too early takes a fifth of the damage, with the usual hit. A dodge in time beats a thrust (the attacker staggers) or an overhead chop (it misses). Hitting a chopper first interrupts the chop; a lunge during an enemy's chop is a fast riposte (a backward thrust's damage); the faster swing after a good block does a lunge's damage. Daggers cannot be stopped. The backward thrust is the fastest blow. Works against axe and spear troggs. Smart computer knights defend by chance (`purple_knight_defence`, `black_knight_defence`, `computer_defence_pause`) and no longer walk under a chop; monsters neither (`anticheese` is now yes, blackknights_only or no, with yes the default and including the older anti-cheese rules). The P key in the first menu starts a practice against a white practice knight that defends perfectly and, if you do not attack, attacks you every few seconds. The dragon no longer skips its flinch (TOOEASY's old rule); instead, with anticheese = yes, its long fire follows you in depth only a random distance and a run of blows on it may end in its deadly bite. Settings: `defence_window`, `fast_swing_time`, `stagger_time`. `off` keeps the game's block.
+* A dragon attack after a lair fight in the same turn no longer changes that lair's monster count (K34). **Run Setup.bat again.**
 * K16 and K16_permanent replace the vanilla beheading with the plain fall, including cheat finishers,
   in every death animation mode. Gore off also suppresses the pending vanilla beheading.
 * Start.bat refuses to launch with a missing PARENTAL.LCK until custom rules are rebuilt at K12,
@@ -56,20 +76,38 @@
   Played: two knights fought a lair together, one fell and the fight went on; the chest first opened twice for the
   same knight (the item screen's knight is [8979h]), fixed. After the chests the visit's knight is the active one
   again (it was always knight 1).
-* D34: dynamic difficulty (`dynamic_difficulty = on`, on by default; off = the game's own). Every player's knight has a level
-  from -5 to +5, shown after its name on the item screen. Lairs and fights with computer knights (the Black Knights
-  included) count: a win won easily (over half the hit points and 2 lives or more left) raises it by one, below 0
-  every such win, from 0 up only every other win in a row (the 2nd, 4th, ...); a loss ends the run and lowers it by one, but not when lost to the lair's last
-  monster or with 5 lives or more. Up, in those fights: the monsters walk a little quicker and hit a little harder
-  (3 % a level, 15 % at +5), and a lair's chest holds less gold (5 % a level). Down: fewer monsters in a lair (10 %
-  a level, at least one unless it was cleared), walking a little slower and hitting a little softer (3 % a level;
-  a deadly blow stays deadly), a Balok's crush and a mudman's grab from below miss now and then (10 % a level) and
-  a mudman's hold lasts longer (10 % a level); a lair's chest holds more gold (5 % a level) and a Potion of Healing
-  in one chest in four at -5 (5 % a level). In a co-op lair the fight's level is the knights' average.
-* Catch-up and dynamic difficulty together give at most +50 % of a lair's own gold, at most one more Potion of
-  Healing in a chest and only to a knight that has none (catch-up's magic item that would be a potion is another
-  item then), and a Scroll of Acquisition only to a knight that has none.
+* Catch-up gives at most +50 % of a lair's own gold, at most one more Potion of Healing in a chest and only to a
+  knight that has none (catch-up's magic item that would be a potion is another item then), and a Scroll of
+  Acquisition only to a knight that has none.
+* The dynamic difficulty tried during this version (D34) was removed before release. An older `custom_rules.ini` that still
+  has `dynamic_difficulty` is accepted and the setting ignored.
 * D35: sword enchantments (`sword_enchantments = on`, on by default). One lair chest in ten, and the dragon's hoard
+* D44: `computer_knights = off` (custom rules; on by default): a new campaign has only the players' 1-4 knights, without the
+  Black Knights on the map.
+* D45: `black_knight_ai = smart` (custom rules, the default; `classic` keeps the original AI): Black Knights line up from afar, wait at the
+  edge of reach instead of walking into a blow, punish a swing and sometimes block; on the map they prefer lairs with something left, heal
+  when weak and head for Stonehenge with four keys.
+* D43: `max_gold` is checked as the tavern, the merchant and the High Temple are left, and only if the gold grew there, so a sale can pay for a purchase on the same visit.
+* D42: buying a better sword, armour or horse at the merchant credits half of the old one's price (`merchant_trade_in`).
+* D41: a knight's gold is shown with up to five digits on the item, tavern and donation screens; `max_gold` goes up to 32767,
+  and gold can no longer wrap past it.
+* D40: trading at the merchant. Your own sword, armour or horse, clicked on your side, sells for half its price
+  (`merchant_selling`, now on in the supplied ini files); a worse one clicked on the merchant's side is free in exchange
+  (`merchant_trade_in`; not for the Sword of Sharpness, which the High Temple buys). A sold horse is gone, and the armour's
+  weight is back. The knight's horse is shown on its panel. The fourth horse slot is rolled once as a town is entered,
+  so leaving the shop no longer changes it.
+* D38: horses. With custom rules (`horses = on`) the merchant sells horses in the goods panel's bottom row: brown, light
+  and armoured always, and on 10 % of town visits (`rare_horse_chance`) a black charger or a dappled horse. A horse adds
+  movement, lets its knight through forest, swamp, mountains and the map's edges faster, and takes away the armour's
+  movement penalty. It is shown on the map while its knight moves, and it is never lost. Prices, movement and speeds
+  are in the ini. **Run Setup.bat again**: the horses' pictures are made at install time.
+* D39: attacks read more accurately. Walking up or down and then attacking no longer turns a plain attack into the
+  upward strike or the thrust. New setting `input_recent_direction` (ticks, 3 by default, 0 = off).
+* D37: armour movement and enchantments. With custom rules, each armour's movement is set in the ini
+  (`<armour>_movement_penalty_with_horses` 0, -1, -2, -4; `<armour>_movement_bonus_without_horses` 0, 2, 0, 2). Armour
+  enchantments (`armour_enchantments = on`, `armour_enchantment_chance = 10`) are found in lair chests and the dragon's
+  hoard, like the sword enchantments: of Mithril, Adamantium, Danu, Wyrm, Fireproof, Venomproof, Spellproof, Rebirth
+  and Daggerward.
   one time in ten, holds an enchantment (shown as the knight's own sword, "Enchantment of ..."); never where the Sword of
   Sharpness is. Clicking it puts it on the knight's own sword, replacing one it had, and the sword's text on the
   item screen becomes "<sword> of <enchantment>"; the Sword of Sharpness and the computer's knights take none. It
@@ -107,6 +145,8 @@
 * `tools/adf.py` refuses to extract a file whose name on the disk image could lead outside the output folder.
 * The build's checks of its own output (jump ranges, duplicate labels, hook addresses, script sizes) also work under
   `python -O`.
+* The 3-4 knight practice: a knight that falls stays in sight on the ground for the rest of the fight (D60). Its body
+  disappeared after a while as the others fought on.
 
 ## 0.7.0 – Parental controls, Gore Off mode, Responsive controls
 

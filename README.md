@@ -216,7 +216,7 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Catch-up** (`catchup = yes`, the default): in the game (not practice) a human knight well behind the leading
   human knight finds more in a lair's chest the first time it wins it (gold, magic items, and when far behind a
   Scroll of Acquisition), and a knight on its last life or low on hit points sometimes finds a healing potion.
-  Together with dynamic difficulty: at most +50 % gold, one healing potion at most and only for a knight without
+  At most +50 % gold, one healing potion at most and only for a knight without
   one, a Scroll of Acquisition only for a knight without one.
 * **Fight speed:** DOSBox-X's speed on the map and in the menus (`default_cycles`, 4000), in a fight with 1, 2, 3 and 4 knights (`fight_cycles`: 2600, 3250, 3500, 3750), as fights with several knights need more; given one number, each knight past the first adds `additional_cycles_per_knight` (650). The default speed and all four expanded fight speeds must be 100-65535.
 * **Speedrun mode** (`speedrun_mode = on`): every other setting in the file is ignored. The game runs with the default rules and all the fixes, except where runs rely on the game's own behaviour: every hit on the dragon and the Guardian counts, the dragon's target can be rerolled from the item screen, the extra-turn glitch, the healing potion after the Guardian, the Moonstone damage bonus as in the original, and the dragon's hoard kept from game to game. Scrolls are never cursed in speedrun mode, so bad luck cannot spoil a run, and there is no catch-up loot or anti-cheese (the game's own exploits stay). Records still need the unmodified game.
