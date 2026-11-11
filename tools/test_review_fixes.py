@@ -21,6 +21,11 @@ import make_savehook as hook
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def names(game):
+    """The folder's files, without the lock (_fixes/UPDATE.LCK) and the record BUILD.TXT."""
+    return sorted(p.name for p in game.iterdir() if p.name not in ('_fixes', rules.BUILD_STAMP))
+
+
 def labelled_hook():
     labels = {}
     original_build = hook.Asm.build
@@ -139,7 +144,7 @@ class StagedInstall(unittest.TestCase):
         rules.swap_files(game, self.FILES)
         self.assertEqual((game / 'MAIN.EXE').read_bytes(), b'NEW_MAIN')
         self.assertEqual((game / 'CUSTOM_RULES.FLG').read_bytes(), b'NEW_FLAG')
-        self.assertEqual(sorted(p.name for p in game.iterdir()), ['CUSTOM_RULES.FLG', 'MAIN.EXE', 'SAVEHOOK.COM'])
+        self.assertEqual(names(game), ['CUSTOM_RULES.FLG', 'MAIN.EXE', 'SAVEHOOK.COM'])
 
     def test_each_failed_replacement_is_undone(self):
         real = os.replace
@@ -159,14 +164,14 @@ class StagedInstall(unittest.TestCase):
                     rules.swap_files(game, self.FILES)
                 self.assertEqual((game / 'MAIN.EXE').read_bytes(), b'OLD_MAIN')
                 self.assertEqual((game / 'SAVEHOOK.COM').read_bytes(), b'OLD_HOOK')
-                self.assertEqual(sorted(p.name for p in game.iterdir()), ['MAIN.EXE', 'SAVEHOOK.COM'])
+                self.assertEqual(names(game), ['MAIN.EXE', 'SAVEHOOK.COM'])
 
     def test_failed_undo_leaves_the_marker(self):
         game = self.folder()
         real = os.replace
 
         def replace(src, dst):
-            if str(src).endswith('MAIN.EXE.new') or str(src).endswith('.old'):
+            if (Path(dst).name == 'MAIN.EXE' and str(src).endswith('.new')) or str(src).endswith('.old'):
                 raise PermissionError('held open')
             real(src, dst)
 
@@ -190,12 +195,12 @@ class StagedInstall(unittest.TestCase):
 
     def test_write_failure_changes_nothing(self):
         game = self.folder()
-        (game / 'CUSTOM_RULES.FLG.new').mkdir()          # cannot be opened for writing
+        (game / 'BLOCKED').write_bytes(b'')               # a file where a folder is needed: cannot be written
         with self.assertRaises(OSError):
-            rules.swap_files(game, self.FILES)
+            rules.swap_files(game, self.FILES + [(os.path.join('BLOCKED', 'X'), b'X')])
         self.assertEqual((game / 'MAIN.EXE').read_bytes(), b'OLD_MAIN')
         self.assertFalse((game / rules.INSTALLING).exists())
-        self.assertFalse((game / 'SAVEHOOK.COM.new').exists())
+        self.assertEqual(names(game), ['BLOCKED', 'MAIN.EXE', 'SAVEHOOK.COM'])
 
     def test_install_with_a_failing_main(self):
         """The audit's repro: old MAIN, new SAVEHOOK and an old flag must not remain together."""
@@ -238,11 +243,95 @@ class StagedInstall(unittest.TestCase):
         shutil.copyfile(ROOT / 'custom_rules-default.ini', game / 'custom_rules.ini')
         (game / 'CUSTOM_RULES.FLG').write_bytes(b'OLD_FLAG')
         (game / 'PARENTAL.LCK').write_text('12 x\n')
-        before = {p.name: p.read_bytes() for p in game.iterdir()}
+        before = {p.name: p.read_bytes() for p in game.iterdir() if p.is_file()}
         with patch.object(installer, 'HERE', str(game)), patch.object(installer, 'check_gog', lambda g: []), \
                 patch.object(installer, 'find_gog', lambda a: str(game)), self.assertRaisesRegex(SystemExit, 'at most K12'):
             installer.main(str(game))
-        self.assertEqual({p.name: p.read_bytes() for p in game.iterdir()}, before)
+        self.assertEqual({p.name: p.read_bytes() for p in game.iterdir() if p.is_file()}, before)
+
+    def test_a_failed_removal_is_undone(self):
+        """data None removes a file; a later failure puts the removed file back."""
+        game = self.folder()
+        (game / 'ORIGINAL.FLG').write_bytes(b'original')
+        real = os.replace
+
+        def replace(src, dst):
+            if Path(dst).name == 'SAVEHOOK.COM' and str(src).endswith('.new'):
+                raise PermissionError('held open')
+            real(src, dst)
+
+        with patch('rules.os.replace', replace), self.assertRaises(PermissionError):
+            rules.swap_files(game, [('ORIGINAL.FLG', None), ('MAIN.EXE', b'NEW'), ('SAVEHOOK.COM', b'NEW')])
+        self.assertEqual((game / 'ORIGINAL.FLG').read_bytes(), b'original')
+        self.assertEqual((game / 'MAIN.EXE').read_bytes(), b'OLD_MAIN')
+        self.assertEqual(names(game), ['MAIN.EXE', 'ORIGINAL.FLG', 'SAVEHOOK.COM'])
+        rules.swap_files(game, [('ORIGINAL.FLG', None), ('MAIN.EXE', b'NEW')])
+        self.assertEqual(names(game), ['MAIN.EXE', 'SAVEHOOK.COM'])
+
+    def test_overlapping_changes_are_serialized(self):
+        """The review's interleaving: A pauses at its first replacement while B starts. Each change that reports success
+        installs its own complete set, and the last one's set is the one left."""
+        import threading
+        game = self.folder()
+        real, paused, go = os.replace, threading.Event(), threading.Event()
+        a_thread = []
+
+        def replace(src, dst):
+            if threading.get_ident() in a_thread and not go.is_set():
+                paused.set()
+                go.wait(10)
+            real(src, dst)
+
+        results = {}
+
+        def run(name, files):
+            if name == 'A':
+                a_thread.append(threading.get_ident())
+            try:
+                rules.swap_files(game, files)
+                results[name] = 'ok'
+            except Exception as e:                       # pragma: no cover - reported by the assertion
+                results[name] = repr(e)
+
+        a = [('MAIN.EXE', b'A_MAIN'), ('SAVEHOOK.COM', b'A_HOOK')]
+        b = [('MAIN.EXE', b'B_MAIN'), ('SAVEHOOK.COM', b'B_HOOK')]
+        with patch('rules.os.replace', replace):
+            ta = threading.Thread(target=run, args=('A', a))
+            ta.start()
+            self.assertTrue(paused.wait(10))
+            tb = threading.Thread(target=run, args=('B', b))
+            tb.start()
+            tb.join(0.5)
+            self.assertTrue(tb.is_alive(), 'B must wait for A\'s lock')
+            go.set()
+            ta.join(15)
+            tb.join(15)
+        self.assertEqual(results, {'A': 'ok', 'B': 'ok'})
+        self.assertEqual(((game / 'MAIN.EXE').read_bytes(), (game / 'SAVEHOOK.COM').read_bytes()), (b'B_MAIN', b'B_HOOK'))
+        self.assertEqual(names(game), ['MAIN.EXE', 'SAVEHOOK.COM'])
+
+    def test_a_held_lock_refuses_after_waiting(self):
+        game = self.folder()
+        import threading
+        held, done = threading.Event(), threading.Event()
+
+        def hold():
+            with rules.install_lock(game):
+                held.set()
+                done.wait(10)
+
+        t = threading.Thread(target=hold)
+        t.start()
+        self.assertTrue(held.wait(10))
+        try:
+            with self.assertRaises(rules.Busy):
+                with rules.install_lock(game, wait=0.3):
+                    pass
+        finally:
+            done.set()
+            t.join(10)
+        with rules.install_lock(game, wait=0.3):         # released with its holder
+            pass
 
 
 @unittest.skipUnless(has_unicorn(), 'the package unicorn (make_main_exe imports it)')
@@ -424,8 +513,9 @@ class Launchers(unittest.TestCase):
     def game(self):
         game = Path(tempfile.mkdtemp(dir=ROOT))
         self.addCleanup(shutil.rmtree, game, True)
-        for name in ('Start.bat', 'Fixes_On.bat'):
+        for name in ('Start.bat', 'Fixes_On.bat', 'Fixes_Off.bat', 'Custom_rules_off.bat'):
             shutil.copyfile(ROOT / name, game / name)
+        shutil.copytree(ROOT / 'tools', game / 'tools', ignore=shutil.ignore_patterns('__pycache__', 'test_*'))
         (game / 'dosbox-x.exe').write_bytes(b'')
         (game / 'PARENTAL.LCK').write_text('18 x\n')
         return game
@@ -449,9 +539,97 @@ class Launchers(unittest.TestCase):
         (game / 'DISKA').mkdir(exist_ok=True)
         (game / 'SAMPLES').mkdir()
         (folder / 'MAIN.EXE').write_bytes(b'FIXED_MAIN')
+        (folder / 'SAVEHOOK.COM').write_bytes(b'FIXED_HOOK')
         (folder / 'INTR.EXE').write_bytes(b'I')
         (folder / 'DISKA' / 'CAMEL4').write_bytes(b'C')
         (folder / 'SAMPLES' / 'A').write_bytes(b'S')
+
+    def original_set(self, game):
+        folder = game / '_fixes' / 'original'
+        (folder / 'DISKA').mkdir(parents=True)
+        (folder / 'SAMPLES').mkdir()
+        (folder / 'MAIN.EXE').write_bytes(b'ORIGINAL_MAIN')
+        (folder / 'INTR.EXE').write_bytes(b'ORIGINAL_INTR')
+        (folder / 'DISKA' / 'CAMEL4').write_bytes(b'ORIGINAL_C')
+        (folder / 'SAMPLES' / 'A').write_bytes(b'ORIGINAL_S')
+
+    def installed(self, game):
+        """What the mode switches may change: the programs, the sound file and the flags."""
+        out = {}
+        for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', 'SAMPLES/A', 'DISKA/CAMEL4', 'ORIGINAL.FLG',
+                     'CUSTOM_RULES.FLG', 'INSTALLING.FLG', 'custom_rules.ini', 'PARENTAL.LCK'):
+            out[name] = (game / name).read_bytes() if (game / name).exists() else None
+        return out
+
+    def fixed_install(self, game, rules_on=False):
+        self.fixed_set(game)
+        self.original_set(game)
+        if rules_on:
+            self.rules_pair(game)
+            (game / 'CUSTOM_RULES.FLG').write_bytes(b'flag')
+        (game / 'custom_rules.ini').write_text('[Rules]\n; the player\'s own\n')
+        for name, data in (('MAIN.EXE', b'RULES_MAIN' if rules_on else b'FIXED_MAIN'), ('INTR.EXE', b'I'),
+                           ('SAVEHOOK.COM', b'RULES_HOOK' if rules_on else b'FIXED_HOOK'), ('SAMPLES/A', b'S'),
+                           ('DISKA/CAMEL4', b'C')):
+            (game / name).write_bytes(data)
+
+    def test_a_held_file_rolls_each_switch_back(self):
+        """The review's repro and its extension: each destination and flag held open in turn (Windows then refuses to
+        replace or remove it). The switch fails, and the previous mode is back complete, flags included."""
+        cases = [('Fixes_Off.bat', False, ['MAIN.EXE', 'INTR.EXE', 'SAMPLES/A', 'DISKA/CAMEL4']),
+                 ('Fixes_On.bat', True, ['SAVEHOOK.COM', 'MAIN.EXE', 'INTR.EXE', 'SAMPLES/A', 'DISKA/CAMEL4',
+                                         'ORIGINAL.FLG']),
+                 ('Custom_rules_off.bat', True, ['MAIN.EXE', 'SAVEHOOK.COM', 'CUSTOM_RULES.FLG'])]
+        for bat, rules_on, held in cases:
+            for name in held:
+                with self.subTest(bat=bat, held=name):
+                    game = self.game()
+                    self.fixed_install(game, rules_on)
+                    if bat == 'Fixes_On.bat':                      # from original mode
+                        (game / 'ORIGINAL.FLG').write_bytes(b'original\r\n')
+                    before = self.installed(game)
+                    with open(game / name, 'rb'):
+                        code, out = self.run_bat(game, bat)
+                    self.assertEqual(code, 1, out)
+                    self.assertIn('previous mode was put back', out)
+                    self.assertEqual(self.installed(game), before)
+                    (game / 'music.conf').write_text('mididevice = default\n')
+                    self.assertEqual(self.run_bat(game, 'Start.bat')[0], 0)
+
+    def test_mode_round_trip_keeps_the_settings(self):
+        """fixed + custom rules -> original (rules remembered) -> fixed (the rules' pair again) -> default rules."""
+        game = self.game()
+        self.fixed_install(game, rules_on=True)
+        ini, lock = (game / 'custom_rules.ini').read_bytes(), (game / 'PARENTAL.LCK').read_bytes()
+        self.assertEqual(self.run_bat(game, 'Fixes_Off.bat')[0], 0)
+        now = self.installed(game)
+        self.assertEqual((now['MAIN.EXE'], now['INTR.EXE'], now['SAMPLES/A'], now['SAVEHOOK.COM']),
+                         (b'ORIGINAL_MAIN', b'ORIGINAL_INTR', b'ORIGINAL_S', b'RULES_HOOK'))
+        self.assertIsNotNone(now['ORIGINAL.FLG'])
+        self.assertIsNotNone(now['CUSTOM_RULES.FLG'])
+        code, out = self.run_bat(game, 'Fixes_On.bat')
+        self.assertEqual(code, 0, out)
+        self.assertIn('Custom rules from custom_rules.ini: on', out)
+        now = self.installed(game)
+        self.assertEqual((now['MAIN.EXE'], now['SAVEHOOK.COM'], now['INTR.EXE'], now['ORIGINAL.FLG']),
+                         (b'RULES_MAIN', b'RULES_HOOK', b'I', None))
+        self.assertEqual(self.run_bat(game, 'Custom_rules_off.bat')[0], 0)
+        now = self.installed(game)
+        self.assertEqual((now['MAIN.EXE'], now['SAVEHOOK.COM'], now['CUSTOM_RULES.FLG'], now['INSTALLING.FLG']),
+                         (b'FIXED_MAIN', b'FIXED_HOOK', None, None))
+        self.assertEqual((now['custom_rules.ini'], now['PARENTAL.LCK']), (ini, lock))
+        self.assertIn('mode: fixed', (game / 'BUILD.TXT').read_text())
+
+    def test_age_lock_refuses_the_switches(self):
+        game = self.game()
+        self.fixed_install(game, rules_on=True)
+        (game / 'PARENTAL.LCK').write_text('12 x\n')
+        before = self.installed(game)
+        for bat in ('Fixes_Off.bat', 'Custom_rules_off.bat'):
+            code, out = self.run_bat(game, bat)
+            self.assertEqual(code, 1, bat + out)
+            self.assertIn('locked to an age rating for good', out)
+        self.assertEqual(self.installed(game), before)
 
     def adlib_set(self, game):
         for disk in ('DISKA', 'DISKB'):

@@ -13,7 +13,7 @@ normal fixed one: SAVEHOOK.COM always carries the rules code, but the normal MAI
 The knights. Record +20h is the knight: 0-3 for a human player's knight (the order on the selection screen; it also
 gives the start corner and home village, which home_village can change), 4 for a computer knight. The INI sections [Knight1_blue]-[Knight4_red] are 0-3 and
 [Black] is every computer-controlled knight (they wear black)."""
-import sys, os, struct, configparser, shutil
+import sys, os, struct, configparser, shutil, time, uuid, hashlib, contextlib, threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -275,6 +275,8 @@ INPUT_RECENT_DEFAULT = 3
 AGE_RATINGS = {'k12_permanent': (12, 12), 'k12': (12, 0), 'k16_permanent': (16, 16), 'k16': (16, 0), 'k18': (18, 0)}
 AGE_LOCK, AGE_INIT = 'PARENTAL.LCK', os.path.join('_fixes', 'PARENTAL.INIT')
 INSTALLING = 'INSTALLING.FLG'                          # swap_files: a change of the programs is under way or did not finish
+UPDATE_LOCK = os.path.join('_fixes', 'UPDATE.LCK')    # install_lock: held (not merely present) while a change runs
+BUILD_STAMP = 'BUILD.TXT'                             # write_stamp: what this installation is running, for playtest reports
 SETUP_FLAG = 'SETUP.FLG'                               # Setup is under way or did not finish; only a finished Setup removes it
 # on_E_rest_heal (G_REST): none = the game's daily healing (a quarter of the missing HP); full = also the E key
 # restores full HP; fixed_and_endurance and fixed_only = the daily healing is fixed % of the missing HP (at least
@@ -416,6 +418,9 @@ class RulesError(Exception):
 
 class SetupUnfinished(RulesError):
     pass
+
+class Busy(OSError):
+    """Another Setup, rules change or mode switch holds this installation's lock."""
 
 def _fight_cycles(cp, sec, per, bounds):
     """fight_cycles: 1-4 numbers, the cycles of a fight with 1, 2, 3, 4 knights; past the last one given, each
@@ -1011,6 +1016,11 @@ def build(game, r):
     return exe[:header] + img, make_savehook(table(r))
 
 def install(game, setup=False):
+    """install_lock around _install (below)."""
+    with install_lock(game):
+        return _install(game, setup)
+
+def _install(game, setup=False):
     """Applies custom_rules.ini (made from custom_rules-default.ini if missing): _fixes/rules/MAIN.EXE, SAVEHOOK.COM,
     CUSTOM_RULES.FLG,
     and MAIN.EXE unless the game is in original mode. Raises RulesError (nothing written) for a bad value, and
@@ -1041,12 +1051,70 @@ def install(game, setup=False):
     swap_files(game, writes + [('CUSTOM_RULES.FLG', b'custom rules\r\n'), (AGE_LOCK, lock)])
     return on
 
+_held = {}                                            # install_lock: the folders this process holds, with a depth
+
+@contextlib.contextmanager
+def install_lock(game, wait=10):
+    """Holds this installation's lock (_fixes/UPDATE.LCK) for Setup, the custom rules and the mode switches, so that
+    two of them never change the same folder at once. The operating system releases it if the process dies, so a
+    leftover file blocks nothing; INSTALLING.FLG and SETUP.FLG stay the markers of an unfinished change. Reentrant
+    within one process. Waits up to wait seconds, then raises Busy."""
+    key = (os.path.normcase(os.path.abspath(game)), threading.get_ident())   # reentrant per thread, not shared
+    if key in _held:
+        _held[key] += 1
+        try:
+            yield
+        finally:
+            _held[key] -= 1
+        return
+    path = os.path.join(game, UPDATE_LOCK)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    f = open(path, 'a+b')
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.monotonic() >= deadline:
+                f.close()
+                raise Busy('another change of the game\'s files is under way in this folder (Setup.bat, '
+                           'Custom_rules_on.bat or a Fixes/Custom_rules launcher); let it finish and try again')
+            time.sleep(0.2)
+    _held[key] = 1
+    try:
+        yield
+    finally:
+        del _held[key]
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        f.close()
+
 def swap_files(game, files):
-    """Puts (name, data) files in place as one change. Everything is first written next to its target, so a full disk
-    or a read-only folder changes nothing. If a replacement fails (a program holds the file open), the files already
-    replaced are put back. INSTALLING.FLG exists during the change and stays if the process dies or the undo fails:
+    """Puts (name, data) files in place as one change; data None removes the file. Runs under install_lock.
+    Everything is first written next to its target under a name of this change's own, so a full disk or a read-only
+    folder changes nothing. If a replacement or removal fails (a program holds the file open), the files already
+    changed are put back. INSTALLING.FLG exists during the change and stays if the process dies or the undo fails:
     Start.bat and Fixes_On.bat then refuse until a new install. A marker that was already there stays after an undo too:
-    the undo only brings back that unfinished state. A change that finishes removes it. Raises OSError."""
+    the undo only brings back that unfinished state. A change that finishes removes it and writes BUILD.TXT.
+    Raises OSError."""
+    with install_lock(game):
+        _swap(game, files)
+    write_stamp(game)
+
+def _swap(game, files):
+    tag = f'.{os.getpid()}-{uuid.uuid4().hex[:8]}'
     pairs = [(os.path.join(game, name), data) for name, data in files]
     marker = os.path.join(game, INSTALLING)
     unfinished_before = os.path.exists(marker)
@@ -1055,40 +1123,92 @@ def swap_files(game, files):
             os.remove(path)
         except OSError:
             pass
+    def cleanup():
+        for path, _ in pairs:
+            remove(path + tag + '.new')
+            remove(path + tag + '.old')
     try:
         for path, data in pairs:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path + '.new', 'wb') as f:
-                f.write(data)
+            if data is not None:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path + tag + '.new', 'wb') as f:
+                    f.write(data)
         with open(marker, 'wb') as f:
             f.write(b'a change of the programs has not finished\r\n')
     except OSError:
-        for path, _ in pairs:
-            remove(path + '.new')
+        cleanup()
         raise
     done = []
     try:
-        for path, _ in pairs:
+        for path, data in pairs:
             existed = os.path.exists(path)
-            if existed:
-                shutil.copyfile(path, path + '.old')
-            os.replace(path + '.new', path)
-            done.append((path, existed))
-    except OSError:
-        for path, existed in reversed(done):             # an undo that fails leaves the marker: Start.bat refuses
-            if existed:
-                os.replace(path + '.old', path)
+            if data is None:
+                if existed:
+                    os.replace(path, path + tag + '.old')
             else:
+                if existed:
+                    shutil.copyfile(path, path + tag + '.old')
+                os.replace(path + tag + '.new', path)
+            done.append((path, existed, data))
+    except OSError:
+        for path, existed, data in reversed(done):    # an undo that fails leaves the marker: Start.bat refuses
+            if existed:
+                os.replace(path + tag + '.old', path)
+            elif data is not None:
                 os.remove(path)
-        for path, _ in pairs:
-            remove(path + '.new')
-            remove(path + '.old')
+        cleanup()
         if not unfinished_before:
             os.remove(marker)
         raise
-    for path, _ in pairs:
-        remove(path + '.old')
+    cleanup()
     os.remove(marker)
+
+def _sha(path):
+    try:
+        return hashlib.sha256(open(path, 'rb').read()).hexdigest()[:16]
+    except OSError:
+        return '-'
+
+def write_stamp(game):
+    """BUILD.TXT: the release, the source revision (git, if this is a checkout), a hash of the tools, the mode and the
+    hashes of the programs and generated files in use. Only a record: a failure to write it is ignored."""
+    version = revision = '-'
+    for root in (game, os.path.dirname(HERE)):         # the installation, else the tools' own folder (a dev install)
+        try:
+            version = next((line[3:].strip() for line in open(os.path.join(root, 'CHANGELOG.md'), encoding='utf-8')
+                            if line.startswith('## ')), '-')
+            break
+        except OSError:
+            pass
+    for root in (game, os.path.dirname(HERE)):
+        try:
+            head = open(os.path.join(root, '.git', 'HEAD')).read().strip()
+            if head.startswith('ref: '):
+                ref = os.path.join(root, '.git', *head[5:].split('/'))
+                head = open(ref).read().strip() if os.path.exists(ref) else head[5:]
+            revision = head[:12]
+            break
+        except OSError:
+            pass
+    tools = hashlib.sha256()
+    for name in sorted(n for n in os.listdir(HERE) if n.endswith('.py')):
+        tools.update(name.encode() + open(os.path.join(HERE, name), 'rb').read())
+    flag = lambda name: os.path.exists(os.path.join(game, name))
+    mode = 'original' if flag('ORIGINAL.FLG') else 'fixed'
+    if flag('CUSTOM_RULES.FLG'):
+        mode += ' + custom rules' + (' (remembered for Fixes_On.bat)' if mode == 'original' else '')
+    if flag(INSTALLING) or flag(SETUP_FLAG):
+        mode += ' (a change did not finish)'
+    lines = [f'Moonstone Rebuilt {version}', f'source revision: {revision}', f'tools: {tools.hexdigest()[:16]}',
+             f'mode: {mode}', f'age limit: K{age_limit(game)}']
+    for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', os.path.join('DISKB', 'KN3.OB'), os.path.join('DISKB', 'HE3.OB'),
+                 os.path.join('DISKB', 'KH.CEL'), os.path.join('DISKB', 'MH.C'), 'custom_rules.ini'):
+        lines.append(f'{name.replace(os.sep, "/")}: {_sha(os.path.join(game, name))}')
+    try:
+        with open(os.path.join(game, BUILD_STAMP), 'w', newline='\r\n') as f:
+            f.write('\n'.join(lines) + '\n')
+    except OSError:
+        pass
 
 def age_limit(game):
     """The highest age rating PARENTAL.LCK allows (12, 16 or 18); a missing or unreadable file allows 12."""
@@ -1124,6 +1244,8 @@ if __name__ == '__main__':
         raise SystemExit('The setup did not finish. Run Setup.bat first. Nothing was changed.')
     except RulesError as e:
         raise SystemExit(f'custom_rules.ini: {e}\nNothing was changed.')
+    except Busy as e:
+        raise SystemExit(f'{e}. Nothing was changed.')
     except OSError as e:
         raise SystemExit(f'Could not write the game\'s files ({e}). Close DOSBox-X and run this again. ' +
                          ('The change did not finish, so Start.bat will not start the game until it does.'

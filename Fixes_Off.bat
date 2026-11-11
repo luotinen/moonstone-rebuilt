@@ -1,29 +1,18 @@
 @echo off
 rem Switches the game to: original (unpacked but unchanged programs, original sound files).
+rem tools\mode.py makes the change as one (all files and flags, or none) under the installation's lock.
 cd /d "%~dp0"
-set "AGELOCK=1"
-if exist PARENTAL.LCK findstr /b /c:"18 " PARENTAL.LCK >nul && set "AGELOCK="
-if defined AGELOCK (
-  echo This installation is locked to an age rating for good ^(PARENTAL.LCK, or no PARENTAL.LCK^): the original game, with its own blood option, is not used.
-  echo Only a new installation of Moonstone Rebuilt removes the lock. Nothing was changed.
+set "TOOLS=tools"
+if not exist "tools\mode.py" set "TOOLS=..\tools"
+call "%TOOLS%\find_python.bat"
+if errorlevel 1 (
   pause
   exit /b 1
 )
-for %%F in ("_fixes\original\MAIN.EXE" "_fixes\original\INTR.EXE" "_fixes\original\DISKA\CAMEL4") do if not exist %%F goto missing
-if not exist "_fixes\original\SAMPLES\*" goto missing
-copy /y "_fixes\original\MAIN.EXE" MAIN.EXE >nul || goto failed
-copy /y "_fixes\original\INTR.EXE" INTR.EXE >nul || goto failed
-copy /y "_fixes\original\SAMPLES\*" SAMPLES >nul || goto failed
-copy /y "_fixes\original\DISKA\CAMEL4" DISKA >nul || goto failed
-> ORIGINAL.FLG echo original
-echo Game: original (unpacked but unchanged programs, original sound files)
+%PY% -I "%TOOLS%\mode.py" original "%~dp0."
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
 pause
 exit /b 0
-:missing
-echo The original programs are missing (_fixes\original). Run Setup.bat first. Nothing was changed.
-pause
-exit /b 1
-:failed
-echo Copying failed: the game may be half switched. Close DOSBox-X and run %~nx0 again.
-pause
-exit /b 1

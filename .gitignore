@@ -39,3 +39,4 @@ __pycache__/
 # Private copy of the copyrighted manual: never in the release
 *DO-NOT-DISTRIBUTE*
 manual-ocr*
+/BUILD.TXT

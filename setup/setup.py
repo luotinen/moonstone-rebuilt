@@ -78,6 +78,16 @@ def write(dst, data):
         f.write(data)
 
 def main(arg=None):
+    """_main under the installation's lock (rules.install_lock), shared with the custom rules and the mode switches."""
+    import rules
+    try:
+        with rules.install_lock(HERE):
+            _main(arg)
+    except rules.Busy as e:
+        raise SystemExit(f'{e}. Nothing was changed.')
+    rules.write_stamp(HERE)                                   # BUILD.TXT: what this installation now runs
+
+def _main(arg=None):
     gog = find_gog(arg)
     if not gog:
         raise SystemExit('The GOG installation of Moonstone was not found. Run Setup.bat again and give its folder,\n'
@@ -127,8 +137,6 @@ def main(arg=None):
     # D20: the new deaths' pieces into the copied KN3.OB (the original MAIN.EXE never draws them), their scripts
     # into the fixed MAIN.EXE
     write(os.path.join(fixed, 'MAIN.EXE'), install_deaths(HERE, make_main_exe(gog, MAIN_FIXES)))
-    from horse_frames import install as install_horses
-    install_horses(HERE)                                      # D38: KH.CEL and MH.C, read only by the fixed MAIN.EXE
     from horse_frames import install as install_horses
     install_horses(HERE)                                      # D38: KH.CEL and MH.C, read only by the fixed MAIN.EXE
     write(os.path.join(fixed, 'INTR.EXE'), make_intr_exe(gog, INTR_FIXES))

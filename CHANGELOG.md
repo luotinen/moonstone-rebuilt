@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.8.0 – Timed Defence, Horses & Co-op Lairs (unreleased)
 
 * Knights at 10 HP or less all glow the same way: their colours pulse lighter and back at the blue knight's pace (orange and the knights of 3-4 player and co-op practices no longer flash white; green no longer pulses faster; red dims as in the original). Black, purple, grey and white knights and the computer's knights do not glow. A knight healed above 10 HP stops glowing.
 * DAGGERFALL's daggers are the thrown dagger turned point down (a new piece in KN3.OB: **run Setup.bat again**).
@@ -33,6 +33,10 @@
 * Custom_rules_on.bat changes the programs as one step: everything is written next to its target first, and if a
   file cannot be replaced (DOSBox-X still running) the old ones are put back. If that cannot be done or the change
   stops half way, INSTALLING.FLG stays and Start.bat and Fixes_On.bat refuse until the change is made.
+* Fixes_On.bat, Fixes_Off.bat and Custom_rules_off.bat make their change the same way (they now need Python, as
+  Setup.bat does): a file held open no longer leaves the game half switched. Setup and all these switches take turns
+  in one folder instead of mixing their files. Each finished change writes BUILD.TXT, which says what the installation
+  runs: include it in playtest reports.
 * A Setup.bat that stops half way, or whose custom rules step cannot undo a failed change, leaves SETUP.FLG. Start.bat,
   Fixes_On.bat and Custom_rules_on.bat then refuse until Setup.bat has finished.
 * Setup.bat compares the age rating with PARENTAL.LCK before it changes anything: a rating above the lock leaves the
