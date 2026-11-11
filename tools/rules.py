@@ -297,6 +297,8 @@ SELL_ITEMS = ['dagger', 'broadsword', 'claymore', 'chain_mail', 'plate_mail', 'b
 HOOKS = [
     (0x1fea, '8b7544b81800c60400464875f9', 'init'),     # knight set-up (1000:1FAE): clear the item table
     (0x02d3, '83c30a', 'max_hp'),                       # max HP formula (1000:028D): add bx,10
+    (0xa12e, '83fa0a7f43', 'falling_dagger_depth'), # falling daggers collide in screen coordinates
+    (0xa1a6, 'c706c2c20000', 'falling_dagger_hit'),   # hit points for the rotated dagger
     (0x2d84, '8a4c2e03c1', 'damage'),                   # damage of a hit (1000:2D73): + strength (long sword bonus)
     (0xa66c, '807c3100', 'turn'),                       # turn change: is the knight dead?
     (0xa58e, 'a1accc', 'rest'),                         # E key: end the turn

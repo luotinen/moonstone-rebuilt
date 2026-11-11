@@ -301,14 +301,14 @@ SABER_FRAMES_TAB = 26                                 # KN4.OB's frames
 SABER_KINDS = ((0x04, 1), (0x10, 2), (0x02, 3), (0x0a, 3), (0x0c, 3))   # move -> 1 beheading, 2 split, 3 run through
 SABER_MONSTERS = (0x00, 0x02, 0x0c, 0x0e, 0x10, 0x12, 0x18, 0x20)       # the monsters it kills at once (MINE_TYPES' monsters)
 # D49 DAGGERFALL: a dagger (the game's object, type 1Ah, its own script at DF_SCRIPT: KN4.OB frame 9, point down)
-# every DF_EVERY ticks at a random x and a depth of the knights' (DD_TOP-DD_BOTTOM), from just above the screen
-# down to the knights' feet; it hits as a thrown one. An object is drawn at y = depth + its +4 ("height", up is
-# negative; 1000:9A4C) + the piece's dy: the dagger starts at +4 = -(depth + DF_START), falls DF_FALL a frame and
-# ends at +4 = DF_GROUND (its point at the feet, depth + 51)
-DF_SCRIPT, DF_EVERY, DF_FALL, DF_START, DF_GROUND = 0xfe50, 7, 8, 20, 34
+# Every DF_EVERY ticks, a dagger starts above the screen at a random x and depth (DD_TOP-DD_BOTTOM).
+# It falls DF_FALL pixels each frame. The game draws it at depth + height (+4) + the piece's dy (1000:9A4C).
+DF_SCRIPT, DF_EVERY, DF_FALL, DF_START = 0xfe50, 7, 8, 20
 # D58: its picture: the thrown dagger (KN4.OB frame 10) turned a quarter, hilt up, blade down (4 x 18), the last of
 # the pieces death_frames.install appends to KN3.OB (bank 8 of the knights' table)
 DF_BANK, DF_PIC = 0x08, 91
+DF_HIT_POINTS = ((2, 17), (2, 14), (2, 11), (2, 8))   # pixel coordinates on the blade, tip first
+DF_RNG_MULT, DF_RNG_ADD = 25173, 13849               # full-period 16-bit LCG, private to DAGGERFALL
 DF_BOTTOM = 200                                      # D59: it falls on till its top is past the screen's bottom (y)
 DF_X0, DF_SPAN_X, DF_DAMAGE = 10, 300, 0x772a   # (the thrown dagger's damage table, 1000:3E40)
 LUNAR_JUMP, KB_X, KB_Y, KB_FLING_X, KB_FLING_Y, ROCKET_MOON_RISE = 5, 2, 3, 4, 6, 8   # LUNAR: a jump's speed up; a blow's push (a fling's)
@@ -466,6 +466,7 @@ KNIGHTS = (0x6c9e, 0x6d00, 0x6d62, 0x6dc4)
 ADD_STATE = 10                                       # practice_init states from here: adding the co-op knights
 TARGET_KEEP = 20                                     # a monster keeps its knight unless another is this much nearer
 MONSTER_SLOTS, SLOT_SIZE, MONSTER_COUNT, DRAGON_RECORD = 0x6f08, 0x62, 20, 0x6e26   # fight objects (1000:2A1E), dragon
+DF_HIT_DATA = MINE_HITTER + SLOT_SIZE                # collision data between the mine record and KEY_LIST
 DRAGON_HOARD, DRAGON_GOLD = 0x6ee8, 0x6e26 + 0x32   # K18: the dragon's 24-byte item table and its gold
 # D13: the knights drawn in the new colours: (record, its first knight-colour pixel, the game's fight palette words
 # for +20h = 1 and 3, which custom rules recolour); their pixels move up by 26: 6-8 -> 32-34, 9-11 -> 35-37
@@ -4638,6 +4639,8 @@ def rules_code(a):
     a.label('cf_n_bars')
     a.b(0x80, 0xf9, CHEAT_ID['DAGGERFALL']); a.short(0x75, 'cf_n_dfall')   # D48: daggers from the sky
     a.b(0x2e, 0xc6, 0x06); a.word('df_on'); a.b(0x01)
+    a.b(0x50, 0xa1, RANDOM_STATE & 0xff, RANDOM_STATE >> 8, 0x2e, 0x33, 0x06); a.word('df_last')
+    a.b(0x2e, 0xa3); a.word('df_rng'); a.b(0x58)            # seed the rain from the game's state and previous drop time
     a.label('cf_n_dfall')
     a.b(0x80, 0xf9, CHEAT_ID['MINEFIELD']); a.short(0x75, 'cf_n_mine')   # once a fight
     a.b(0x2e, 0x83, 0x3e); a.word('mine_live'); a.b(0x00); a.short(0x75, 'cf_n_mine')
@@ -6537,13 +6540,18 @@ def rules_code(a):
     # knight gets the dagger's death (from the front if the dagger flies against the way it faces) and the dagger
     # ends as after a hit (3EB0)
     a.label('rules_dagger_near')
-    # D49: a dagger from the sky (its own thrower, +5Ch) keeps its script, falls, and ends at the knights' feet
+    # D49: a dagger from the sky (its own thrower, +5Ch) falls until it hits or leaves the screen.
     a.b(0x39, 0x74, DAGGER_OWNER); a.short(0x75, 'dn_thrown')   # cmp [si+5Ch], si / jne
+    a.b(0x83, 0x7c, 0x0c, 0x00); a.short(0x75, 'dn_fall_end') # cmp word [si+0Ch], 0 / jne   already hit
     a.b(0xc7, 0x06, 0x3a, 0x78, DF_SCRIPT & 0xff, DF_SCRIPT >> 8)   # mov word [783Ah], its script
     a.b(0x83, 0x44, 0x04, DF_FALL)                           # add word [si+4], fall   (down the screen)
     a.b(0x50, 0x8b, 0x44, 0x04, 0x03, 0x44, 0x06, 0x3d, DF_BOTTOM & 0xff, DF_BOTTOM >> 8, 0x58)   # push ax / mov ax, [si+4] / add ax, [si+6] / cmp ax, 200 / pop ax
-    a.short(0x7c, 'dn_thrown')                               # jl   D59: until it is past the screen's bottom
+    a.short(0x7c, 'dn_fall_alive')                           # jl   until it is past the screen's bottom
+    a.label('dn_fall_end')
     a.b(0xc7, 0x46, 0x02, 0xb0, 0x3e)                        # mov word [bp+2], 3EB0h   the dagger ends
+    a.near(0xe9, 'rules_done')
+    a.label('dn_fall_alive')
+    a.b(0xc7, 0x46, 0x02, 0x5f, 0x3e)                        # mov word [bp+2], 3E5Fh   continue after the hit check
     a.near(0xe9, 'rules_done')
     a.label('dn_thrown')
     a.b(0x50, 0x53, 0x51, 0x57, 0x56)                        # push ax bx cx di si
@@ -7245,11 +7253,11 @@ def rules_code(a):
     a.label('dfs_rec_ok')
     a.b(0x06, 0x1e, 0x07, 0x57, 0xb9, SLOT_SIZE, 0x00, 0x32, 0xc0, 0xfc, 0xf3, 0xaa, 0x5f, 0x07)   # the record zeroed
     for field, span, base in ((0x02, DF_SPAN_X, DF_X0), (0x06, DD_BOTTOM - DD_TOP + 1, DD_TOP)):
-        a.near(0xe8, 'game_random')
-        a.b(0x25, 0xff, 0x7f, 0x33, 0xd2, 0xb9, span & 0xff, span >> 8, 0xf7, 0xf1)   # and ax, 7FFFh / xor dx, dx / mov cx, span / div cx
+        a.near(0xe8, 'df_random')
+        a.b(0xb9, span & 0xff, span >> 8, 0xf7, 0xe1)     # mov cx, span / mul cx   scale to the range via dx
         a.b(0x83, 0xc2, base, 0x89, 0x55, field)             # add dx, base / mov [di+field], dx
     a.b(0x83, 0xc2, DF_START, 0xf7, 0xda, 0x89, 0x55, 0x04)  # add dx, start / neg dx / mov [di+4], dx   just above the screen
-    a.near(0xe8, 'game_random'); a.b(0x24, 0x02, 0x0c, 0x01, 0x88, 0x45, 0x08)   # and al, 2 / or al, 1 / mov [di+8], al   facing 1 or 3
+    a.near(0xe8, 'df_random'); a.b(0x8a, 0xc4, 0x24, 0x02, 0x0c, 0x01, 0x88, 0x45, 0x08)   # mov al, ah / and al, 2 / or al, 1 / mov [di+8], al   facing 1 or 3
     a.b(0xc7, 0x05, 0x01, 0x00)                              # mov word [di], 1
     a.b(0xc7, 0x45, 0x18, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8)   # mov word [di+18h], the knights' banks
     a.b(0xc7, 0x45, 0x1a, DF_DAMAGE & 0xff, DF_DAMAGE >> 8)  # mov word [di+1Ah], 772Ah   as a thrown dagger
@@ -7260,6 +7268,45 @@ def rules_code(a):
     a.b(0x2e, 0x8a, 0x04, 0x88, 0x07, 0x46, 0x43); a.short(0xe2, 'dfs_copy')   # mov al, cs:[si] / mov [bx], al / inc si / inc bx / loop
     a.b(0xbe, DF_SCRIPT & 0xff, DF_SCRIPT >> 8)              # mov si, DF_SCRIPT
     a.b(0x5a, 0x59, 0x5b, 0x58, 0xf8, 0xc3)                  # pop dx cx bx ax / clc / ret
+
+    # Three calls per drop. The game's RNG can repeat the same 21 positions in a stationary fight.
+    a.label('df_random')
+    a.b(0x2e, 0xa1); a.word('df_rng')                       # mov ax, cs:[df_rng]
+    a.b(0x69, 0xc0, struct.pack('<H', DF_RNG_MULT))           # imul ax, ax, multiplier
+    a.b(0x05, struct.pack('<H', DF_RNG_ADD))                 # add ax, increment
+    a.b(0x2e, 0xa3); a.word('df_rng'); a.b(0xc3)             # mov cs:[df_rng], ax / ret
+
+    # At A12E the game skips weapon pairs more than ten units apart in depth. Falling blades strike
+    # across the screen, so let them reach the pixel test at A133 at any depth.
+    a.label('rules_falling_dagger_depth')
+    a.b(0x83, 0xfa, 0x0a); a.short(0x7e, 'dfz_end')          # cmp dx, 10 / jle   (replaced)
+    a.b(0x8b, 0x5e, 0x00)                                    # mov bx, [bp]   attacker animation
+    a.b(0x83, 0x7f, 0x1a, DAGGER); a.short(0x75, 'dfz_skip') # cmp word [bx+1Ah], DAGGER / jne
+    a.b(0x8b, 0x5f, 0x16, 0x39, 0x5f, DAGGER_OWNER)          # mov bx, [bx+16h] / cmp [bx+5Ch], bx
+    a.short(0x74, 'dfz_end')                                 # je   the dagger's own thrower marks a falling dagger
+    a.label('dfz_skip')
+    a.b(0xc7, 0x46, 0x02, 0x76, 0xa1)                        # mov word [bp+2], A176h   next target
+    a.label('dfz_end')
+    a.near(0xe9, 'rules_done')
+
+    # A1A6 tests weapon points against the target sprite's opaque pixels. COLLIDE.HIT has points for the
+    # thrown dagger in KN4.OB. Supply the rotated frame's points and enter the same test at A1FB.
+    a.label('rules_falling_dagger_hit')
+    a.b(0xc7, 0x06, 0xc2, 0xc2, 0x00, 0x00)                  # mov word [C2C2h], 0   (replaced)
+    a.b(0x83, 0x7d, 0x04, DF_PIC); a.short(0x75, 'dfh_end')  # cmp word [di+4], frame / jne
+    a.b(0x8b, 0x5e, 0x00, 0x8b, 0x5f, 0x16)                  # mov bx, [bp] / mov bx, [bx+16h]   attacker
+    a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'dfh_end')  # cmp byte [bx+35h], DAGGER / jne
+    a.b(0x39, 0x5f, DAGGER_OWNER); a.short(0x75, 'dfh_end')   # cmp [bx+5Ch], bx / jne   a thrown dagger
+    xs, ys = zip(*DF_HIT_POINTS)
+    # The COLLIDE.HIT loader (887F) stores count, the unused second field, max x/y, then the point pairs.
+    hit_data = bytes((len(xs), 0, max(xs), max(ys))) + bytes(n for point in DF_HIT_POINTS for n in point)
+    assert DF_HIT_DATA + len(hit_data) <= KEY_LIST
+    for offset in range(0, len(hit_data), 2):
+        a.b(0xc7, 0x06, struct.pack('<H', DF_HIT_DATA + offset), hit_data[offset:offset + 2])
+    a.b(0xc7, 0x46, 0xfe, struct.pack('<H', DF_HIT_DATA))     # mov word [bp-2], points   the game's bx
+    a.b(0xc7, 0x46, 0x02, 0xfb, 0xa1)                        # mov word [bp+2], A1FBh
+    a.label('dfh_end')
+    a.near(0xe9, 'rules_done')
 
     # mine_shown (D50): the mines are drawn: the time (ax kept)
     a.label('mine_shown')
@@ -9624,8 +9671,9 @@ def rules_data(a, table):
     a.label('df_on'); a.b(0)                                 # D49: DAGGERFALL in this fight
     a.label('df_due'); a.b(0)                                # D49: a dagger to drop in the next pass
     a.label('df_last'); a.b(0, 0)                            # D49: the tick of the last one
-    a.label('df_src')                                        # D49: the falling dagger's script (DF_SCRIPT): no
-    a.b(0x90, 0x01, 0, 0, 0, 0, 0, 0)                        # own speed; KN4.OB frame 9 (its point down), again
+    a.label('df_rng'); a.b(0, 0)                             # DAGGERFALL's random state
+    a.label('df_src')                                        # D49: the falling dagger's script (DF_SCRIPT)
+    a.b(0x90, 0x01, 0, 0, 0, 0, 0, 0)                        # no movement in the script; one frame
     a.b(DF_BANK, DF_PIC, 0x00, 0x02, 0xfe, 0xff, 0xff, 0xff)   # D58: the dagger turned, point down, centred; D59: flag 2 hits
     a.label('darts_lent'); a.b(bytes(25))                    # D48: DARTS lent this object a dagger (obj_index / 2)
     a.label('saber_piece'); a.b(0)                           # D51: the frame being drawn is a lightsaber's piece
