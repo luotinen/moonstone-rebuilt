@@ -39,6 +39,13 @@ findstr /c:"= fluidsynth" music.conf >nul && if not exist "soundfonts\default.sf
   echo SoundFont soundfonts\default.sf2 not found - using AdLib music.
   call :adlib || goto musicfail
 )
+findstr /c:"amiga.sf2" music.conf >nul && if not exist "_music\amiga\amiga.sf2" (
+  echo The Amiga sound effects are not set up - run AmigaSound_Setup.bat. Using the DOS effects and AdLib music.
+  call :adlib || goto musicfail
+)
+rem D65: SAVEHOOK.COM sends the effects to the SoundFont only while AMIGASND.FLG is there; it follows music.conf.
+if exist AMIGASND.FLG del AMIGASND.FLG
+findstr /c:"amiga.sf2" music.conf >nul && > AMIGASND.FLG echo amiga
 if exist AMIGA.FLG call :amiga || goto musicfail
 if "%MOONSTONE_NOLAUNCH%"=="1" exit /b 0
 rem The Amiga music player starts first (it waits for the DOSBox-X window), so that DOSBox-X, started last, gets the

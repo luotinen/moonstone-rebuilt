@@ -362,6 +362,7 @@ HOOKS = [
     (0x0d03, '806c3101', 'lives_si'),                   # computer knight robbed by the dragon
     (0x0fff, '806c3102', 'lives_si'),                   # Guardian: two more
     (0x122f, '806c3101', 'lives_si'),                   # ratmen disease
+    (0x4d53, 'a33a78', 'ck_shot'), (0x2f46, '294538', 'gun_monster'),   # D64 GUNSHOT: a computer knight's shot, a ball's kill
     (0x40ca, '894528', 'td_move'),                      # D46: a knight's move starts: the block's or dodge's time, the fast swing
     (0x441f, '833efc7700', 'td_check'), (0x4d6c, '833efc7700', 'td_check'),   # D46: a knight struck by a knight (a human's, a computer's)
     (0x42d8, '833efc7700', 'td_monster'), (0x432a, '833efc7700', 'td_monster'),   # D46: a knight blocking a trogg, a spear trogg

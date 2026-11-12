@@ -55,6 +55,8 @@ from rules import (G_CHOP_CHEESE, G_TD, G_TD_WINDOW, G_TD_FAST, G_TD_STAGGER, G_
                    G_ENCHANT, G_ENCH_CHANCE, G_ARMOUR_MOVE, G_ARM_ENCH, G_ARM_CHANCE, G_DISEASE,
                    G_HORSES, G_HORSE_CHANCE, G_HORSE_PRICE, G_HORSE_MOVE, G_HORSE_SOFT, G_HORSE_HARD, G_HORSE_TEXT, HORSE_TEXT_SIZE,
                    table as rules_default_table)
+from patches import (SOUND_RATES, SOUND_LAST_ID, SOUND_SLICES, SOUND_RATE_SITE, OWN_SOUND_IDS, SOUND_PLAY_SITE,
+                     AMIGA_FIRST_KEY, AMIGA_PER_PRESET, amiga_program)
 
 FIGHT_INT, TURN_INT, LOOT_INT, RULES_INT = 0x66, 0x65, 0x62, 0x63   # MAIN.EXE uses none of these
 KEY_INT = 0x64                                        # D24: from the game's keyboard interrupt (nor this)
@@ -67,6 +69,7 @@ COMPUTER = 4                             # knight record +20h: control type 4 = 
 AUTO_ONLY, MANUAL_ONLY, NO_SAVES = SAVE_MODES['autosave_only'], SAVE_MODES['manual_only'], SAVE_MODES['none']
 CHK_PATH = b'C:\\SAVEHOOK.CHK\0'        # the save check's token file (save states do not restore files)
 SLOT_PATH = b'C:\\SAVEHOOK.SLT\0'       # the next autosave number of each kind (a file, so loading a state keeps it)
+AMIGA_PATH = b'C:\\AMIGASND.FLG\0'      # D65: Start.bat makes it when music.conf is the Amiga sound profile
 AUTO_NAME, NONE_NAME = b'LOADAUTO', b'NOSAVES'   # program names shown when a forbidden manual save was loaded
 RANDOM_STATE = 0xe22f                    # DS:E22F, the game's random number state (1000:BF62)
 CHOSEN_PLAYERS = 0x0940                  # DS:0940: the number of players chosen, kept during practice (1000:00EB)
@@ -80,6 +83,10 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   (0x5baf, 'fade_in'), (0x5c23, 'fade_out'),
                   # K18: the dragon's hoard is cleared at a new game
                   (0x1dc0, 'hoard_clear'), (0x0d25, 'hoard_win'),
+                  # K36, K37: the pitch of each sound id, and the ids that are one part of a sample
+                  (SOUND_RATE_SITE + 2, 'sound_rate'),
+                  # D65: the Amiga version's effects from a SoundFont
+                  (SOUND_PLAY_SITE + 2, 'sound_play'),
                   # D14: the menu's keys and the practice set-up
                   (0x129b, 'menu_keys'), (0x0144, 'practice_init'),
                   # D15: every monster's opponent
@@ -217,7 +224,7 @@ def _scans(name):
         return [0x48, 0x48, 0x50, 0x50, 0x4b, 0x4d, 0x4b, 0x4d, 0x30, 0x1e]
     return [CHEAT_LETTERS[c] for c in name]
 CHEAT_ITEM_CODES = ['IDKFA', 'KONAMI', 'HESOYAM', 'ROSEBUD', 'KLAPAUCIUS', 'MOTHERLODE', 'POINTTAKEN', 'TINMAN', 'SIRLOIN', 'HEADSROLL', 'WYRMPROOF', 'MINEALLMINE', 'KNIGHTRIDER', 'HASTALAVISTA', 'SPECIALDELIVERY', 'NOTTODAY', 'FLYBYKNIGHT', 'KEYMASTER', 'FULLMOONEY', 'DARKSIDE', 'COMINGSOON', 'GOINGGONE', 'FLESHWOUND', 'PEEPINGTOM', 'LIVEANDLEARN', 'SIRLIFTSALOT', 'BUILTTOLAST', 'AREWETHEREYET', 'DANUBLESS', 'PUTARINGONIT', 'MOONMAX']
-CHEAT_FIGHT_CODES = ['ROCKETMAN', 'JUSTFLESHWOUND', 'THERECANBEONLYONE', 'FAIRFIGHT', 'YOUANDWHATARMY', 'FORE', 'IDDQD', 'ABACABB', 'FINISHHIM', 'LUNAR', 'MINEFIELD', 'DARTS', 'DAGGERFALL', 'LIGHTSABER', 'BEATEMUP']
+CHEAT_FIGHT_CODES = ['ROCKETMAN', 'JUSTFLESHWOUND', 'THERECANBEONLYONE', 'FAIRFIGHT', 'YOUANDWHATARMY', 'FORE', 'IDDQD', 'ABACABB', 'FINISHHIM', 'LUNAR', 'MINEFIELD', 'DARTS', 'DAGGERFALL', 'LIGHTSABER', 'BEATEMUP', 'GUNSHOT']
 CHEAT_MAP_CODES = ['WEPL', 'MOONWALK', 'HOMESICK', 'ONEMORETURN', 'HEREBEDRAGONS', 'DRAGONSLAYER', 'FROGPRINCE', 'BACKFORSECONDS', 'BLACKDEATH', 'SIRWALKSALOT', 'IDROPPEDMYKEY', 'SIRPICKSALOT']
 FIGHT_ALIASES = {}                                    # D56: other spellings accepted, as the fight code they name
 FIGHT_NOT_IN_FIGHT = ('DAGGERFALL', 'BEATEMUP')               # fight codes typed only in the first menu or on the map
@@ -247,7 +254,20 @@ CHEAT_TIMEOUT = 24                                   # BIOS ticks (1.3 s) betwee
 # fight flags (cheat_flags)
 CF_ROCKET, CF_FLESH, CF_ONLYONE, CF_FORE, CF_IDDQD, CF_ABACABB, CF_FINISH, CF_LUNAR = 1, 2, 4, 8, 16, 32, 64, 128
 # D48: the new fight codes' flags (cheat_flags2); each lasts one fight
-F2_DARTS, F2_SABER = 1, 2
+F2_DARTS, F2_SABER, F2_GUNSHOT = 1, 2, 4
+# D64 GUNSHOT: every knight's dagger throw (move 6) is a musket shot. The shot's script (GUN_SHOT) skips the throw's
+# 0.44 s wind-up: the bang (sound GUN_BANG, the whip's crack) and then the throw's last frame (DS:0E4A: the spawn, the
+# arm forward, D63's empty hand) without the grunt. The ball (KN3.OB frame BALL_PIC, the last piece death_frames.py
+# appends: BALL_W x 4, the ball at its right end, the rest clear) flies BALL_STEP a tick (the dagger 20). Its hit
+# points (BALL_POINTS) run back along the whole frame, so the hit test covers the path since the last frame and a
+# fast ball cannot pass through a target. Its first frame (where it leaves the hand) is not a weapon, so the points
+# behind it never reach the shooter. A hit takes all of the target's HP. The scripts and points are written into a
+# free part of MAIN's data at each shot (GUN_AREA: KEY_TEXT's, used only on the map and the item screen, after the
+# hit marker's script)
+GUN_BANG, GUN_JUMP, GUN_NO_DAGGER = 172, 0x0e4a, 0x0c74   # the bang; the throw's last frame; its no-dagger branch
+BALL_BANK, BALL_PIC, BALL_W, BALL_STEP = 0x08, 92, 64, 60
+BALL_FIRST, BALL_FIRST_DX, BALL_DX, BALL_DY = 5, 20, 15, 7   # as the dagger's first frame (move 5), the ball's dx
+BALL_POINTS = tuple((x, 1 + (x // 4) % 2) for x in range(0, BALL_W, 4)) + ((BALL_W - 1, 1),)
 # D52: the practice score. A practice fight's kind (score_sig): the practice's choice (these SAVEHOOK bytes) and for
 # each knight record in the fight 10h + its colour slot (a human's), 20h + it (the computer's), FFh (not in it). Up to
 # SCORE_KINDS kinds keep their wins (a computer side: [monsters, players]; else one a knight record); when a
@@ -329,7 +349,7 @@ SLOT_GROUP = tuple(GLOW_GROUP_SLOTS.index(slot) for slot in range(5))
 GLOW_SPEEDS = (2, 1, 1)
 NO_GLOW_GROUP = SLOT_GROUP[4]                         # 41-43, the Black Knights' (and the white practice knight's)
 MINE_COUNT, MINE_X0, MINE_SPAN_X = 10, 4, 312          # MINEFIELD: x 4-315 (D58: the whole width; the mark is x-4..x+4)
-MINE_REACH_X, MINE_REACH_Z, MINE_CLEAR_X, MINE_CLEAR_Z, MINE_SOUND = 14, 6, 36, 12, 26   # set off; not at the start near a knight; bonfire2
+MINE_REACH_X, MINE_REACH_Z, MINE_CLEAR_X, MINE_CLEAR_Z, MINE_SOUND = 14, 6, 36, 12, 171   # set off; not at the start near a knight; bonfire2 (OWN_SOUND_IDS, K35)
 MINE_BANK, MINE_FRAME, MINE_DRAW_X, MINE_DRAW_Y = 0x893d, 39, -4, 22   # KN3.OB's small black shadow; its place from x, depth
 # A knight's feet (the standing script 0C74's legs, KN1.OB 1) are 33 wide at x-13..x+19 (mirrored x-20..x+12), their
 # lowest rows depth+49..51, and the mark's three rows are mine depth+22..24: they meet at a knight's depth = the mine's
@@ -467,6 +487,23 @@ ADD_STATE = 10                                       # practice_init states from
 TARGET_KEEP = 20                                     # a monster keeps its knight unless another is this much nearer
 MONSTER_SLOTS, SLOT_SIZE, MONSTER_COUNT, DRAGON_RECORD = 0x6f08, 0x62, 20, 0x6e26   # fight objects (1000:2A1E), dragon
 DF_HIT_DATA = MINE_HITTER + SLOT_SIZE                # collision data between the mine record and KEY_LIST
+# D64 GUNSHOT: its scripts and hit points (gun_src), written at GUN_AREA: the shot, the ball's first frame, its flight
+GUN_AREA = MARKER_SCRIPT + MARKER_SIZE
+def _gun_data():
+    shot = (bytes((0xa4, 0x01, 0x34, 0x00)) + struct.pack('<H', GUN_NO_DAGGER) +   # no dagger: the game's own branch
+            bytes((0x92, GUN_BANG, 0x82, 0x03)) + struct.pack('<H', GUN_JUMP))       # the bang, the throw's last frame
+    def frame(step, dx, flag):
+        return (struct.pack('<BBhhh', 0x90, 0x01, step, 0, 0) +
+                struct.pack('<BBbBh', BALL_BANK, BALL_PIC, BALL_DY, flag, dx) + b'\xff\xff')
+    first, fly = frame(BALL_FIRST, BALL_FIRST_DX, 0x00), frame(BALL_STEP, BALL_DX, 0x02)   # 2: a weapon's piece
+    xs, ys = zip(*BALL_POINTS)        # as COLLIDE.HIT (887F): count, a spare byte, max x and y, then the points
+    points = bytes((len(xs), 0, max(xs), max(ys))) + bytes(n for p_ in BALL_POINTS for n in p_)
+    parts = (shot, first, fly, points)
+    offs = [GUN_AREA + sum(len(q) for q in parts[:k]) for k in range(4)]
+    return b''.join(parts), offs
+GUN_SRC, (GUN_SHOT, GUN_BALL, GUN_FLY, GUN_POINTS) = _gun_data()
+if GUN_AREA + len(GUN_SRC) > MINE_HITTER or GUN_AREA < 0xfe80:
+    raise ValueError("D64: GUNSHOT's scripts do not fit between the hit marker's script and the mines' record")
 DRAGON_HOARD, DRAGON_GOLD = 0x6ee8, 0x6e26 + 0x32   # K18: the dragon's 24-byte item table and its gold
 # D13: the knights drawn in the new colours: (record, its first knight-colour pixel, the game's fight palette words
 # for +20h = 1 and 3, which custom rules recolour); their pixels move up by 26: 6-8 -> 32-34, 9-11 -> 35-37
@@ -1172,6 +1209,98 @@ def rules_code(a):
     a.b(0xc6, 0x45, 0x09, 0x04)                              # mov byte [di+9], 4
     a.label('practice_end')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # sound_rate (K36, K37; 1000:9537, replaces mov bx,6 before the call to CT-VOICE.DRV): ES:DI = the VOC data block
+    # of the sample in the page copied for this sound, DS = the game's, [SOUND_LAST_ID] = the id asked for. The id's
+    # time constant (0 = the file's own) goes to the block's header. An id in the slice list (id, start, length; ends
+    # with 0) plays one part of the sample: a new block header (type 1, length + 2, time constant, 0) is written just
+    # before the part, an end mark after it, and DI moves there. The page is copied afresh for every sound
+    a.label('rules_sound_rate')
+    a.b(0x50, 0x51, 0x56, 0xfc)                              # push ax / push cx / push si / cld
+    a.b(0x8a, 0x1e, SOUND_LAST_ID & 0xff, SOUND_LAST_ID >> 8)   # mov bl, [SOUND_LAST_ID]
+    a.b(0x32, 0xff)                                          # xor bh, bh
+    a.b(0x8a, 0x8f, SOUND_RATES & 0xff, SOUND_RATES >> 8)    # mov cl, [bx + SOUND_RATES]
+    a.b(0x80, 0xfb, 180)                                     # cmp bl, 180            the table has ids 0-179
+    a.short(0x73, 'sound_own')                               # jae sound_own
+    a.b(0x0a, 0xc9)                                          # or cl, cl
+    a.short(0x75, 'sound_slices')                            # jnz sound_slices
+    a.label('sound_own')
+    a.b(0x26, 0x8a, 0x4d, 0x04)                              # mov cl, es:[di+4]      the file's own rate
+    a.label('sound_slices')
+    a.b(0xbe, SOUND_SLICES & 0xff, SOUND_SLICES >> 8)        # mov si, SOUND_SLICES
+    a.label('sound_next')
+    a.b(0xac, 0x0a, 0xc0)                                    # lodsb / or al, al
+    a.short(0x74, 'sound_set')                               # jz sound_set            not in the list: the whole sample
+    a.b(0x3a, 0xc3)                                          # cmp al, bl
+    a.short(0x74, 'sound_part')                              # je sound_part
+    a.b(0x83, 0xc6, 0x04)                                    # add si, 4
+    a.short(0xeb, 'sound_next')                              # jmp sound_next
+    a.label('sound_part')
+    a.b(0xad, 0x03, 0xf8)                                    # lodsw / add di, ax      the new header: 6 bytes before the part
+    a.b(0xad, 0x8b, 0xd8)                                    # lodsw / mov bx, ax      bx = length
+    a.b(0x26, 0xc6, 0x41, 0x06, 0x00)                        # mov byte es:[bx+di+6], 0    end mark after the part
+    a.b(0x05, 0x02, 0x00)                                    # add ax, 2               block length: time constant, pack, data
+    a.b(0x26, 0xc6, 0x05, 0x01)                              # mov byte es:[di], 1     block type 1: sound data
+    a.b(0x26, 0x89, 0x45, 0x01)                              # mov es:[di+1], ax       length, low 16 bits
+    a.b(0x26, 0xc6, 0x45, 0x03, 0x00)                        # mov byte es:[di+3], 0   length, high byte
+    a.b(0x26, 0xc6, 0x45, 0x05, 0x00)                        # mov byte es:[di+5], 0   8-bit samples
+    a.label('sound_set')
+    a.b(0x26, 0x88, 0x4d, 0x04)                              # mov es:[di+4], cl       the time constant
+    a.b(0x5e, 0x59, 0x58)                                    # pop si / pop cx / pop ax
+    a.b(0xc7, 0x46, 0xfe, 0x06, 0x00)                        # mov word [bp-2], 6      the game's bx: the driver's function
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # sound_play (D65; 1000:5979, replaces cmp word [8645h],3 at the start of the sound routine, after it has saved
+    # every register): al = the sound id. With Amiga sound on (amiga_on, from AMIGASND.FLG) and a program for the id
+    # in the SoundFont (amiga_prog), the sound goes to DOSBox-X's synth device as MIDI: UART mode (ignored when already
+    # in it), "program change (preset), note on (key, 127)" on the next of four channels, and the routine's own end
+    # (59A0). A new note on a channel stops the sound that channel was playing (the SoundFont's exclusive class), so
+    # at most four sounds play, as on the Amiga. The program change goes with every note: after a state is loaded the
+    # synth has forgotten it. Interrupts are off here (int 63h), so the game's music driver cannot cut in.
+    # Otherwise: the compare, with its flags
+    a.label('rules_sound_play')
+    a.b(0x2e, 0x80, 0x3e); a.word('amiga_on'); a.b(0x00)     # cmp byte cs:[amiga_on], 0
+    a.short(0x74, 'sp_normal')                               # je sp_normal
+    a.b(0x3c, 180)                                           # cmp al, 180
+    a.short(0x73, 'sp_normal')                               # jae sp_normal
+    a.b(0x8a, 0xd8, 0x32, 0xff)                              # mov bl, al / xor bh, bh
+    a.b(0x2e, 0x8a, 0x9f); a.word('amiga_prog')              # mov bl, cs:[bx + amiga_prog]   the program, 0 = none
+    a.b(0x0a, 0xdb)                                          # or bl, bl
+    a.short(0x74, 'sp_normal')                               # jz sp_normal
+    a.b(0x2e, 0x8a, 0x26); a.word('amiga_slot')              # mov ah, cs:[amiga_slot]
+    a.b(0xfe, 0xc4, 0x80, 0xe4, 0x03)                        # inc ah / and ah, 3            the next channel
+    a.b(0x2e, 0x88, 0x26); a.word('amiga_slot')              # mov cs:[amiga_slot], ah
+    a.b(0xb1, 0x00, 0x8a, 0xeb)                              # mov cl, 0 / mov ch, bl        preset 0
+    a.b(0x80, 0xc5, AMIGA_FIRST_KEY - 1)                     # add ch, 19                    key = program + 19
+    a.b(0x80, 0xfb, AMIGA_PER_PRESET)                        # cmp bl, 100
+    a.short(0x76, 'sp_send')                                 # jbe sp_send
+    a.b(0xb1, 0x01, 0x80, 0xed, AMIGA_PER_PRESET)            # mov cl, 1 / sub ch, 100       preset 1, key = program - 81
+    a.label('sp_send')
+    a.b(0xba, 0x31, 0x03, 0xb0, 0x3f, 0xee)                  # mov dx, 331h / mov al, 3Fh / out dx, al   UART mode
+    a.b(0x4a, 0xec)                                          # dec dx / in al, dx            its answer, if there is one
+    a.b(0xb0, 0xc0, 0x0a, 0xc4, 0xee)                        # mov al, C0h / or al, ah / out dx, al   program change
+    a.b(0x8a, 0xc1, 0xee)                                    # mov al, cl / out dx, al
+    a.b(0xb0, 0x90, 0x0a, 0xc4, 0xee)                        # mov al, 90h / or al, ah / out dx, al   note on
+    a.b(0x8a, 0xc5, 0xee)                                    # mov al, ch / out dx, al
+    a.b(0xb0, 0x7f, 0xee)                                    # mov al, 7Fh / out dx, al
+    a.b(0xc7, 0x46, 0x02, 0xa0, 0x59)                        # mov word [bp+2], 59A0h        the routine's end
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('sp_normal')
+    a.b(0x83, 0x3e, 0x45, 0x86, 0x03)                        # cmp word [8645h], 3
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags
+
+    # amiga_check (D65): DS = CS: amiga_on = 1 if AMIGASND.FLG is there, else 0. Called when SAVEHOOK starts and at
+    # every automatic save's numbering, so a loaded state follows the installation as it is now
+    a.label('amiga_check')
+    a.b(0x50, 0x53, 0x52)                                    # push ax / push bx / push dx
+    a.b(0xb8, 0x00, 0x3d, 0xba); a.word('amiga_path')        # mov ax, 3D00h / mov dx, amiga_path
+    a.b(0xcd, 0x21)                                          # int 21h     open
+    a.b(0xc6, 0x06); a.word('amiga_on'); a.b(0x00)           # mov byte [amiga_on], 0   (flags stay)
+    a.short(0x72, 'ac_end')                                  # jc ac_end
+    a.b(0xc6, 0x06); a.word('amiga_on'); a.b(0x01)           # mov byte [amiga_on], 1
+    a.b(0x8b, 0xd8, 0xb4, 0x3e, 0xcd, 0x21)                  # mov bx, ax / mov ah, 3Eh / int 21h   close
+    a.label('ac_end')
+    a.b(0x5a, 0x5b, 0x58, 0xc3)                              # pop dx / pop bx / pop ax / ret
 
     # hoard_clear (K18, 1000:1DC0; replaces mov dx,0 before the new game's hoard rolls): clear the dragon's item
     # table and gold, which would otherwise keep what earlier games in this session put there
@@ -4630,7 +4759,7 @@ def rules_code(a):
         a.b(0x80, 0xf9, CHEAT_ID[name]); a.short(0x75, f'cf_n_{name}')
         a.b(0x2e, 0x80, 0x36); a.word('cheat_flags'); a.b(flag)   # xor byte cs:[cheat_flags], flag
         a.label(f'cf_n_{name}')
-    for name, flag in (('DARTS', F2_DARTS), ('LIGHTSABER', F2_SABER)):   # D48: this fight
+    for name, flag in (('DARTS', F2_DARTS), ('LIGHTSABER', F2_SABER), ('GUNSHOT', F2_GUNSHOT)):   # D48, D64: this fight
         a.b(0x80, 0xf9, CHEAT_ID[name]); a.short(0x75, f'cf_n_{name}')
         a.b(0x2e, 0x80, 0x36); a.word('cheat_flags2'); a.b(flag)   # xor byte cs:[cheat_flags2], flag
         a.label(f'cf_n_{name}')
@@ -6554,6 +6683,10 @@ def rules_code(a):
     a.b(0xc7, 0x46, 0x02, 0x5f, 0x3e)                        # mov word [bp+2], 3E5Fh   continue after the hit check
     a.near(0xe9, 'rules_done')
     a.label('dn_thrown')
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'dn_ngun')   # D64: GUNSHOT: a ball
+    a.near(0xe8, 'gun_write'); a.near(0xe8, 'gun_bank')      # (also one thrown before the code)
+    a.b(0xc7, 0x06, 0x3a, 0x78, GUN_FLY & 0xff, GUN_FLY >> 8)   # mov word [783Ah], its flight
+    a.label('dn_ngun')
     a.b(0x50, 0x53, 0x51, 0x57, 0x56)                        # push ax bx cx di si
     a.near(0xe8, 'd20_state')                                # call d20_state   ZF = 1: the new deaths
     a.short(0x74, 'dn_on'); a.near(0xe9, 'dn_none')          # jne dn_none
@@ -7293,6 +7426,18 @@ def rules_code(a):
     # thrown dagger in KN4.OB. Supply the rotated frame's points and enter the same test at A1FB.
     a.label('rules_falling_dagger_hit')
     a.b(0xc7, 0x06, 0xc2, 0xc2, 0x00, 0x00)                  # mov word [C2C2h], 0   (replaced)
+    a.b(0x83, 0x7d, 0x04, BALL_PIC); a.short(0x75, 'dfh_nball')   # D64: cmp word [di+4], the ball / jne
+    a.b(0x8b, 0x5e, 0x00, 0x8b, 0x5f, 0x16)                  # mov bx, [bp] / mov bx, [bx+16h]   attacker
+    a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'dfh_end')  # cmp byte [bx+35h], DAGGER / jne
+    # the width of a frame drawn mirrored (facing left), as A1AC-A1CA, which A1FB needs for the points
+    a.b(0x8b, 0x45, 0x04, 0xd1, 0xe0, 0xd1, 0xe0, 0x03, 0x45, 0x04, 0xd1, 0xe0)   # mov ax, [di+4] / ax * 10
+    a.b(0xc4, 0x1d, 0x03, 0xd8)                              # les bx, [di] / add bx, ax
+    a.b(0x26, 0xf6, 0x47, 0x12, 0x01); a.short(0x75, 'dfh_ball')   # test byte es:[bx+12h], 1 / jnz   not mirrored
+    a.b(0x26, 0x8b, 0x47, 0x0e, 0x86, 0xe0, 0xa3, 0xc2, 0xc2)   # mov ax, es:[bx+0Eh] / xchg al, ah / mov [C2C2h], ax
+    a.label('dfh_ball')
+    a.b(0xc7, 0x46, 0xfe, GUN_POINTS & 0xff, GUN_POINTS >> 8)   # mov word [bp-2], its points (gun_write)   the game's bx
+    a.b(0xc7, 0x46, 0x02, 0xfb, 0xa1); a.near(0xe9, 'rules_done')   # mov word [bp+2], A1FBh
+    a.label('dfh_nball')
     a.b(0x83, 0x7d, 0x04, DF_PIC); a.short(0x75, 'dfh_end')  # cmp word [di+4], frame / jne
     a.b(0x8b, 0x5e, 0x00, 0x8b, 0x5f, 0x16)                  # mov bx, [bp] / mov bx, [bx+16h]   attacker
     a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'dfh_end')  # cmp byte [bx+35h], DAGGER / jne
@@ -7300,7 +7445,8 @@ def rules_code(a):
     xs, ys = zip(*DF_HIT_POINTS)
     # The COLLIDE.HIT loader (887F) stores count, the unused second field, max x/y, then the point pairs.
     hit_data = bytes((len(xs), 0, max(xs), max(ys))) + bytes(n for point in DF_HIT_POINTS for n in point)
-    assert DF_HIT_DATA + len(hit_data) <= KEY_LIST
+    if DF_HIT_DATA + len(hit_data) > KEY_LIST:
+        raise ValueError("D62: the falling dagger's hit points run into KEY_LIST")
     for offset in range(0, len(hit_data), 2):
         a.b(0xc7, 0x06, struct.pack('<H', DF_HIT_DATA + offset), hit_data[offset:offset + 2])
     a.b(0xc7, 0x46, 0xfe, struct.pack('<H', DF_HIT_DATA))     # mov word [bp-2], points   the game's bx
@@ -8599,8 +8745,34 @@ def rules_code(a):
     a.b(0x0a, 0xc0, 0x59, 0x58)                              # or al, al / pop cx ax   ZF = 1: no throw
     a.near(0xe9, 'rules_flags')                              # jmp rules_flags
 
+    # ck_shot (1000:4D53, mov [783Ah],ax: a computer knight's throw, ax = its script): D64 GUNSHOT: a shot
+    a.label('rules_ck_shot')
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'cks_set')
+    a.near(0xe8, 'gun_write'); a.b(0xb8, GUN_SHOT & 0xff, GUN_SHOT >> 8)   # call gun_write / mov ax, the shot
+    a.label('cks_set')
+    a.b(0xa3, 0x3a, 0x78)                                    # mov [783Ah], ax   (replaced)
+    a.near(0xe9, 'rules_done')
+    # gun_write (ds = MAIN's data): GUNSHOT's scripts and hit points at GUN_AREA (all registers kept)
+    a.label('gun_write')
+    a.b(0x50, 0x51, 0x56, 0x57, 0xbe); a.word('gun_src')     # push ax cx si di / mov si, gun_src
+    a.b(0xbf, GUN_AREA & 0xff, GUN_AREA >> 8, 0xb9, len(GUN_SRC), 0x00)   # mov di, GUN_AREA / mov cx, length
+    a.label('gw_copy')
+    a.b(0x2e, 0x8a, 0x04, 0x88, 0x05, 0x46, 0x47); a.short(0xe2, 'gw_copy')   # mov al, cs:[si] / mov [di], al / inc si / inc di / loop
+    a.b(0x5f, 0x5e, 0x59, 0x58, 0xc3)                        # pop di si cx ax / ret
+    # gun_bank (si = a dagger): it and its animation draw from the knights' banks (KN*.OB, where the ball is), also
+    # when a duel's second knight (HE*.OB) fired it
+    a.label('gun_bank')
+    a.b(0x53, 0x57, 0xc7, 0x44, 0x18, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8)   # push bx di / mov word [si+18h], banks
+    a.b(0x8b, 0xfe); a.near(0xe8, 'anim_of'); a.short(0x75, 'gb_end')   # mov di, si / call anim_of / jnz
+    a.b(0xc7, 0x47, 0x18, KNIGHT_BANK & 0xff, KNIGHT_BANK >> 8)   # mov word [bx+18h], banks
+    a.label('gb_end')
+    a.b(0x5f, 0x5b, 0xc3)                                    # pop di bx / ret
+
     a.label('rules_dagger_thrower')
     a.b(0xb2, DAGGER)                                        # mov dl, 1Ah   (replaced)
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'dth_ngun')   # D64: GUNSHOT: a ball
+    a.near(0xe8, 'gun_write'); a.b(0xbe, GUN_BALL & 0xff, GUN_BALL >> 8)   # call gun_write / mov si, its first frame
+    a.label('dth_ngun')
     a.b(0x2e, 0x89, 0x3e); a.word('thrower')                 # mov cs:[thrower], di
     a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_DARTS); a.short(0x74, 'dth_bk')   # D48: DARTS: a knight's
     a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x74, 'dth_back')   # cmp byte [di+35h], 6 / je   (a human's)
@@ -8619,10 +8791,29 @@ def rules_code(a):
     a.b(0xc7, 0x45, 0x1a, 0x2a, 0x77)                        # mov word [di+1Ah], 772Ah   (replaced)
     a.b(0x50, 0x2e, 0xa1); a.word('thrower')                 # push ax / mov ax, cs:[thrower]
     a.b(0x89, 0x45, DAGGER_OWNER, 0x58)                      # mov [di+5Ch], ax / pop ax
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'dow_end')   # D64: the ball's banks
+    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'gun_bank'); a.b(0x5e)   # push si / mov si, di / call gun_bank / pop si
+    a.label('dow_end')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
     # dagger_damage (1000:44C2, sub [di+38h],ax: the damage of a dagger (or mudman) hit, si = it): the B key's Black
     # Knights' daggers do double
+    # gun_kill (si = the striker, di = the one hit, ax = the damage): D64 GUNSHOT: a ball (a thrown dagger, not one
+    # from the sky) that does any damage takes all of the target's HP
+    a.label('gun_kill')
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'gk_end')
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'gk_end')   # cmp byte [si+35h], 1Ah / jne
+    a.b(0x39, 0x74, DAGGER_OWNER); a.short(0x74, 'gk_end')   # cmp [si+5Ch], si / je   from the sky
+    a.b(0x0b, 0xc0); a.short(0x74, 'gk_end')                 # or ax, ax / jz   no damage (Daggerward)
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'gk_end')     # cmp word [di+38h], 0 / jle
+    a.b(0x8b, 0x45, 0x38)                                    # mov ax, [di+38h]
+    a.label('gk_end')
+    a.b(0xc3)
+    # gun_monster (1000:2F46, sub [di+38h],ax: a monster struck, si = the striker; a dagger did 3): D64 GUNSHOT
+    a.label('rules_gun_monster')
+    a.near(0xe8, 'gun_kill'); a.b(0x29, 0x45, 0x38)          # call gun_kill / sub [di+38h], ax   (replaced)
+    a.near(0xe9, 'rules_flags')                              # jmp rules_flags   (as the sub left them)
+
     a.label('rules_dagger_damage')
     a.b(0x2e, 0x80, 0x3e); a.word('bk'); a.b(0x02)           # cmp byte cs:[bk], 2
     a.short(0x75, 'dd_sub')                                  # jne dd_sub
@@ -8636,6 +8827,7 @@ def rules_code(a):
     a.b(0x50, 0x56, 0x8b, 0xf7); a.near(0xe8, 'arm_of'); a.b(0x3c, A_DAGGER, 0x5e, 0x58); a.short(0x75, 'dd_plain'); a.b(0x33, 0xc0)
     a.label('dd_plain')
     a.near(0xe8, 'td_adjust')                                # D46: a fifth (mistimed block) or double (counter)
+    a.near(0xe8, 'gun_kill')                                 # D64: a ball takes all
     a.b(0x29, 0x45, 0x38)                                    # sub [di+38h], ax   (replaced)
     a.b(0xb8, 0x26, 0x44); a.near(0xe9, 'td_after_hit')      # mov ax, 4426h   the blocked reaction if it was a mistimed block
 
@@ -8715,6 +8907,16 @@ def rules_code(a):
     # the bonus runs starts at 0EAAh, past the wind-up frames of 0E90h. A dodge has no once-only rule with timed defence
     a.label('rules_td_move')
     a.b(0x89, 0x45, 0x28)                                    # (replaced)
+    a.b(0x3d, 0x06, 0x00); a.short(0x75, 'tm_ngun')          # cmp ax, 6 / jne   D64: GUNSHOT: the throw is a shot
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'tm_ngun')
+    a.near(0xe8, 'gun_write')                                # call gun_write
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TD); a.b(0x00); a.short(0x74, 'tm_gun')
+    a.b(0x52); a.near(0xe8, 'knight_no'); a.short(0x72, 'tm_gfk'); a.b(0x2e, 0xc6, 0x87); a.word('td_fk'); a.b(0x00)   # as below
+    a.label('tm_gfk')
+    a.b(0x5a)                                                # pop dx
+    a.label('tm_gun')
+    a.b(0xc7, 0x06, 0x3a, 0x78, GUN_SHOT & 0xff, GUN_SHOT >> 8); a.near(0xe9, 'tmv_go')   # mov word [783Ah], the shot
+    a.label('tm_ngun')
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TD); a.b(0x00); a.short(0x74, 'tm_done')
     a.b(0x52); a.near(0xe8, 'knight_no'); a.short(0x72, 'tm_nfk'); a.b(0x2e, 0xc6, 0x87); a.word('td_fk'); a.b(0x00)   # push dx / call knight_no / jc / mov byte cs:[bx+td_fk], 0
     a.label('tm_nfk')
@@ -9667,7 +9869,8 @@ def rules_data(a, table):
     a.label('cheat_last'); a.b(0, 0)
     a.label('code_t'); a.b(0x00, 0x80)                       # D55: the tick of the last key a code went on with
     a.label('cheat_flags'); a.b(0)
-    a.label('cheat_flags2'); a.b(0)                          # D48: F2_DARTS, F2_SABER (this fight)
+    a.label('cheat_flags2'); a.b(0)                          # D48: F2_DARTS, F2_SABER, F2_GUNSHOT (this fight)
+    a.label('gun_src'); a.b(GUN_SRC)                         # D64: GUNSHOT's scripts and hit points (GUN_AREA)
     a.label('df_on'); a.b(0)                                 # D49: DAGGERFALL in this fight
     a.label('df_due'); a.b(0)                                # D49: a dagger to drop in the next pass
     a.label('df_last'); a.b(0, 0)                            # D49: the tick of the last one
@@ -10000,6 +10203,7 @@ def make_savehook(rules_table=None):
     # slot instead of filling the next one. The counters live in SAVEHOOK.SLT (a missing file keeps the ones here)
     a.label('number_name')
     a.b(0x50, 0x53, 0x51, 0x52, 0x57)                        # push ax bx cx dx di
+    a.near(0xe8, 'amiga_check')                              # call amiga_check   (D65)
     a.b(0xb8, 0x00, 0x3d, 0xba); a.word('slot_path')         # mov ax, 3D00h / mov dx, slot_path
     a.b(0xcd, 0x21)                                          # int 21h     open
     a.short(0x72, 'nn_pick')                                 # jc nn_pick
@@ -10188,6 +10392,10 @@ def make_savehook(rules_table=None):
     a.label('cmd_path'); a.b(CMD_PATH)
     a.label('chk_path'); a.b(CHK_PATH)
     a.label('slot_path'); a.b(SLOT_PATH)
+    a.label('amiga_path'); a.b(AMIGA_PATH)                   # D65
+    a.label('amiga_on'); a.b(0)                              # 1 = the effects go to the SoundFont
+    a.label('amiga_slot'); a.b(0)                            # the channel (0-3) of the last sound
+    a.label('amiga_prog'); a.b(bytes(amiga_program(i) for i in range(180)))   # sound id -> Amiga program, 0 = none
     a.label('auto_name'); a.b(AUTO_NAME.ljust(8, b'\0'))
     a.label('none_name'); a.b(NONE_NAME.ljust(8, b'\0'))
     a.label('token'); a.b(bytes(4))
@@ -10224,6 +10432,7 @@ def make_savehook(rules_table=None):
     a.b(0xb8, KEY_INT, 0x25, 0xcd, 0x21)                     # mov ax, 2564h / int 21h
     for seg in ('tail_seg', 'fcb1_seg', 'fcb2_seg'):
         a.b(0x8c, 0x0e); a.word(seg)                         # mov [seg], cs
+    a.near(0xe8, 'amiga_check')                              # call amiga_check   (D65)
     # the child program (a failure leaves an older one, or no automatic saves)
     a.b(0xb4, 0x3c, 0x33, 0xc9, 0xba); a.word('child_path')   # mov ah, 3Ch / xor cx, cx / mov dx, child_path
     a.b(0xcd, 0x21); a.short(0x72, 'no_child')               # int 21h   create / jc

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0 (unreleased)
+
+* The dagger throw ends with an empty outstretched hand, so the knight seems to fire a pistol as the dagger flies (D63). **Run Setup.bat again.**
+* New cheat code GUNSHOT (one fight): every knight, the computer's too, fires a musket instead of throwing a dagger, at once and with a bang; the small black ball flies three times as fast as a dagger and a hit takes all of a knight's or monster's hit points (a dodge in time still avoids it). See CHEATS.md (D64). **Run Setup.bat again** (the ball is a new piece in KN3.OB).
+* Sound effects, fixed from a comparison with the Amiga version's sound driver (no Amiga files needed; with a Sound Blaster). **Run Setup.bat again.**
+  * About 50 sounds played the wrong sample (K35): mudmen no longer scream like rats, the troll and the beast have their own grunt and roar, the Guardian screams, a knight in the dragon's mouth is muffled, and the ratmen's and troggs' sounds are in their right places.
+  * Each sound plays at the pitch the Amiga gives it (K36): footsteps, roars and grunts vary, the troll's grunt is deep and slow.
+  * The dragon bites with one chomp and grunts one grunt at a time, not the whole sample (K37).
+  * A blocked blow makes its sword clash, and a blow that lands makes the hit sound; before, a block was silent and a hit clashed (K38, K35).
+* The Amiga version's sound effects in the DOS game (D65, optional): with the images of your own three Amiga disks in the `amiga` folder, Setup builds the Amiga's sounds, and `AmigaSound_On.bat` turns them on: every sound at its own pitch and loudness, up to four at once, and the sounds the DOS disks lack. The music is AdLib while they are on. See README, "Amiga sound effects". **Run Setup.bat again.**
+* The Amiga version's sound effects for everyone (D66): without the Amiga disks Setup builds them from the DOS game's own samples, with 14 sounds of our own for the ones DOS lacks (nine synthesized, five from public-domain recordings; all CC0, see `sounds/SOURCES.md`). `AmigaSound_On.bat` turns them on. With the disk images every sound is the Amiga's own. Needs the Python package numpy (`AmigaSound_Setup.bat` installs it).
+
 ## 0.8.1
 
 * DAGGERFALL now hits knights and monsters where the falling blade crosses their sprite on screen, with the usual dagger damage and reactions. The rain covers the arena without repeating the same 21 drops in a stationary fight.

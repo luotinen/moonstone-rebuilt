@@ -49,7 +49,7 @@ Each stays on until typed again. They can also be typed beforehand: in the first
 fight only, or on the map for the next fight of the game only (if it applies there: IDDQD needs no human knights against each other).
 Several can be typed that way; of codes that clash (THERECANBEONLYONE with JUSTFLESHWOUND or IDDQD, ABACABB with
 FINISHHIM) the last one typed counts. A code typed beforehand that was on already stays as it was.
-DARTS, DAGGERFALL, LIGHTSABER and BEATEMUP (on the map) last one fight only: typed in a fight, for the rest of it (typed again:
+DARTS, DAGGERFALL, LIGHTSABER, GUNSHOT and BEATEMUP (on the map) last one fight only: typed in a fight, for the rest of it (typed again:
 off); typed beforehand, for the next one. DAGGERFALL and BEATEMUP cannot be typed in a fight, only beforehand.
 
 | Code | Effect |
@@ -68,6 +68,7 @@ off); typed beforehand, for the next one. DAGGERFALL and BEATEMUP cannot be type
 | DAGGERFALL | Only in the first menu or on the map, for the next fight: daggers rain from the sky, two or three a second, each falling straight down, point first, at a random place where the knights walk. One that hits strikes as a thrown dagger does (the same hit, damage and reaction), to knights and monsters alike (not the dragon or the Guardian); Daggerward protects |
 | BEATEMUP | Only in the first menu (then for every practice fight until the game is started again) or on the map (for the next fight): hit point bars at the top of the screen, below the practice score's line. The computer's side (all the monsters together, those still to come counted too, or the Purple, Black or white Knights, the dragon, the Guardian) has one yellow bar; each player's knight has its own bar in its colour, in the order the knights start from the left, or with teams each team one bar in its colour. A bar shortens as its side loses hit points. The practice score shows from the first fight on (0 - 0) |
 | LIGHTSABER | Every knight's sword (the players' and the computer's) is a lightsaber: a straight white line one pixel wide along the blade's middle, the rest of the blade (and the swing's trail) a glow in a dark shade of the knight's own colour. A blow that lands kills at once: a knight by an overhead chop not dodged or riposted (split in two), by a normal attack not blocked (beheaded), by a thrust (run through); a mistimed block also saves it. A monster dies at once from any blow (not the dragon or the Guardian). With gore off, K12, K16 or `death_animations = off` the knight just dies (the plain fall); with `vanilla` it is beheaded. This fight only |
+| GUNSHOT | Every knight (the players' and the computer's) fires a musket instead of throwing a dagger: no wind-up, the arm goes straight out with a bang (the whip's crack) and a small black ball flies three times as fast as a dagger. A ball that hits takes all the hit points of a knight or a monster (the knight dies by the dagger's death animation, the plain fall with gore off); a dodge in time still gets out of its way, and Daggerward still protects. Each shot spends a dagger as a throw does (with DARTS: endless shots). This fight only |
 
 With one human knight in the fight:
 

@@ -6,7 +6,7 @@ HE3.OB, the other look) and appended to those banks; the scripts that draw them 
 Usage: python -I tools/death_frames.py <game dir> [preview.png]   (the preview needs Pillow and msfmt.py)"""
 import os, random, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE, DF_PIC
+from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE, DF_PIC, BALL_PIC, BALL_W
 
 BANK = 8                                  # KN3.OB in the knights' bank table (DS:8933, loaded at 1000:8B10)
 FIRST = 64                                # KN3.OB's own frames are 0-63; the new ones follow
@@ -391,11 +391,20 @@ def falling_dagger(game):
     return rot_cw(bank_frames(open(os.path.join(game, 'DISKB', 'KN4.OB'), 'rb').read())[10])
 
 
+# D64 (GUNSHOT): the musket ball, 4 x 4 in the knights' darkest entry (5, the shadow's) with a 1-pixel grey highlight
+# (2, the blade's), at the right end of a clear frame BALL_W wide: SAVEHOOK.COM's hit points run back along it
+BALL = ('.55.', '5255', '5555', '.55.')
+
+
+def gun_ball():
+    return [[0] * (BALL_W - 4) + [0 if c == '.' else int(c) for c in row] for row in BALL]
+
+
 def added_bytes(game):
     """How much KN3.OB grows in memory (frames' headers and planes): the knights' bank area must hold it."""
     data = open(os.path.join(game, 'DISKB', 'KN3.OB'), 'rb').read()
     new, _ = make(bank_frames(data)[:FIRST])
-    new = new + [falling_dagger(game)]
+    new = new + [falling_dagger(game), gun_ball()]
     return sum(10 + len(frame_planes(a)[1]) for a in new)
 
 
@@ -410,9 +419,10 @@ def install(game, exe):
         new, made = make(bank_frames(data)[:FIRST])
         if name == 'KN3.OB':
             deaths = made
-            new = new + [falling_dagger(game)]               # D58: DAGGERFALL's dagger, the last
-            if FIRST + len(new) - 1 != DF_PIC:
-                raise ValueError(f'the falling dagger is KN3.OB frame {FIRST + len(new) - 1}, SAVEHOOK.COM draws {DF_PIC}')
+            new = new + [falling_dagger(game), gun_ball()]   # D58: DAGGERFALL's dagger; D64: GUNSHOT's ball, the last
+            if FIRST + len(new) - 2 != DF_PIC or FIRST + len(new) - 1 != BALL_PIC:
+                raise ValueError(f'the falling dagger and the ball are KN3.OB frames {FIRST + len(new) - 2} and '
+                                 f'{FIRST + len(new) - 1}, SAVEHOOK.COM draws {DF_PIC} and {BALL_PIC}')
         else: new = new[:-len(made['marker'])]           # D22's hit marker is drawn from KN3.OB only (last)
         if len(frames) == FIRST:
             data = bank_with(data, new)

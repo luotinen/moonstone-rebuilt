@@ -1172,5 +1172,47 @@ class ReviewFixes(unittest.TestCase):
             self.assertEqual((game / 'RESULT.TXT').read_text().strip(), 'PASS')
 
 
+class SoundPrograms(unittest.TestCase):
+    """The table the effects are built from without the Amiga disks (D66), against the files of the release."""
+    @classmethod
+    def setUpClass(cls):
+        import json
+        cls.table = json.loads((ROOT / 'tools' / 'sound_programs.json').read_text(encoding='utf-8'))
+
+    def test_every_effect_program_is_in_the_table(self):
+        import patches
+        self.assertEqual(sorted(int(p) for p in self.table['programs']), sorted(patches.AMIGA_PROGRAMS))
+
+    def test_steps_are_well_formed(self):
+        instruments = self.table['instruments']
+        for p, program in self.table['programs'].items():
+            self.assertIsInstance(program['loops'], bool, p)
+            self.assertTrue(program['steps'], p)
+            for frames, volume, rate, start in program['steps']:
+                self.assertGreaterEqual(frames, 1, p)
+                self.assertTrue(0 <= volume <= 63, p)
+                self.assertGreater(rate, 0, p)
+                self.assertTrue(start is None or start == -1 or str(start) in instruments, f'{p}: {start}')
+
+    def test_instruments_come_from_the_dos_game_or_the_sounds_folder(self):
+        import wave
+        game_files = (ROOT / 'setup' / 'gog-dos-1.json').read_text(encoding='utf-8')
+        for k, x in self.table['instruments'].items():
+            self.assertLessEqual(('dos' in x) + ('file' in x), 1, k)
+            if 'dos' in x:
+                self.assertIn(f'"SAMPLES/{x["dos"]}"', game_files, k)
+            elif 'file' in x:
+                with wave.open(str(ROOT / 'sounds' / x['file']), 'rb') as w:
+                    self.assertEqual(w.getnchannels(), 1, x['file'])
+                    self.assertGreaterEqual(w.getnframes(), x['at'] + x['n'], f'{x["file"]} is long enough for instrument {k}')
+            if x:
+                self.assertTrue(x['at'] >= 0 and x['n'] > 0, k)
+
+    def test_every_substitute_has_its_source_listed(self):
+        sources = (ROOT / 'sounds' / 'SOURCES.md').read_text(encoding='utf-8')
+        for path in (ROOT / 'sounds').glob('*.wav'):
+            self.assertIn(f'`{path.name}`', sources, f'{path.name} is not in sounds/SOURCES.md')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

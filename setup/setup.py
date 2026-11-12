@@ -15,6 +15,9 @@ Only files from the user's installation are used; nothing of the original game i
    checked right after the GOG files, so a bad value stops the setup before anything here changes; if the rules
    still cannot be applied, custom rules are turned off (the default set stays installed) and the setup fails.
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
+7. Builds the Amiga version's sound effects (_music/amiga/amiga.sf2; needs the Python package numpy): from the
+   images of all three Amiga disks if the amiga folder holds them, else from the DOS game's own samples and the
+   substitute sounds in sounds/ (tools/sound_programs.json). AmigaSound_On.bat turns them on.
 It can be run again at any time; saves (save/) and the MT-32 ROMs and SoundFont are left alone.
 Usage: python -I setup/setup.py [GOG Moonstone folder]"""
 import sys, os, json, hashlib, shutil, glob
@@ -27,7 +30,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -210,6 +213,16 @@ def _main(arg=None):
             say(f'  Amiga music not set up: {e}')
     else:
         say('  Amiga music: not set up (optional; put your Amiga disk 1 as amiga\\Moonstone_Disk1.adf)')
+    try:                                                        # 7. the Amiga version's sound effects (D65, D66)
+        import make_amiga_audio
+    except ImportError:
+        say('  Amiga sound effects not built: the Python package numpy is missing (AmigaSound_Setup.bat installs it)')
+    else:
+        try:
+            built = make_amiga_audio.build_soundfont(HERE, os.path.join(HERE, '_music', 'amiga', 'amiga.sf2'))
+            say(f'  Amiga sound effects: built, {built} (AmigaSound_On.bat turns them on)')
+        except make_amiga_audio.AudioError as e:
+            say(f'  Amiga sound effects not built: {e}')
     say('Done. Start the game with Start.bat.')
 
 if __name__ == '__main__':

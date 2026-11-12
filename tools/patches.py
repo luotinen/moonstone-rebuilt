@@ -483,7 +483,180 @@ PATCHES = {
                   ((0x1000, 0x34a7), b'\x8b\x36\x78\x09', b'\x8b\x75\x0e\x90'),
                   ((0x1000, 0x34c7), b'\x8b\x36\x78\x09', b'\x8b\x75\x0e\x90')],
     },
+    'D63': {
+        'title': 'The dagger throw\'s release looks like a pistol shot (Moonstone Rebuilt; user request, 11 Nov 2026). The '
+                 'knight\'s throw (script DS:0DFE, move 6) ends with the arm stretched forward and the dagger (KN4.OB '
+                 'frame 10) drawn at its hand, though the flying dagger (script 0E68) is already on its way. That '
+                 'piece (DS:0E60) now repeats the arm piece before it (KN1.OB frame 29), so the hand is empty and the '
+                 'outstretched arm reads as a knight firing a pistol',
+        'bytes': [(('DS', 0x0e60), bytes.fromhex('0c0a07023f00'), bytes.fromhex('001dfb010300'))],
+    },
 }
+
+# --- Sound ids (K35, K36, K37) ---------------------------------------------------------------------------------------
+# 1000:5970 plays sound id al. With a Sound Blaster the id indexes the byte table DS:7E6E (364 entries; 21 = HIT3 where
+# nothing was filled in), which gives the number of a sample in the name table DS:8721, and 1000:9503 copies the 16 KB
+# page with that sample to ES:C000, points DI at its VOC data block and calls CT-VOICE.DRV. The FM effects have the same
+# kind of table at DS:7D02. The DOS code and animation scripts ask for the Amiga version's sound program numbers (every
+# sound routine has the Amiga's constants), but the sample table was filled in against some other numbering.
+# The numbers below (sample per id, rate per id, slices) describe what the Amiga's sound driver does for each program;
+# they were read from the Amiga program, and no Amiga data is needed to apply them.
+SB_TABLE, FM_TABLE, UNUSED_SAMPLE = 0x7e6e, 0x7d02, 21
+# Ids 171 and up are never asked for. The unused ends of the two tables hold Moonstone Rebuilt's own sound ids and the
+# new tables:
+OWN_SOUND_IDS = {171: (4, 44),             # id: (sample, FM effect). 171 = BONFIRE2, the mines of MINEFIELD (was id 26)
+                 172: (48, 13)}            # 172 = WIPCRAK, GUNSHOT's bang (was id 62, the Amiga's wind)
+SOUND_RATES = SB_TABLE + 180               # K36: the VOC time constant of ids 0-179 (0 = the sample file's own)
+SOUND_LAST_ID = SB_TABLE + 360             # K36: the id of the sound being played
+TROLL_IDS, SCARE_IDS = FM_TABLE + 180, FM_TABLE + 188   # K35: the ids the troll's grunt and the mudmen's voice pick from
+SOUND_SLICES = FM_TABLE + 192              # K37: (id, start, length) of ids that are one part of a sample; ends with 0
+SOUND_RATE_SITE = 0x9537                   # K36: mov bx,6 before the driver call -> int 63h
+# D65: the Amiga version's effects from a SoundFont (tools/make_amiga_audio.py), played by DOSBox-X's synth device.
+# The programs in the SoundFont: all but the music parts (110-114, 116-133, 158-160) and the silence (167).
+# Programs 1-100 are keys 20-119 of preset 0, programs 101-167 keys 20-86 of preset 1; keys under 15 are not used,
+# because the FluidSynth in DOSBox-X (1.1.6) plays a sample whose root key is below 15 too low.
+SOUND_PLAY_SITE = 0x5979                   # cmp word [8645h],3 at the start of the sound routine -> int 63h
+AMIGA_PROGRAMS = [p for p in range(1, 167) if not (110 <= p <= 114 or 116 <= p <= 133 or 158 <= p <= 160)]
+AMIGA_FIRST_KEY, AMIGA_PER_PRESET = 20, 100
+AMIGA_PROGRAM_OF = {15: 156}               # sound ids that are not the Amiga's number: 15 is DOS's menu click (clik2)
+
+def amiga_program(sound):
+    """The Amiga program a sound id plays in the SoundFont, or 0: the id goes to the Sound Blaster as before
+    (Moonstone Rebuilt's own ids, ids with no program)."""
+    if sound in OWN_SOUND_IDS: return 0
+    p = AMIGA_PROGRAM_OF.get(sound, sound)
+    return p if p in AMIGA_PROGRAMS else 0
+
+# K35: id -> (sample now, sample after), in groups that can be dropped one at a time. Samples (after K1): 2 beast1,
+# 3 bloodsp, 4 bonfire2, 5 camel3b, 8 cheap1b, 9 cheap2b, 10 chomps, 12 dagmuf3, 13 dragnr, 15 femscr, 17 grnt3,
+# 18 grnt3b, 21 hit3, 22 kstep, 23 lion1c1, 24 lion2c1, 25 mud2, 27 mudhit, 28 mudvox, 29 newkrush, 32 ratgoug,
+# 33 ratleap, 34 ratmpal, 35 ratscr, 36 ratsku, 37-41 rjgrunt-rjgrunt4, 42 scrape, 43 slice3, 44 spear1, 45 stretch,
+# 46 swish, 47 swordcl, 48 wipcrak.
+SOUND_ID_FIXES = [
+    ('knight: the grunts 6 and 19 are the knight\'s own (was the troll\'s grnt3 and RJGRUNT4)', {6: (18, 17), 19: (41, 17)}),
+    ('18 is the hit, not the sword clash', {18: (47, 21)}),
+    ('dragon: 26 the third chomp, 27 the fire, 29 the breath, 30-32 the knight\'s muffled cries in its mouth',
+     {26: (4, 10), 27: (13, 4), 29: (4, 13), 30: (37, 12), 31: (38, 12), 32: (39, 12)}),
+    ('Balok: the roars alternate between its two samples', {35: (24, 23), 37: (24, 23), 39: (24, 23), 41: (24, 23)}),
+    ('troggs: 52 blood, 53 spear, 54 slice, 57 the camel groan', {52: (43, 3), 53: (3, 44), 54: (44, 43), 57: (21, 5)}),
+    ('Guardian: 63 the whip crack, 64 and 70-72 its screams', {63: (12, 48), 64: (12, 15), 70: (2, 15), 71: (2, 15), 72: (2, 15)}),
+    ('mudmen: 80 mud, 82 hit, 85 voice, 86 stretch, 87-89 the scare voice, 90 the crush',
+     {80: (27, 25), 82: (28, 27), 85: (45, 28), 86: (8, 45), 87: (8, 9), 88: (8, 9), 89: (29, 9), 90: (35, 29)}),
+    ('ratmen: 92 scream, 94 bite (no DOS sample: RATSKU, as 93), 96 gouge, 100 leap, 101-102 skull, 105 impale, '
+     '107 strain (no DOS sample: HIT3, as 106), 108 scrape, 109 swish',
+     {92: (36, 35), 94: (32, 36), 96: (33, 32), 100: (29, 33), 101: (29, 36), 102: (34, 36), 105: (21, 34),
+      107: (42, 21), 108: (46, 42), 109: (21, 46)}),
+    ('troll: 136-140 its five grunts, 141 (no DOS sample) and 142 its other grunt',
+     {136: (21, 37), 137: (21, 38), 138: (21, 39), 139: (21, 40), 140: (21, 41), 141: (21, 18), 142: (21, 18)}),
+    ('beast: 143-145 its roar (DOS has one of the three), 146 the gallop (no DOS sample: the knight\'s step)',
+     {143: (21, 2), 144: (21, 2), 145: (21, 2), 146: (21, 22)}),
+    ('mudmen: 152 the other scare voice, CHEAP1B', {152: (21, 8)}),
+]
+TROLL_PICKS = (136, 137, 138, 139, 140, 141, 142, 137)   # the Amiga's table at its troll routine, rand & 7
+SCARE_PICKS = (152, 87, 88, 89)                          # the Amiga plays 151+152, 87+148, 88+149, 89+150; DOS one voice
+
+# K36: the rate (Hz) the Amiga plays each program's sustained note at, for ids whose DOS sample is the Amiga's (or, for
+# 30-31, 70-73, 141, 144-145, another take of the same sound at the same pitch change). Others keep the file's rate.
+SOUND_RATE_HZ = {
+    1: 14360, 2: 14966, 3: 14131, 4: 11084, 5: 11084, 6: 10463, 7: 9852, 8: 9852, 9: 16574, 11: 10463, 12: 10463,
+    13: 9309, 16: 11745, 17: 7389, 18: 8779, 19: 10463, 20: 6982, 21: 6982, 22: 6982, 23: 6982, 24: 7389, 25: 7389,
+    26: 7389, 27: 4933, 29: 4933, 30: 8287, 31: 8287, 32: 8287, 35: 11084, 36: 11084, 37: 9852, 38: 9852, 39: 8779,
+    40: 8779, 41: 7830, 42: 7830, 43: 11084, 45: 7830, 46: 6982, 47: 7830, 48: 16574, 49: 7389, 50: 7389, 51: 7389,
+    52: 15694, 53: 11084, 54: 14779, 56: 13185, 57: 9852, 58: 14779, 59: 11084, 60: 13964, 61: 9309, 63: 8287,
+    64: 11745, 70: 11686, 71: 11686, 72: 10409, 73: 10409, 80: 12445, 81: 13964, 82: 13185, 83: 14779, 84: 13185,
+    85: 11745, 86: 7830, 87: 20864, 88: 22168, 89: 12445, 90: 9852, 91: 13964, 92: 12445, 95: 13185, 96: 10463,
+    97: 9309, 98: 8672, 99: 7953, 100: 6982, 101: 12445, 102: 10463, 103: 13964, 104: 12622, 105: 11405, 108: 14779,
+    109: 6581, 136: 6581, 137: 6581, 138: 6581, 139: 6581, 140: 6581, 141: 6581, 142: 6581, 143: 10463, 144: 10463,
+    145: 10463, 152: 31388}
+MAX_TIME_CONSTANT = 212                    # 22,727 Hz, the most a Sound Blaster before the Pro plays (K10 uses it too)
+
+# K37: id -> (start, length) in bytes of sample data: the four grunts in DRAGRU and the three chomps in CHOMPS
+SOUND_SLICE_OF = {20: (0, 1856), 21: (1856, 1410), 22: (3266, 1136), 23: (4402, 1038),
+                  24: (0, 2688), 25: (2688, 2884), 26: (5572, 4174), 49: (0, 2688), 50: (2688, 2884), 51: (5572, 4174)}
+
+def time_constant(rate):
+    return min(MAX_TIME_CONSTANT, round(256 - 1_000_000 / rate))
+
+def _sound_patches():
+    unused = lambda n: bytes([UNUSED_SAMPLE]) * n
+    k35 = [(('DS', SB_TABLE + i), bytes([old]), bytes([new])) for _, ids in SOUND_ID_FIXES for i, (old, new) in ids.items()]
+    for i, (sample, fm) in OWN_SOUND_IDS.items():
+        k35 += [(('DS', SB_TABLE + i), unused(1), bytes([sample])), (('DS', FM_TABLE + i), unused(1), bytes([fm]))]
+    k35 += [
+        (('DS', TROLL_IDS), unused(8), bytes(TROLL_PICKS)), (('DS', SCARE_IDS), unused(4), bytes(SCARE_PICKS)),
+        ((0x1000, 0x3dc4), b'\x25\x03\x00', b'\x25\x01\x00'),                      # rat on the skull: and ax,3 -> and ax,1
+        ((0x1000, 0x5804), b'\x25\x03\x00\x56\xbe\x88\x7b',                        # troll: and ax,3 / push si / mov si,7B88h
+                           b'\x25\x07\x00\x56\xbe' + struct.pack('<H', TROLL_IDS)),   # -> and ax,7 / ... / mov si,TROLL_IDS
+        # mudmen's scare voice: call BF62h / and ax,1 / add ax,8 / call 5970h / ret
+        #   -> push si / call BF62h / and ax,3 / mov si,SCARE_IDS / jmp 57EFh (the mud voice's add si,ax ...) / nop
+        ((0x1000, 0x57d8), bytes.fromhex('e88767' '250100' '050800' 'e88c01' 'c3'),
+                           bytes.fromhex('56' 'e88667' '250300' 'be') + struct.pack('<H', SCARE_IDS) + bytes.fromhex('eb0b' '90')),
+    ]
+    rates = bytes(time_constant(SOUND_RATE_HZ[i]) if i in SOUND_RATE_HZ else 0 for i in range(180))
+    k36 = [
+        # mov bx,7E6Eh / xlatb / mov ah,0 / and al,0FFh / call 9503h
+        #   -> mov bx,7E6Eh / mov [SOUND_LAST_ID],al / xlatb / cbw / call 9503h
+        ((0x1000, 0x5995), bytes.fromhex('bb6e7e' 'd7' 'b400' '24ff' 'e8633b'),
+                           bytes.fromhex('bb6e7e' 'a2') + struct.pack('<H', SOUND_LAST_ID) + bytes.fromhex('d7' '98' 'e8633b')),
+        ((0x1000, SOUND_RATE_SITE), b'\xbb\x06\x00', b'\xcd\x63\x90'),              # mov bx,6 -> int 63h / nop
+        (('DS', SOUND_RATES), unused(180), rates), (('DS', SOUND_LAST_ID), unused(1), b'\0'),
+        (('DS', SOUND_SLICES), unused(1), b'\0'),                                    # no slices
+    ]
+    slices = b''.join(struct.pack('<BHH', i, *SOUND_SLICE_OF[i]) for i in sorted(SOUND_SLICE_OF)) + b'\0'
+    k37 = [(('DS', SOUND_SLICES), b'\0' + unused(len(slices) - 1), slices)]
+    return {
+        'K35': {
+            'title': 'Sound ids play the sounds the Amiga version plays. The DOS code and scripts ask for the Amiga\'s '
+                     'sound numbers, but the Sound Blaster table (DS:7E6E, id -> sample) was filled in against another '
+                     'numbering, so about 50 of the ids the game uses played another sample, though the right one was '
+                     'loaded: ' + '; '.join(what for what, _ in SOUND_ID_FIXES) + '. Three routines asked for the wrong '
+                     'ids: the mudmen\'s scare voice (1000:57D8) for 8 or 9, a grunt or the head chop (now 152, 87, 88 '
+                     'or 89 from a table, through the tail of the mud voice routine), the troll\'s grunt (1000:5801) '
+                     'for the Balok\'s roars 34-37 (now one of the Amiga\'s eight, 136-142), and the rat on the skull '
+                     '(1000:3DC1) for 101-104 (now 101-102, as on the Amiga). Moonstone Rebuilt\'s own sounds get ids '
+                     'from 171 up, in the unused end of the table (171 = the mines\' BONFIRE2, which was id 26)',
+            'bytes': k35,
+        },
+        'K36': {
+            'title': 'Each sound id plays at the Amiga\'s pitch. The Amiga plays the same sample at a different rate for '
+                     'each sound program (footsteps at three pitches, the Balok\'s roars at four, the troll\'s grunts '
+                     '2.5 times slower than the file says); DOS played one rate per file. 1000:5995 now notes the id '
+                     '(DS:' + f'{SOUND_LAST_ID:04X}' + 'h), and mov bx,6 before the driver call (1000:9537) becomes '
+                     'int 63h, which SAVEHOOK.COM handles: it writes the id\'s time constant (table at DS:'
+                     + f'{SOUND_RATES:04X}' + 'h, 0 = the file\'s own) into the copied VOC block. Needs SAVEHOOK.COM '
+                     'resident',
+            'bytes': k36,
+        },
+        'K37': {
+            'title': 'Ids that are one part of a sample play only that part: the dragon\'s grunts 20-23 are the four '
+                     'grunts in DRAGRU and the chomps 24-26 and 49-51 the three in CHOMPS; DOS played the whole sample '
+                     'each time (three chomps for every bite). The K36 handler finds the id in a list (DS:'
+                     + f'{SOUND_SLICES:04X}' + 'h: id, start, length) and writes a VOC block header just before the '
+                     'part and an end mark after it, in the copy of the page made for this sound. Needs K36',
+            'bytes': k37,
+        },
+        'D65': {
+            'title': 'The Amiga version\'s sound effects from a SoundFont (Moonstone Rebuilt; needs the user\'s own Amiga '
+                     'disk images at Setup). cmp word [8645h],3 at the start of the sound routine (1000:5979) becomes '
+                     'int 63h, which SAVEHOOK.COM handles: when AMIGASND.FLG is there and the id has an Amiga sound '
+                     'program, it sends "program change, note on" to the MIDI port (330h) on the next of four channels '
+                     'and skips the Sound Blaster; otherwise it does the compare. Needs SAVEHOOK.COM resident',
+            'bytes': [((0x1000, SOUND_PLAY_SITE), bytes.fromhex('833e458603'), bytes.fromhex('cd63909090'))],
+        },
+        'K38': {
+            'title': 'A blocked blow makes its sword clash. CheckBlock (1000:4219) is the Amiga\'s routine with the call '
+                     'that plays sound 17 left out: it loaded the number (mov ax,11h) and returned, so a block was '
+                     'silent. (Before K35 the clash was heard when a knight was struck: id 18, the hit, played '
+                     'SWORDCL.) The routine\'s end is rearranged in the same 14 bytes: the block that does not count '
+                     '(both knights facing the same way) becomes dec word [77FCh] (it is 1 there) / pop di / pop si / '
+                     'ret, and the block that holds mov al,11h / pop di / pop si / jmp 5970h. No caller uses ax',
+            'bytes': [((0x1000, 0x4237), b'\x75\x1e', b'\x75\x17'),                # jne 4257h -> jne 4250h (no block)
+                      ((0x1000, 0x424a), bytes.fromhex('7508' 'c706fc770000' 'eb03' 'b81100' '5f5ec3'),
+                                         bytes.fromhex('7507' 'ff0efc77' '5f5ec3' 'b011' '5f5e' 'e91617'))],
+        },
+    }
+
+PATCHES.update(_sound_patches())
 
 # --- INTR.EXE (intro and ending) -----------------------------------------------------------------------------------
 # K9: skip the intro (and ending) with Enter, Space or Esc. Every intro scene waits for vertical retrace in the routine

@@ -40,6 +40,8 @@ your game files into this folder and patches the copies; your GOG installation i
 | What | What it adds |
 |---|---|
 | **Your own Amiga Moonstone disk 1** as an ADF image | Richard Joseph's Amiga intro and ending music instead of the DOS tunes. See [Amiga music](#amiga-music-optional). |
+| **The Python package numpy** | The Amiga version's sound effects in the DOS game, built from the DOS game's own samples and substitute sounds. See [Amiga sound effects](#amiga-sound-effects-optional). |
+| **Your own three Amiga Moonstone disks** as ADF images | The same effects with the Amiga's own samples for every sound. |
 | **VLC media player** | Needed once, to turn the Amiga music into WAV files. Not needed for playing. <https://www.videolan.org/> |
 | **Roland MT-32 ROMs** (`MT32_CONTROL.ROM`, `MT32_PCM.ROM`, or the CM-32L ones) | The best DOS music. Put them in `mt32-roms`, then run `Music_MT32.bat`. Tested with MT-32 v1.07 (SHA-1 of `MT32_CONTROL.ROM`: `b083518fffb7f66b03c23b7eb4f868e62dc5a987`). They are Roland's copyright; obtain them legally. |
 | **A General MIDI SoundFont** (e.g. the freely distributable *GeneralUser GS*, from <https://www.schristiancollins.com/generaluser.php>) | General MIDI music. Save it as `soundfonts\default.sf2`, then run `Music_GM.bat`. Tested with GeneralUser GS 2.0.3 (rename `GeneralUser-GS.sf2` to `default.sf2`); the GM profile uses the reverb and chorus settings its author recommends for DOSBox-X. |
@@ -62,7 +64,7 @@ ROMs and SoundFont alone.
 ## Amiga music (optional)
 
 The Amiga version has two pieces of music, the intro and the ending, both on **disk 1**. They replace the DOS intro
-and ending tunes; the music inside the game stays as chosen (the Amiga version has no in-game music).
+and ending tunes; the music inside the game stays as chosen.
 
 * **File name and place:** save the image of your Amiga Moonstone **disk 1** as
 
@@ -79,6 +81,32 @@ and ending tunes; the music inside the game stays as chosen (the Amiga version h
 While the Amiga music is on, the DOS intro and ending tunes are silent copies, and a small helper
 (`amiga_music.ps1`) plays the Amiga music beside DOSBox-X while the intro or the ending runs. It stops when you
 skip the intro.
+
+## Amiga sound effects (optional)
+
+The Amiga version's sound effects are fuller than the DOS game's: every sound has its own pitch and loudness, some
+are made of several notes (a lion's roar and then the rumble of its den), and up to four play at once. Moonstone
+Rebuilt can play the effects the way the Amiga's sound driver does, in the DOS game.
+
+* **Without any Amiga files:** Setup builds the effects from the DOS game's own samples (48 of the Amiga's samples
+  are in it), with sounds of our own for the 14 it lacks: nine synthesized ones (wind, sparks, thuds, dice, the menu
+  click) and five made from public-domain recordings (the dragon's low grunt, the lions' den, the Guardian's long
+  scream, a rat's bite, a grunt of effort). See `sounds/SOURCES.md`. Nine more play another take of the same sound.
+* **With the images of your own three Amiga disks** in the `amiga` folder (any names ending in `.adf`; disk 1 can
+  keep the name `Moonstone_Disk1.adf`), Setup uses the Amiga's own samples for everything instead. The images stay
+  on your machine.
+* **Setup:** `Setup.bat` builds them (`AmigaSound_Setup.bat` does it again, for example after adding the disk
+  images). It needs the Python package numpy, which `AmigaSound_Setup.bat` installs into the `_python` folder here
+  if Python does not have it. The effects are saved as a SoundFont (`_music\amiga\amiga.sf2`, about 20 MB).
+* **On and off:** `AmigaSound_On.bat` / `AmigaSound_Off.bat`. A `Music_*.bat` also turns the Amiga effects off.
+* **Music:** while the Amiga effects are on, the music is AdLib (original). The effects are played by DOSBox-X's
+  SoundFont synthesizer, which is the MIDI device, so MT-32 and General MIDI music cannot play at the same time.
+* **Loudness:** the line `mixer synth 600:600` near the end of `moonstone-dosbox-x.conf` sets the effects' level.
+
+Not yet done: the Amiga's looping background sounds (wind, the lions' den, fire while it burns) play once instead of
+looping, the echoes of the Guardian's screams and the second voice of the mudmen are missing, and the Amiga's own
+music for the tavern, the healer, Mythral and the wizard is not played. Without the disk images eight of the Amiga's
+140 effect programs are silent (they use the instruments of that music and the healer's sample).
 
 ## Playing
 
