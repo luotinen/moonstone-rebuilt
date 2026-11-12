@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.9.0 – Optional Amiga sound effects and DOS sound fixes
 
 * The dagger throw ends with an empty outstretched hand, so the knight seems to fire a pistol as the dagger flies (D63). **Run Setup.bat again.**
 * New cheat code GUNSHOT (one fight): every knight, the computer's too, fires a musket instead of throwing a dagger, at once and with a bang; the small black ball flies three times as fast as a dagger and a hit takes all of a knight's or monster's hit points (a dodge in time still avoids it). See CHEATS.md (D64). **Run Setup.bat again** (the ball is a new piece in KN3.OB).
