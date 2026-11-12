@@ -3,12 +3,14 @@
 1. Finds the disk with music.cmp and vmusic.cmp among the .adf files in a folder (tools/adf.py) and unpacks the two
    StarTrekker modules (tools/rnc.py).
 2. Renders them to WAV with VLC (only needed here; the game plays the WAV files with Windows' own sound player).
-3. Makes muted copies of the DOS intro and ending tunes (DISKA/ATUNE1.BIN and ATUNE6.BIN) for every music set:
-   every note-on gets velocity 0, so the tune keeps its timing (and the intro skip, K9, still sees a loaded module),
-   but plays nothing.
+3. Makes muted copies of the DOS intro and ending tunes (DISKA/ATUNE1.BIN and ATUNE6.BIN) for every music set, so
+   the tune keeps its timing (and the intro skip, K9, still sees a loaded module) but plays nothing. General MIDI and
+   MT-32: every note-on gets velocity 0. AdLib: the tune file holds its own player, and with velocity-0 notes the
+   intro froze where the tune ends, with a tone left on; there the player's note-on loses its key-on bit instead,
+   and the notes stay as they are.
 The results go to <rebuilt>/_music/amiga/. amiga_music.ps1 plays the WAV files while INTR.EXE runs.
 Usage: python -I tools/make_amiga_music.py <folder with .adf files> <rebuilt folder> [vlc.exe]"""
-import sys, os, glob, subprocess, hashlib
+import sys, os, glob, re, subprocess, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adf import Adf
 from rnc import unrnc
@@ -43,9 +45,17 @@ def render(vlc, mod_path, wav_path):
     if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100000:
         raise SystemExit(f'VLC did not render {wav_path}')
 
-def mute(module):
+# The AdLib player's note-on: mov [di+8],ax / or ah,20h (key on) / call the register write
+ADLIB_KEY_ON = re.compile(bytes.fromhex('894508 80cc20 e8'))
+
+def mute(module, music_set=''):
     smf = find_smf(module)
     start = module.find(smf)
+    if music_set == 'adlib':
+        hits = [m.start() for m in ADLIB_KEY_ON.finditer(module[:start])]
+        if len(hits) != 1:
+            raise SystemExit('The AdLib tune has another player than the one this tool knows (no single key-on found)')
+        return module[:hits[0] + 5] + bytes(1) + module[hits[0] + 6:]     # or ah,0: the note never sounds
     out = bytearray(smf)
     for k, status, _ in walk(smf):
         if status & 0xf0 == 0x90:
@@ -73,7 +83,7 @@ def main(adf_folder, rebuilt, vlc=None):
             src = os.path.join(rebuilt, '_music', music_set, 'DISKA', tune)
             dst = os.path.join(out, music_set, tune)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            open(dst, 'wb').write(mute(open(src, 'rb').read()))
+            open(dst, 'wb').write(mute(open(src, 'rb').read(), music_set))
     print(f'Muted DOS intro and ending tunes for {", ".join(MUSIC_SETS)} -> {out}')
 
 if __name__ == '__main__':

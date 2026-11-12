@@ -11,6 +11,7 @@
   * A blocked blow makes its sword clash, and a blow that lands makes the hit sound; before, a block was silent and a hit clashed (K38, K35).
 * The Amiga version's sound effects in the DOS game (D65, optional): with the images of your own three Amiga disks in the `amiga` folder, Setup builds the Amiga's sounds, and `AmigaSound_On.bat` turns them on: every sound at its own pitch and loudness, up to four at once, and the sounds the DOS disks lack. The music is AdLib while they are on. See README, "Amiga sound effects". **Run Setup.bat again.**
 * The Amiga version's sound effects for everyone (D66): without the Amiga disks Setup builds them from the DOS game's own samples, with 14 sounds of our own for the ones DOS lacks (nine synthesized, five from public-domain recordings; all CC0, see `sounds/SOURCES.md`). `AmigaSound_On.bat` turns them on. With the disk images every sound is the Amiga's own. Needs the Python package numpy (`AmigaSound_Setup.bat` installs it).
+* Amiga intro music with AdLib music: the intro no longer freezes, with a tone left on, where the DOS tune ends (D8). The silent copies of the AdLib intro and ending tunes are made another way. **Run Setup.bat or AmigaMusic_Setup.bat again.**
 
 ## 0.8.1
 
