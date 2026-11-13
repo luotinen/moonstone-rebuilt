@@ -275,6 +275,23 @@ PATCHES = {
                   # the spear trogg's frames of a fallen knight on its spear (1000:2F90)
                   ((0x1000, 0x2f90), bytes.fromhex('8bc6'), bytes.fromhex('cd63'))],
     },
+    'K40': {
+        'title': 'The Guardian hid knights for good (user report 12 Nov 2026, co-op). Its whip catch (1000:5155, '
+                 '518A) and its zap\'s script (KnightOFF 5254) take a knight off the screen with the pause toggle '
+                 '(9892) and its let-go (50E0, 511B) and KnightON (5262) toggle it back, each with the knight in '
+                 '[0978h]: in co-op the zap\'s script runs when [0978h] is the last object\'s, so one knight was hidden '
+                 'and another toggled, and a blow on the Guardian during the hold (5202) or its hit (5245) ended it '
+                 'without showing the knight. These become int 63h: the knight hidden is noted, shown again by the '
+                 'game\'s own code, and shown at once when the hold ends early. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x5155), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x518a), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x5254), bytes.fromhex('8b3e7809'), bytes.fromhex('cd639090')),
+                  ((0x1000, 0x5262), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x50e0), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x511b), bytes.fromhex('a17809'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x5202), bytes.fromhex('c706b47b0000'), bytes.fromhex('cd6390909090')),
+                  ((0x1000, 0x5245), bytes.fromhex('c706b47b0000'), bytes.fromhex('cd6390909090'))],
+    },
     'D25': {
         'title': 'Knights turn in place and walk up close (user report 4 Nov 2026). A turn (1000:3F83, 3F92) '
                  'mirrors the pose about the object\'s x, which the standing knight is not centred on (x-13..x+23), '
@@ -330,6 +347,43 @@ PATCHES = {
                  'mov [CC9Ah],bx after 83C0) stays empty until no direction or fire is held. Needs SAVEHOOK.COM '
                  'resident',
         'bytes': [((0x1000, 0xa536), bytes.fromhex('891e9acc'), bytes.fromhex('cd639090'))],
+    },
+    'D70': {
+        'title': 'Three players on one keyboard (user request 13 Nov 2026): the pointer of the item screen (MovePointer, '
+                 '1000:D093) read the keys of player 2 for +9 = 1, else player 1; it becomes int 63h, which also '
+                 'reads the third key set (I J K L + B) for +9 = 7, the knight of player 3 when the players keep their '
+                 'own key sets. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xd093), bytes.fromhex('807c090175028bd8'), bytes.fromhex('cd63909090909090'))],
+    },
+    'D78': {
+        'title': 'Hardcore automatic saves (user request 13 Nov 2026; hardcore_autosave_mode, on by default, also '
+                 'without custom rules): Game Over (1000:0617, reached when every human knight is dead and when Esc '
+                 'gives up on the map) becomes int 63h: when no human knight has a life left, SAVEHOOK.COM deletes '
+                 'the automatic saves C:\\SAVE\\91.SAV-100.SAV, so they serve only to go on with a game. Esc with a '
+                 'life left keeps them. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x0617), bytes.fromhex('be6a07'), bytes.fromhex('cd6390'))],
+    },
+    'D71': {
+        'title': 'Resume Game hint in the first menu (user request 13 Nov 2026): when automatic saves exist, the first '
+                 'menu shows "RESUME GAME: F11+L" in a small font right of Select Knight, and F11+L loads the newest '
+                 'of them. DoOptions\' first draw (1000:1279, call 1362) becomes int 63h: SAVEHOOK.COM finds the newest '
+                 'of save slots 91-100 by file time, notes the slot in use (DOSBox-X\'s CONFIG -get saveslot, into '
+                 'C:\\SAVEHOOK.RSM) and selects the newest (CONFIG -set saveslot); the old slot comes back at the next '
+                 'turn or fight save, also in a loaded save. The menu\'s show (1362 -> 13B8, call 5A4A) becomes int '
+                 '63h: the hint is drawn into the page first. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x1279), bytes.fromhex('e8e600'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x13b8), bytes.fromhex('e88f46'), bytes.fromhex('cd6390'))],
+    },
+    'D76': {
+        'title': 'Gore with four values (user request 13 Nov 2026): the first menu\'s Gore switch goes round Off, Less, '
+                 'On, More (On at the start). Less: blood, but no fatalities or special deaths (as age_rating K16); '
+                 'More: as the ABACABB cheat code. OptionKeys\' toggle (1000:1359, xor word [0700h],1) becomes int 63h '
+                 '+ nop x3: SAVEHOOK.COM steps its gore_level (left back, fire and right on) within what the age rating '
+                 'allows and sets [0700h] (1 for Off). The value\'s text (139F, mov word [050Eh],0581h) becomes int 63h '
+                 '+ jmp 13B2 + nop x2: SAVEHOOK.COM points the value record at "Off", "On" or "Less"/"More" (written to '
+                 'DS:FE80). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x1359), bytes.fromhex('8336000701'), bytes.fromhex('cd63909090')),
+                  ((0x1000, 0x139f), bytes.fromhex('c7060e058105'), bytes.fromhex('cd63eb0f9090'))],
     },
     'D24': {
         'title': 'Responsive controls (user request 4 Nov 2026). The game reads its key table once a frame (two BIOS '
@@ -519,6 +573,43 @@ SOUND_PLAY_SITE = 0x5979                   # cmp word [8645h],3 at the start of 
 AMIGA_PROGRAMS = [p for p in range(1, 167) if not (110 <= p <= 114 or 116 <= p <= 133 or 158 <= p <= 160)]
 AMIGA_FIRST_KEY, AMIGA_PER_PRESET = 20, 100
 AMIGA_PROGRAM_OF = {15: 156}               # sound ids that are not the Amiga's number: 15 is DOS's menu click (clik2)
+# D67: the sounds the Amiga plays on a channel of their own and reserves it (id: channel): the dragon's breath
+# (016D28) and fire (016D32) and the mudmen's mud (03CBBC). All three programs begin again by themselves.
+AMIGA_FIXED = {29: 0, 27: 1, 80: 0}
+# D72: the sounds the Amiga plays in twos, which the one-voiced DOS game asks for singly (id: the id played after
+# it on the next channel): the mudmen's voice (Amiga 03CBC8: 87+148, 88+149, 89+150, 151+152; DOS asks for 152 of
+# the last pair, see SCARE_PICKS), the Guardian's death (03D24E: 64+65, 66+67 or 68+69) and its yell (03D224: 74-77)
+AMIGA_MORE = {87: 148, 88: 149, 89: 150, 152: 151, 64: 65, 66: 67, 68: 69, 74: 75, 75: 76, 76: 77}
+GUARDIAN_DEATH = 64                        # 1000:581C asks for 64; the Amiga picks 64, 66 or 68
+DRAGON_LANDS, DRAGON_LANDS_RET = 45, 0x3763   # 1000:375D asks for 45 (the Amiga's 016D52 plays 45 and 46); its return
+TROLL_GRUNTS = (136, 142)                  # a troll's grunt (1000:5801): the Amiga's 03CE22 plays two picks of its table
+LOOP_RELEASE_SITE = 0x3e32                 # an unused ret -> int 63h: the dragon's scripts give their channels back
+LOOP_RELEASE_CALLS = (0x41cc, 0x450e, 0x4948)   # DS: the address in the scripts' three calls of the empty 1000:5833
+# D73: the Amiga's location music, only in the SoundFont built from the user's own disk images (make_amiga_audio.py
+# writes amiga.music beside it then, and Start.bat makes AMIGAMUS.FLG from that). The DOS game starts a scene's tune
+# with int 60h, ah = 0 (its music driver) and stops it with ah = 2; these nine int 60h become int 63h. Scene: (the
+# start's int 60h, the Amiga programs of its piece, one part each; the Amiga starts them together on channels 0-3)
+AMIGA_MUSIC = {'tavern': (0xb2cc, (125, 126, 127)),        # Amiga 01A4EC; DOS tune 2 (load_DiceBACK)
+               'henge': (0xb55e, (158, 159, 160)),         # 01AA3A, "The druids prepare for the ritual"; tune 1
+               'wizard': (0xb775, (128, 129, 130, 131)),   # 019630; tune 1 (LoadWizard)
+               'mythral': (0xbb36, (121, 122, 123, 124)),  # 019E4A; tune 4
+               'healer': (0xbc67, (116, 117, 118, 119))}   # 019BE6; tune 3
+# the stops: LeaveTavern, the henge's end (HengeLOOP), the wizard's end, MysticFini (Mythral and the healer)
+MUSIC_STOPS = (0xb360, 0xb5ef, 0xb8d3, 0xbc15)
+AMIGA_MUSIC_PRESET = 2                     # the music parts are keys program - 90 of preset 2 (110-160: keys 20-70)
+AMIGA_MUSIC_CHANNELS = (4, 5, 6, 7)        # MIDI channels of the parts: the effects and amiga_stop use 0-3
+# D74: the Amiga's music of the gods' message screen ("The Gods pause for a moment...", 1000:9085, shown before a
+# fight's or the wizard's files load; Amiga 012F5A -> 012F20, the drums): it starts at the message's
+# inc word [8E20h] (an int 63h there) and stops where the fight starts (InitCombat, SAVEHOOK's int 66h) or where the
+# wizard's own piece starts
+GODS_MUSIC_SITE = 0x90a8
+GODS_MUSIC = (110, 111, 112, 113)
+
+def music_key(program):
+    # D74: no key under 15: the FluidSynth in DOSBox-X (1.1.6) takes a sample's root key through fluid_ct2hz, which
+    # clamps under 1500 cents, so a sample at key 14 played a semitone low (research/sf2_spike/make_spike10.py);
+    # 20 and up, as the effects (AMIGA_FIRST_KEY)
+    return program - 90
 
 def amiga_program(sound):
     """The Amiga program a sound id plays in the SoundFont, or 0: the id goes to the Sound Blaster as before
@@ -642,6 +733,35 @@ def _sound_patches():
                      'program, it sends "program change, note on" to the MIDI port (330h) on the next of four channels '
                      'and skips the Sound Blaster; otherwise it does the compare. Needs SAVEHOOK.COM resident',
             'bytes': [((0x1000, SOUND_PLAY_SITE), bytes.fromhex('833e458603'), bytes.fromhex('cd63909090'))],
+        },
+        'D67': {
+            'title': 'The Amiga sound effects stop when a fight ends, and the dragon\'s breath and fire, the mud and the '
+                     'lions\' den are real loops. SAVEHOOK.COM sends "all sound off" on the four channels at the end '
+                     'of a fight (in D17\'s handler at 1000:0ABE) and where a fight or a turn starts. The dragon\'s three '
+                     'scripts call 1000:3E32 (an unused ret, now int 63h) where they called the empty 1000:5833 (the '
+                     'Amiga\'s routines that give back channel 0 and 1): the handler silences the loop\'s channel. '
+                     'Nothing is sent with Amiga sound off. Needs D65 and SAVEHOOK.COM resident',
+            'bytes': [((0x1000, LOOP_RELEASE_SITE), bytes.fromhex('c3c3'), bytes.fromhex('cd63'))]
+                     + [(('DS', at), bytes.fromhex('3358'), bytes.fromhex('323e')) for at in LOOP_RELEASE_CALLS],
+        },
+        'D73': {
+            'title': 'The Amiga version\'s location music (Moonstone Rebuilt; needs the user\'s own Amiga disk images '
+                     'at Setup). The int 60h that start the tune of the tavern, the henge, the wizard, Mythral and the '
+                     'healer and the four that stop it become int 63h, which SAVEHOOK.COM handles: when AMIGASND.FLG '
+                     'and AMIGAMUS.FLG are there it plays the Amiga\'s piece from the SoundFont on MIDI channels 4-7 '
+                     'instead of the DOS tune and silences those channels at the stop; otherwise it does the int 60h. '
+                     'Needs D65 and SAVEHOOK.COM resident',
+            'bytes': [((0x1000, at), bytes.fromhex('cd60'), bytes.fromhex('cd63'))
+                      for at in sorted([x for x, _ in AMIGA_MUSIC.values()] + list(MUSIC_STOPS))],
+        },
+        'D74': {
+            'title': "The Amiga version's music of the gods' message screen (Moonstone Rebuilt; needs the user's own "
+                     'Amiga disk images at Setup). inc word [8E20h] in the routine that shows "The Gods pause for a '
+                     'moment..." and the other messages before a fight or the wizard (1000:9085) becomes int 63h + nop '
+                     "x2, which SAVEHOOK.COM handles: it does the inc, and when AMIGASND.FLG and AMIGAMUS.FLG are there "
+                     "it plays the Amiga's drums from the SoundFont on MIDI channels 4-7 until the fight or the "
+                     "wizard's music starts. Needs D65, D73 and SAVEHOOK.COM resident",
+            'bytes': [((0x1000, GODS_MUSIC_SITE), bytes.fromhex('ff06208e'), bytes.fromhex('cd639090'))],
         },
         'K38': {
             'title': 'A blocked blow makes its sword clash. CheckBlock (1000:4219) is the Amiga\'s routine with the call '

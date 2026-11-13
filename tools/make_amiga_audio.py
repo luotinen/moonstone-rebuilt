@@ -18,10 +18,12 @@ Usage: python -I tools/make_amiga_audio.py <folder with the three .adf files> <o
        writes <output folder>/sNNN.wav for every program, mix_*.wav for the sounds played on several channels at
        once, and index.html, a page to listen to them all.
        python -I tools/make_amiga_audio.py <folder with the three .adf files> <file.sf2> soundfont
-       writes the SoundFont the game plays its effects from (D65): one key per program, see FONT_PROGRAMS.
+       writes the SoundFont the game plays its effects from (D65): one key per program, see FONT_PROGRAMS, and the
+       location music (D73): one looping key per part of each piece in preset 2, see AMIGA_MUSIC (and GODS_MUSIC,
+       D74); and <file>.music, which says the music is in it.
        python -I tools/make_amiga_audio.py <installation folder> <file.sf2> install
-       the same for an installation: from the disk images in its amiga folder if all three are there, else from its
-       SAMPLES folder, its sounds folder and sound_programs.json."""
+       the same for an installation: from the disk images in its amiga folder if all three are there (then with the
+       location music), else from its SAMPLES folder, its sounds folder and sound_programs.json (effects only)."""
 import sys, os, glob, json, struct, wave, hashlib, html
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '_python'))   # AmigaSound_Setup.bat puts numpy there if Python has none
@@ -269,21 +271,52 @@ class Channel:
 def record(drv, program, loops=1, max_seconds=30.0):
     """A program as the driver plays it on one channel -> (steps, loops). A step is [frames, volume 0-63, sample rate
     in Hz, start]: start is an instrument's number where a note begins, -1 where the sound is cut, None otherwise.
-    loops: the program begins again by itself (then the steps are `loops` times round)."""
-    ch, steps, frame = Channel(drv, program, [0]), [], 0
+    loops: the program begins again by itself (then the steps are exactly `loops` times round: the frame in which
+    it begins again is the first of the next round and is left out)."""
+    rounds, again = _rounds(drv, program, loops, max_seconds)
+    return _steps([f for r in rounds for f in r]), again
+
+def _rounds(drv, program, rounds, max_seconds):
+    """-> (the program's first `rounds` rounds, each a list of (volume, sample rate, start) for every frame; whether
+    it begins again by itself). The last round is cut short if max_seconds runs out."""
+    ch, out, frame = Channel(drv, program, [0]), [[]], 0
     while frame < max_seconds * FRAME_HZ:
         ch.step(); frame += 1
-        start = ch.used[-1] if ch.trigger else -1 if ch.stop else None
-        if steps and start is None and steps[-1][1] == ch.cur_vol and steps[-1][2] == ch.rate: steps[-1][0] += 1
-        else: steps.append([1, ch.cur_vol, ch.rate, start])
-        if ch.pc is None or ch.restarts >= loops: break
-    return steps, ch.pc is not None
+        if ch.restarts >= len(out):
+            if len(out) == rounds: break
+            out.append([])
+        out[-1].append((ch.cur_vol, ch.rate, ch.used[-1] if ch.trigger else -1 if ch.stop else None))
+        if ch.pc is None: break
+    return out, ch.pc is not None
+
+def _steps(frames):
+    steps = []
+    for vol, rate, start in frames:
+        if steps and start is None and steps[-1][1] == vol and steps[-1][2] == rate: steps[-1][0] += 1
+        else: steps.append([1, vol, rate, start])
+    return steps
+
+def record_program(drv, program):
+    """A program for the SoundFont -> (steps, loop). loop is None for a program that is played once: one that ends,
+    or one that begins again but is never the same twice (134 rises a step every round; then the steps are its
+    first round). Else the program goes back to steps[loop] after its last step for ever: the steps are its rounds
+    up to the first one that the next round repeats, and steps[loop] is where that round starts. The dragon's fire
+    is the same from the first round on (loop = 0); a Balok's roar is lower from the second round on, because the
+    den sound after it leaves its transposing on, so its steps are two rounds."""
+    rounds, again = _rounds(drv, program, 5, 120.0)
+    if again:
+        for k in range(len(rounds) - 2):                        # the last round may be cut short
+            if rounds[k] == rounds[k + 1]:
+                head = _steps([f for r in rounds[:k] for f in r])
+                return head + _steps(rounds[k]), len(head)
+    return _steps(rounds[0]), None
 
 class Replay:
     """Plays recorded steps (from record, or from the table in sound_programs.json) as a Channel plays its program.
-    instruments: number -> dict(pcm, looped, loop)."""
-    def __init__(self, steps, loops, instruments):
-        self.steps, self.loops, self.instruments = steps, loops, instruments
+    instruments: number -> dict(pcm, looped, loop). loop: None, or the step to go back to after the last one (see
+    record_program); as in a Channel, the round's number (restarts) goes up in the first frame of the next round."""
+    def __init__(self, steps, loop, instruments):
+        self.steps, self.loop, self.instruments = steps, loop, instruments
         self.k = self.left = 0
         self.pc, self.restarts, self.used = 0, 0, []
         self.trigger = self.stop = False
@@ -291,7 +324,9 @@ class Replay:
 
     def step(self):
         self.trigger = self.stop = False
-        if self.k >= len(self.steps): return
+        if self.k >= len(self.steps):
+            if self.loop is None: return
+            self.k, self.restarts = self.loop, self.restarts + 1
         frames, vol, rate, start = self.steps[self.k]
         if self.left == 0:                              # the first frame of this step
             self.left, self.cur_vol, self.rate = frames, vol, rate
@@ -303,9 +338,7 @@ class Replay:
         self.left -= 1
         if self.left == 0:
             self.k += 1
-            if self.k == len(self.steps):
-                if self.loops: self.restarts += 1
-                else: self.pc = None
+            if self.k == len(self.steps) and self.loop is None: self.pc = None
 
 class Paula:
     """One Paula channel: plays 8-bit samples at clock / period, without smoothing between samples."""
@@ -348,9 +381,11 @@ def render(drv, programs, max_seconds=30.0, loops=1):
     tempo = [0]
     return mix([(Channel(drv, p, tempo), Paula(), c) for p, c in programs], max_seconds, loops)
 
-def play(steps, loops, instruments, max_seconds=30.0):
-    """Recorded steps (record) played on one channel -> (left, right, facts), as render gives for the program."""
-    return mix([(Replay(steps, loops, instruments), Paula(), 0)], max_seconds, 1)
+def play(steps, loop, instruments, max_seconds=60.0, rounds=1):
+    """Recorded steps played on one channel -> (left, right, facts), as render gives for the program. With a loop
+    (record_program) the steps are played through, and from steps[loop] again until that has been done `rounds`
+    times."""
+    return mix([(Replay(steps, loop, instruments), Paula(), 0)], max_seconds, rounds)
 
 def mix(chans, max_seconds, loops):
     """chans: [(Channel or Replay, Paula, Paula channel number)], stepped and played together."""
@@ -358,15 +393,15 @@ def mix(chans, max_seconds, loops):
     while frame < max_seconds * FRAME_HZ:
         acc += RATE / FRAME_HZ; n = int(acc); acc -= n
         l, r = np.zeros(n, dtype=np.float32), np.zeros(n, dtype=np.float32)
+        for ch, _, _ in chans: ch.step()
+        running = [ch for ch, _, _ in chans if ch.pc is not None]
+        if running and all(ch.restarts >= loops for ch in running): break     # the first frame of the round after
         for ch, voice, c in chans:
-            ch.step()
             y = voice.frame(ch, n)
             if c in LEFT: l += y
             else: r += y
         left.append(l); right.append(r); frame += 1
         if all(ch.pc is None and v.pcm is None for ch, v, _ in chans): break
-        running = [ch for ch, _, _ in chans if ch.pc is not None]
-        if running and all(ch.restarts >= loops for ch in running): break
     facts = dict(seconds=frame / FRAME_HZ, loops=any(ch.pc is not None for ch, _, _ in chans),
                  instruments=sorted({i for ch, _, _ in chans for i in ch.used}))
     return np.concatenate(left), np.concatenate(right), facts
@@ -378,30 +413,129 @@ def write_wav(path, left, right=None, filtered=True):
     with wave.open(path, 'wb') as w:
         w.setnchannels(len(chans)); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(pcm.tobytes())
 
-def font_sound(steps, loops, instruments):
-    """One program as its sound in the SoundFont (mono, RATE), or None if it is silent."""
-    left, right, _ = play(steps, loops, instruments)
+LOOP_TAIL = 64                                     # samples after a loop's end: the loop's first ones again
+
+def font_sound(steps, loop, instruments):
+    """One program (steps and loop as record_program gives them) as its sound in the SoundFont (mono, RATE) ->
+    (samples, loop points), or None if it is silent. The loop points are None for a sound that is played once, else
+    (first sample, sample after the last) of the round that repeats. That round is played twice here and its second
+    time is kept, so that its end runs into its start as when the Amiga plays on; LOOP_TAIL samples of its start
+    follow it for the synth's interpolation. If the round does not start a note in its first frame, its first time
+    sounds different and is kept too. The loop never starts at the sample's first sample (see music_parts): a loop
+    with nothing before it gets its own last LOOP_TAIL samples there, which run into its start."""
+    left, right, _ = play(steps, loop, instruments, rounds=1 if loop is None else 2)
     x = amiga_filter(left + right)
     live = np.flatnonzero(np.abs(x) > 1e-4)
     if not len(live): return None
-    x = x[:min(len(x), live[-1] + RATE // 20)]                  # no long silent tail
-    x[-64:] *= np.linspace(1, 0, 64)
-    return x * 0.95
+    if loop is None:
+        x = x[:min(len(x), live[-1] + RATE // 20)]              # no long silent tail
+        x[-64:] *= np.linspace(1, 0, 64)
+        return x * 0.95, None
+    n = sum(s[0] for s in steps[loop:]) * RATE // FRAME_HZ      # one round of the loop
+    again = len(x) - n                                          # where its second time starts
+    starts_a_note = steps[loop][3] is not None and steps[loop][3] >= 0
+    head = x[:again - n] if starts_a_note else x[:again]
+    if not len(head): head = x[-LOOP_TAIL:]
+    return np.concatenate([head, x[again:], x[again:again + LOOP_TAIL]]) * 0.95, (len(head), len(head) + n)
 
-def write_soundfont(instruments, programs, path):
-    """Every effect program as one sound. programs: number -> (steps, loops), from record or from the table.
-    A program that begins again by itself (fire, wind, a Balok's roar with the den after it) is played once round:
-    nothing in the game stops such a loop yet, so it must end by itself. -> (sounds, seconds, programs left out as
-    silent)."""
+def write_soundfont(instruments, programs, path, music=()):
+    """Every effect program as one sound. programs: number -> (steps, loop), from record_program or from the table.
+    A program that begins again by itself (fire, breath, mud, wind, a Balok's roar with the den after it) is a loop
+    in the SoundFont (D67): it plays until another note on its MIDI channel or "all sound off" stops it.
+    music: the location music's parts (music_sounds, D73; only from the disks), after the effects in preset 2.
+    -> (sounds, seconds, programs left out as silent)."""
     sounds, total, silent = [], 0, []
     for p in FONT_PROGRAMS:
-        x = font_sound(*programs[p], instruments) if p in programs else None
-        if x is None:
+        made = font_sound(*programs[p], instruments) if p in programs else None
+        if made is None:
             silent.append(p); continue
+        x, loop = made
         preset, key = font_key(p)
-        sounds.append((preset, key, f'program {p}', x, RATE, None)); total += len(x)
+        sounds.append((preset, key, f'program {p}', x, RATE, loop)); total += len(x)
+    for sound in music:
+        sounds.append(sound); total += len(sound[3])
     soundfont.write(path, sounds, 'Moonstone', cut=True)
     return len(sounds), total / RATE, silent
+
+# --- the location music (D73), only from the user's own disk images --------------------------------------------------
+# The tavern, the henge, the wizard, Mythral and the healer have a piece of music on the Amiga: three or four programs
+# started together, one on each Paula channel, each looping by itself with a round of its own. Each part is a loop of
+# its own here, keys music_key(program) of preset 2, which SAVEHOOK.COM starts on MIDI channels 4-7 (a capture showed
+# that loops on separate MIDI channels keep together to a sample: research/sf2_spike/make_spike7.py). The pieces are
+# compositions: they come from the disks only, never from a table in the release. D74: also the drums of the gods'
+# message screen (110-113).
+from patches import AMIGA_MUSIC, AMIGA_MUSIC_PRESET, GODS_MUSIC, music_key
+MUSIC_LEVEL = 0.95                                 # as the effects: the Amiga's own levels
+MUSIC_MARKER = '.music'                            # amiga.music beside amiga.sf2: the location music is in it
+
+def _state(c):
+    """Everything a channel's next frames depend on, at the start of a frame."""
+    return (c.pc, tuple(tuple(x) if isinstance(x, list) else x for x in c.stack), c.dur, c.reload, c.vol, c.cur_vol,
+            c.period, c.out_period, c.transpose, c.flags, tuple(c.mod), tuple(c.vdelay), tuple(c.vcount),
+            tuple(c.pdelay), tuple(c.pcount), c.vsum, c.psum, drv_index(c), c.tempo[0])
+
+def drv_index(c):
+    return next(k for k, x in enumerate(c.d.ins) if x is c.ins)
+
+def part_rounds(drv, programs, max_seconds=600.0):
+    """A piece's programs stepped together as the Amiga starts them (in one frame, the tempo shared) -> for each
+    part (first frame, frames): from that frame on the part repeats every `frames` frames. A channel's state at the
+    start of a frame decides all it plays from there, so the loop starts at the first frame whose state comes again.
+    This also finds the period of the parts that never restart by themselves but go on to another program (113, 119,
+    130 and 131 go to 114, 120, 132 and 133)."""
+    tempo = [0]
+    chans = [Channel(drv, p, tempo) for p in programs]
+    seen, found = [dict() for _ in programs], [None] * len(programs)
+    for frame in range(int(max_seconds * FRAME_HZ)):
+        for k, c in enumerate(chans):
+            if found[k] is None:
+                st = _state(c)
+                if st in seen[k]: found[k] = (seen[k][st], frame - seen[k][st])
+                else: seen[k][st] = frame
+        if all(found): return found
+        for c in chans: c.step()
+    raise AudioError(f'music programs {programs}: no repeat found in {max_seconds:.0f} s')
+
+def music_parts(drv, programs):
+    """-> [(samples, loop points)] for each part of a piece (mono, RATE), as font_sound makes a loop: the frames
+    before the loop once, then its second time round (so its end runs into its start, also in the Amiga's output
+    filter), then LOOP_TAIL samples of its start. The loop never starts at the sample's first sample: the FluidSynth
+    in DOSBox-X (1.1.6, sffile.c fixup_sample) takes such a loop as broken and loops from start + 8 to end - 8 instead,
+    48 samples too long a round with LOOP_TAIL (research/sf2_spike/make_spike8.py)."""
+    rounds = part_rounds(drv, programs)
+    tempo = [0]
+    chans = [(Channel(drv, p, tempo), Paula()) for p in programs]
+    per_frame = RATE // FRAME_HZ
+    outs = [[] for _ in programs]
+    for frame in range(max(f + 2 * n for f, n in rounds)):
+        for c, _ in chans: c.step()
+        for (c, voice), out in zip(chans, outs): out.append(voice.frame(c, per_frame))
+    parts = []
+    for (first, n), out in zip(rounds, outs):
+        x = amiga_filter(np.concatenate(out[:first + 2 * n]))
+        head, loop = x[:first * per_frame], x[(first + n) * per_frame:(first + 2 * n) * per_frame]
+        if not len(head): head = loop[-LOOP_TAIL:]
+        parts.append((np.concatenate([head, loop, loop[:LOOP_TAIL]]) * MUSIC_LEVEL, (len(head), len(head) + len(loop))))
+    return parts
+
+def music_sounds(drv):
+    """The location music's parts as SoundFont sounds: [(preset, key, name, samples, rate, loop)]."""
+    out = []
+    pieces = [(scene, programs) for scene, (_, programs) in AMIGA_MUSIC.items()] + [('gods', GODS_MUSIC)]   # D74
+    for scene, programs in pieces:
+        for p, (x, loop) in zip(programs, music_parts(drv, programs)):
+            out.append((AMIGA_MUSIC_PRESET, music_key(p), f'{scene} {p}', x, RATE, loop))
+    return out
+
+def write_music_marker(font, built):
+    """<font name>.music says the SoundFont has the location music (Start.bat makes AMIGAMUS.FLG from it); a build
+    without it removes the marker."""
+    marker = os.path.splitext(font)[0] + MUSIC_MARKER
+    if built:
+        with open(marker, 'w', newline='\r\n') as f:
+            f.write(f'{os.path.basename(font)} has the Amiga location music (built from your own Amiga disk images)\n')
+    elif os.path.exists(marker):
+        os.remove(marker)
 
 # --- without the Amiga disks: the same programs with the DOS game's samples -------------------------------------------
 TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sound_programs.json')
@@ -428,9 +562,10 @@ def read_wav8(path):
     raise AudioError(f'{path}: {8 * width}-bit samples are not supported')
 
 def read_table(path=TABLE):
-    """sound_programs.json -> (instruments' sources, programs: number -> (steps, loops))."""
+    """sound_programs.json -> (instruments' sources, programs: number -> (steps, loop)). A program's "loop" is the
+    step it goes back to after its last one; one without it is played once."""
     t = json.load(open(path, encoding='utf-8'))
-    return t['instruments'], {int(p): (x['steps'], x['loops']) for p, x in t['programs'].items()}
+    return t['instruments'], {int(p): (x['steps'], x.get('loop')) for p, x in t['programs'].items()}
 
 def dos_instruments(sources, samples, sounds):
     """The instruments of the table from the DOS game's SAMPLES folder and the substitute sounds: number -> dict(pcm,
@@ -459,12 +594,15 @@ def build_soundfont(install, font):
     os.makedirs(os.path.dirname(os.path.abspath(font)), exist_ok=True)
     if len(glob.glob(os.path.join(amiga, '*.[aA][dD][fF]'))) >= 3:
         drv = Driver(read_disks(amiga))
-        n, seconds, silent = write_soundfont(drv.ins, {p: record(drv, p) for p in FONT_PROGRAMS}, font)
-        source = 'from your Amiga disks' + ('' if drv.verified else ' (mog is not the known file)')
+        n, seconds, silent = write_soundfont(drv.ins, {p: record_program(drv, p) for p in FONT_PROGRAMS}, font,
+                                             music_sounds(drv))
+        write_music_marker(font, True)
+        source = 'with the location music, from your Amiga disks' + ('' if drv.verified else ' (mog is not the known file)')
     else:
         sources, programs = read_table()
         instruments = dos_instruments(sources, os.path.join(install, 'SAMPLES'), os.path.join(install, 'sounds'))
         n, seconds, silent = write_soundfont(instruments, programs, font)
+        write_music_marker(font, False)
         source = 'from the DOS samples and the substitute sounds (no Amiga disks in the amiga folder)'
     return f'{n} sounds, {seconds:.0f} s, {os.path.getsize(font) / 1e6:.1f} MB, {source}'
 
@@ -472,8 +610,10 @@ def main(folder, out, what='wav'):
     if what == 'soundfont':                                     # folder: the three .adf files
         drv = Driver(read_disks(folder))
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-        n, seconds, _ = write_soundfont(drv.ins, {p: record(drv, p) for p in FONT_PROGRAMS}, out)
-        print(f'{out}: {n} sounds, {seconds:.0f} s, {os.path.getsize(out) / 1e6:.1f} MB' + ('' if drv.verified else ' (mog is not the known file)'))
+        n, seconds, _ = write_soundfont(drv.ins, {p: record_program(drv, p) for p in FONT_PROGRAMS}, out,
+                                        music_sounds(drv))
+        write_music_marker(out, True)
+        print(f'{out}: {n} sounds (with the location music), {seconds:.0f} s, {os.path.getsize(out) / 1e6:.1f} MB' + ('' if drv.verified else ' (mog is not the known file)'))
         return
     if what == 'install':                                       # folder: the installation
         print(f'{out}: ' + build_soundfont(folder, out))

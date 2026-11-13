@@ -30,7 +30,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 

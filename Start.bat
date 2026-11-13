@@ -46,6 +46,10 @@ findstr /c:"amiga.sf2" music.conf >nul && if not exist "_music\amiga\amiga.sf2" 
 rem D65: SAVEHOOK.COM sends the effects to the SoundFont only while AMIGASND.FLG is there; it follows music.conf.
 if exist AMIGASND.FLG del AMIGASND.FLG
 findstr /c:"amiga.sf2" music.conf >nul && > AMIGASND.FLG echo amiga
+rem D73: and the location music while the SoundFont has it (amiga.music, written beside it when it is built
+rem from the Amiga disk images).
+if exist AMIGAMUS.FLG del AMIGAMUS.FLG
+if exist AMIGASND.FLG if exist "_music\amiga\amiga.music" > AMIGAMUS.FLG echo music
 if exist AMIGA.FLG call :amiga || goto musicfail
 if "%MOONSTONE_NOLAUNCH%"=="1" exit /b 0
 rem The Amiga music player starts first (it waits for the DOSBox-X window), so that DOSBox-X, started last, gets the

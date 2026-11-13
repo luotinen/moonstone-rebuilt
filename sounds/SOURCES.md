@@ -5,6 +5,7 @@ taken from, or modelled on, the original samples: each was made from a descripti
 rate the game plays it at. See `docs/amiga-audio-plan-2026-11-11.md`, section 5.2.
 
 Format: mono, 8 bits, as many samples as the sample it stands in for, at the rate the game plays that sample.
+One exception: `lion_den.wav` is 16 bits, quiet and much longer than its sample (see its row below).
 
 ## Synthesized
 
@@ -44,13 +45,13 @@ Licence of these five files: **CC0 1.0**, as the synthesized ones.
 | File | Stands in for | Source | Author | Licence | Processing | Length |
 |---|---|---|---|---|---|---|
 | `dragon_grunt.wav` | `chimpgruntloB`, the dragon's low grunt | [Alligatorbellow1.ogg](https://commons.wikimedia.org/wiki/File:Alligatorbellow1.ogg) on Wikimedia Commons: an alligator bellowing, from the Service's sound page (`fws.gov/video/sound.htm`), uploaded there by Borisblue in 2007 | U.S. Fish and Wildlife Service | Public domain (work of the U.S. federal government, `PD-USGov-FWS`) | 1.27 s from 14.88 s | 8,332 samples at 6,581 Hz (1.27 s) |
-| `lion_den.wav` | `lionatmos1`, the lions' den (the game plays eight parts of it in turn) | [Lion lament](https://freesound.org/people/roman_cgr/sounds/223978/) | roman_cgr | CC0 1.0 | 1.06 s from 4.26 s | 8,273 at 7,830 Hz (1.06 s) |
+| `lion_den.wav` | `lionatmos1`, the lions' den. The Amiga plays eight short parts of its sample back and forth; a recording cut that way clicks at every join, so this file is one stretch as long as the den's notes together and is played as one note (FIXES.md, D67) | [Lion.wav](https://freesound.org/people/GJ55GB/sounds/488348/): a lion growling, roaring and breathing | GJ55GB | CC0 1.0 (read on its page on 12 Nov 2026) | 9.24 s from 40.0 s; not brought to full scale: its loud moments are at 0.52 of it (RMS over 50 ms), the highest peaks rounded off, kept in 16 bits | 72,348 at 7,830 Hz (9.24 s) |
 | `long_scream.wav` | `rolandscreamB`, the Guardian's long scream | [human male scream 5](https://freesound.org/people/JohnsonBrandEditing/sounds/243382/) | JohnsonBrandEditing | CC0 1.0 | 1.12 s from 0.12 s, faded out | 13,924 at 12,445 Hz (1.12 s) |
 | `rat_bite.wav` | `ratbite1`, a ratman's bite | [ratty squeaks.wav](https://freesound.org/people/Reitanna/sounds/217767/) | Reitanna | CC0 1.0 | 0.60 s from 3.62 s | 8,396 at 13,982 Hz (0.60 s) |
 | `strain.wav` | `Strain1d`, a grunt of effort | [strenuous_grunts](https://freesound.org/people/takareads/sounds/841313/) | takareads | CC0 1.0 | 0.40 s from 6.27 s | 5,132 at 12,855 Hz (0.40 s) |
 
 The other candidates (in `tools/make_recorded_sounds.py`, `PICKS`; all CC0 1.0 on Freesound): for the grunt a
-pig's grunt by JarredGibb (233170) and a pig's growling grunt by TheKingOfGeeks360 (842313); for the den a tiger by schots (439280) and a tom
+pig's grunt by JarredGibb (233170) and a pig's growling grunt by TheKingOfGeeks360 (842313); for the den a lion's moan by roman_cgr (223978; the den of 0.9.0), a tiger by schots (439280) and a tom
 cat's purr by PostProdDog (503755); for the scream HenKonen (682177) and gtrempe (542128); for the rat Zabuhailo
 (143125) and a guinea pig by TheKingOfGeeks360 (815837); for the strain salemaudio (803168) and BranndyBottle
 (464677).

@@ -9,15 +9,16 @@ your game files into this folder and patches the copies; your GOG installation i
 > **A note for parents: graphic violence.** Moonstone's fights are bloody: blood sprays and pools, knights are
 > beheaded, split in two or run through, and monsters eat them. Mindscape rated the game for ages 12 and up, but
 > with the normal settings it is closer to **16 or even 18**; our own rating is **18** with the normal settings and
-> about **12** with **gore off** (no blood at all; a small X shows where a blow lands). Gore off is in the game's own
-> options (the blood setting). At the top of `custom_rules.ini`, `age_rating` sets the rating (then run
+> about **12** with **gore off** (no blood at all; a small X shows where a blow lands). Gore is in the first menu:
+> **Off**, **Less** (blood, but no fatalities or special deaths: about 16), **On** (the game) or **More** (as the
+> ABACABB cheat code: more blood, every death a death animation); the game remembers the last choice. At the top of `custom_rules.ini`, `age_rating` sets the rating (then run
 > `Custom_rules_on.bat`):
 >
 > | `age_rating` | What it allows |
 > |---|---|
-> | `K18` (the default) | Everything as the game: blood or gore off as chosen in its options, all the death animations. |
-> | `K16` | Blood as chosen in the game's options, but no fatalities: the knights die as they do with gore off. |
-> | `K12` | Gore off, whatever the game's options say. |
+> | `K18` (the default) | Everything: Gore as chosen in the first menu (Off, Less, On or More), all the death animations. |
+> | `K16` | Gore at most Less: blood (or Off), but no fatalities: the knights die as they do with gore off. |
+> | `K12` | Gore off, whatever the menu says. |
 > | `K16_permanent` | As K16, and the installation never goes above K16 again (K12 can still be chosen). |
 > | `K12_permanent` | As K12, for good. |
 >
@@ -97,16 +98,27 @@ Rebuilt can play the effects the way the Amiga's sound driver does, in the DOS g
   on your machine.
 * **Setup:** `Setup.bat` builds them (`AmigaSound_Setup.bat` does it again, for example after adding the disk
   images). It needs the Python package numpy, which `AmigaSound_Setup.bat` installs into the `_python` folder here
-  if Python does not have it. The effects are saved as a SoundFont (`_music\amiga\amiga.sf2`, about 20 MB).
+  if Python does not have it. The effects are saved as a SoundFont (`_music\amiga\amiga.sf2`, about 27 MB).
 * **On and off:** `AmigaSound_On.bat` / `AmigaSound_Off.bat`. A `Music_*.bat` also turns the Amiga effects off.
 * **Music:** while the Amiga effects are on, the music is AdLib (original). The effects are played by DOSBox-X's
   SoundFont synthesizer, which is the MIDI device, so MT-32 and General MIDI music cannot play at the same time.
 * **Loudness:** the line `mixer synth 600:600` near the end of `moonstone-dosbox-x.conf` sets the effects' level.
 
-Not yet done: the Amiga's looping background sounds (wind, the lions' den, fire while it burns) play once instead of
-looping, the echoes of the Guardian's screams and the second voice of the mudmen are missing, and the Amiga's own
-music for the tavern, the healer, Mythral and the wizard is not played. Without the disk images eight of the Amiga's
-140 effect programs are silent (they use the instruments of that music and the healer's sample).
+* **Loops:** the dragon's breath and fire, the mudmen's mud (very quiet) and the lions' den after a Balok's roar
+  keep sounding as on the Amiga: the breath and the fire until the dragon stops, the mud until the fight ends, the
+  den until other sounds take its voice. Every effect stops when a fight ends. Without the disk images the den is
+  a recording of a lion growling low.
+* **Two at once:** where the Amiga plays two sounds together, both are heard: the mudmen's voice and its second
+  voice, the Guardian's screams and their echoes, a troll's two grunts.
+* **Music of the places (with the disk images only):** the tavern, the henge, the wizard, Mythral and the healer
+  play the Amiga's own music instead of the DOS tune. It is built from your disk images into the same SoundFont
+  (about 54 MB then), and `_music\amiga\amiga.music` beside it says so; without the disk images there is no such
+  music (it is the Amiga's composition, and only your disks have it) and the DOS tunes play as before. The
+  message screen before a fight or the wizard ("The Gods pause for a moment...", "Beware of the Ratmen during a
+  full moon", ...) plays the Amiga's drums of that screen until the fight starts; the DOS game is silent there.
+
+Not yet done: the wind is never heard (the DOS game does not ask for it). Without the disk images eight of the
+Amiga's 140 effect programs are silent (they use the instruments of the location music and the healer's sample).
 
 ## Playing
 
@@ -133,8 +145,20 @@ music for the tavern, the healer, Mythral and the wizard is not played. Without 
   knight faced before. A direction let go just before fire still counts with it. `input_log = on` (custom rules)
   writes `INPUT.LOG` after every fight; `python -I tools/input_log.py INPUT.LOG` shows what the game read and when.
 
+  Secondary button (D77, custom rules): right Shift for player 1, left Shift for player 2, N for player 3, the
+  second button on a controller. In fights it throws a dagger at once, without the back + up + fire chord (back
+  + up + fire still throws too). `secondary_button` in `custom_rules.ini` can make it another move instead: the
+  swing, the overhead chop, the lunge, either thrust, the block, the special defence, or nothing. While GUNSHOT or
+  DARTS is on it always throws (fires); with ROCKETMAN and LUNAR it keeps their rise and jump.
+
   Second player: W, A, S and D (up, left, down, right) plus Tab. The original used X for down; Moonstone Rebuilt
   changes it to S (D9).
+
+  Third player (D70): with 3 or 4 players chosen and no game controller connected, player 3 uses I J K L (up,
+  left, down, right), B (attack) and N (the secondary button; player 1's is right Shift, player 2's left Shift).
+  Each player then keeps their own keys in every fight, also when two knights fight each other, on the map (the
+  arrows and Enter still work there for everyone) and on the item screen. A fourth player has no keys of their own. Many keyboards
+  cannot report every combination of six or more keys held at once; if a key seems to drop, use a controller.
 * **Practice:** with 1 player chosen in the menu, *Practice* is you against a Black Knight played by the computer
   (D11); with 2 players it is two players against each other, as in the original. With 3 or 4 players (D12-D14),
   players 3 and 4 use the game controllers that are connected, and one of them can use the keys I J K L (move),
@@ -186,7 +210,7 @@ most generic gamepads) into that joystick. Nothing needs installing:
 3. Each player moves with the left stick or the D-pad and attacks with the first or second button (A or B on an Xbox
    pad; cross or circle on a PlayStation pad). With custom rules on, only the first button attacks; the second is
    a *secondary button* (as right Shift for player 1 and left Shift for player 2 on the keyboard), which the game
-   itself does not use. The keyboard keeps working alongside.
+   itself does not use; in fights it throws a dagger, or does the move `secondary_button` chooses (D77). The keyboard keeps working alongside.
 4. If the knight drifts or ignores a direction, calibrate: on the game's first menu press **J**, then follow the
    two screens (stick to the top left + button, stick to the bottom right + button). If up and down are the wrong
    way round, run the other of the two scripts.
@@ -210,6 +234,14 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
   Computer knights' turns are not saved. Each kind goes round its slots in turn and takes one slot each time, so
   slots 91–94 hold the last four turns and 96–100 the last five fights (`SAVEHOOK.SLT` remembers which is next).
   Slot 95 is not used (DOSBox-X allows nine names).
+* **Resume Game:** when automatic saves exist, the first menu shows *RESUME GAME: F11+L* right of Select Knight.
+  Press F11+L there to load the newest automatic save. The menu selects that slot for you; your own slot comes
+  back for F11+S at the next turn or fight (`SAVEHOOK.RSM` keeps it until then; a save made before this version
+  cannot do it, so choose your slot again under *Capture*). Not shown with `save_mode = none`.
+* **Game Over deletes the automatic saves** when no human player's knight has a life left (all dead, or Esc
+  pressed then): they are only for going on with a game that was cut short. Esc while a knight still has a life
+  keeps them, and your own saves (other slots) are never touched. To keep them always, set
+  `hardcore_autosave_mode = off` in `custom_rules.ini` (custom rules on).
 * **Loading an automatic save:** *Capture → Select save slot* → go to the last page (slots 91–100) → pick the newest
   slot by its time → *Capture → Load state* (or F11+L). Before saving by hand again, select slot 1 (or another slot
   below 91), or the next automatic save will overwrite yours.

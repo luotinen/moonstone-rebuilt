@@ -4,7 +4,10 @@ so that the effects can be built from the DOS game's samples for users without t
 Needs the three Amiga disk images and a DOS installation (for its SAMPLES folder); run it when the list of effect
 programs or the substitutes change. The table holds, for each effect program, steps of [frames (1/50 s), volume
 (0-63), sample rate in Hz, start]: start is the number of the instrument a note begins with, -1 where the sound is
-cut, null otherwise. And for each instrument where its samples come from: a part of a DOS sample that holds the same
+cut, null otherwise. "loops" says that the program begins again by itself; "loop" is then the step it goes back to
+after its last one, for ever (D67: the steps are its rounds up to the first one that the next round repeats; a
+program with "loops" and no "loop" never repeats and is played once round).
+And for each instrument where its samples come from: a part of a DOS sample that holds the same
 data ("dos", "at", "n"), a part of a substitute sound in sounds/ ("file"), or nothing (silent: the instruments of
 the location music, which has no substitute). "stand_in" marks a DOS sample that is another take of the sound, not
 the same data. The table has no samples, no period table and no program code of the Amiga game.
@@ -22,14 +25,39 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SUBSTITUTES = {'dragthud1c': 'dragon_thud.wav', 'BALSWISH2b': 'balok_swish.wav', 'bang2': 'trogg_bang.wav',
                'wind2': 'wind.wav', 'sparx2b': 'guardian_sparks.wav', 'bash': 'troll_bash.wav',
                'BEASTGALLOP.SND': 'beast_gallop.wav', 'dice2c': 'dice.wav', 'clik2': 'menu_click.wav',
-               'chimpgruntloB': 'dragon_grunt.wav', 'lionatmos1': 'lion_den.wav', 'rolandscreamB': 'long_scream.wav',
+               'chimpgruntloB': 'dragon_grunt.wav', 'rolandscreamB': 'long_scream.wav',
                'ratbite1': 'rat_bite.wav', 'Strain1d': 'strain.wav'}
+# Amiga samples that the game plays as short parts in a shuffled order and whose substitute is one continuous
+# recording instead: the Amiga sample's name -> our file. A run of notes of the sample's parts becomes one note that
+# plays the file from its start (merged); the file must be as long as the longest run. The lions' den after a
+# Balok's roar: eight parts of a one-second sample, a new one every 0.12 s. The Amiga's sample is a noise-like
+# rumble that hides the joins; a recording of a low growl clicks at each of them (the user, 12 Nov 2026).
+CONTINUOUS = {'lionatmos1': 'lion_den.wav'}
 # Another take of the same sound that the DOS game has: the Amiga sample's name -> the DOS sample (played whole)
 STAND_INS = {'BEAST2.SND': 'BEAST1', 'BEAST3.SND': 'BEAST1', 'dragmufl1B': 'DAGMUF3', 'dragmufl3B': 'DAGMUF3',
              'femsrm5b': 'FEMSCR', 'femsrm6b': 'FEMSCR', 'femscrm2': 'FEMSCR', 'grnt1b': 'GRNT1', 'cheap3': 'CHEAP2B'}
 # Used when a substitute file is not there yet: a DOS sample of the same kind
-FALLBACKS = {'dragon_grunt.wav': 'DRAGRU', 'lion_den.wav': 'LION2C1', 'long_scream.wav': 'FEMSCR',
+FALLBACKS = {'dragon_grunt.wav': 'DRAGRU', 'long_scream.wav': 'FEMSCR',
              'rat_bite.wav': 'RATSCR', 'strain.wav': 'GRNT3'}
+
+def continuous(drv):
+    """The instruments that are parts of a sample in CONTINUOUS: number -> the number of the sample's first part,
+    which stands for the whole recording."""
+    first = {drv.name[k]: k for k in range(len(drv.ins)) if drv.name[k] in CONTINUOUS}
+    return {k: first[drv.name[k].partition(' +')[0]] for k in range(len(drv.ins)) if drv.name[k].partition(' +')[0] in first}
+
+def merged(steps, loop, parts):
+    """A program (steps, loop from record_program) with every run of notes of the instruments in `parts` (continuous)
+    as one note of the first part -> (steps, loop). A run ends where the volume or the rate changes, at another
+    instrument's note, at a cut, and at the step the program goes back to."""
+    out, new_loop = [], None
+    for k, (frames, vol, rate, start) in enumerate(steps):
+        if k == loop: new_loop = len(out)
+        if start in parts and k != loop and out and out[-1][1:] == [vol, rate, parts[start]]:
+            out[-1][0] += frames
+        else:
+            out.append([frames, vol, rate, parts.get(start, start)])
+    return out, new_loop
 
 def main(adf_folder, install):
     drv = audio.Driver(audio.read_disks(adf_folder))
@@ -40,9 +68,15 @@ def main(adf_folder, install):
     sounds = os.path.join(HERE, '..', 'sounds')
     programs, used = {}, set()
     for p in audio.FONT_PROGRAMS:
-        steps, loops = audio.record(drv, p)
-        programs[p] = dict(loops=loops, steps=[[n, vol, rate, start] for n, vol, rate, start in steps])
+        steps, loop = merged(*audio.record_program(drv, p), continuous(drv))
+        programs[p] = dict(loops=audio.record(drv, p)[1], **({} if loop is None else {'loop': loop}),
+                           steps=[[n, vol, rate, start] for n, vol, rate, start in steps])
         used |= {s[3] for s in steps if s[3] is not None and s[3] >= 0}
+    longest = {}                                                 # a continuous instrument: the samples its longest note plays
+    for x in programs.values():
+        for frames, vol, rate, start in x['steps']:
+            if start in continuous(drv).values():
+                longest[start] = max(longest.get(start, 0), int(np.ceil(frames / audio.FRAME_HZ * rate)))
     instruments, counts = {}, dict(same=0, substitute=0, stand_in=0, fallback=0, silent=0)
     for k in sorted(used):
         x = drv.ins[k]
@@ -51,7 +85,11 @@ def main(adf_folder, install):
         offset = int(offset or 0)
         loop = dict(loop=x['loop']) if x['looped'] else {}
         hit = next(((n, d.find(raw)) for n, d in sorted(dos_bytes.items()) if len(raw) >= 64 and d.find(raw) >= 0), None)
-        if hit:
+        if name in CONTINUOUS:
+            have = len(audio.read_wav8(os.path.join(sounds, CONTINUOUS[name])))
+            if have < longest[k]: raise SystemExit(f'{CONTINUOUS[name]} has {have} samples, the longest note plays {longest[k]}')
+            instruments[k] = dict(file=CONTINUOUS[name], at=0, n=have); counts['substitute'] += 1
+        elif hit:
             instruments[k] = dict(dos=hit[0], at=hit[1], n=len(raw), **loop); counts['same'] += 1
         elif name in SUBSTITUTES and os.path.exists(os.path.join(sounds, SUBSTITUTES[name])):
             have = len(audio.read_wav8(os.path.join(sounds, SUBSTITUTES[name])))

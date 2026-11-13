@@ -22,7 +22,7 @@ VLC_PATHS = (r'C:\Program Files\VideoLAN\VLC\vlc.exe', r'C:\Program Files (x86)\
 # steady: an even texture that the game cuts into parts (no fades; the evenest loud part of the source is taken)
 SOUNDS = {
     'dragon_grunt': ('chimpgruntloB', 8332, 6581, 63, False, 'the dragon\'s low grunt'),
-    'lion_den': ('lionatmos1', 8273, 7830, 20, True, 'the low rumble of lions in their den (the game plays eight parts of it in turn)'),
+    'lion_den': ('lionatmos1', 72348, 7830, 20, False, 'lions growling low in their den behind a roar (one stretch of 9.24 s, see LONG)'),
     'long_scream': ('rolandscreamB', 13924, 12445, 60, False, 'the Guardian\'s long scream'),
     'rat_bite': ('ratbite1', 8396, 13982, 60, False, 'a ratman bites: a sharp squeal'),
     'strain': ('Strain1d', 5132, 12855, 60, False, 'a short grunt of effort'),
@@ -35,7 +35,8 @@ PICKS = {
                      ('c', 'dragon_grunt/Alligatorbellow1.ogg', None, 1.0, 'the bellow of an alligator')],
     'lion_den': [('a', 'lion_den/223978_639300-hq.ogg', None, 1.0, 'a lion moaning low'),
                  ('b', 'lion_den/439280_954919-hq.ogg', None, 0.8, 'a tiger growling, at 0.8 speed'),
-                 ('c', 'lion_den/503755_6911631-hq.ogg', None, 0.5, 'the purr of a tom cat at half speed')],
+                 ('c', 'lion_den/503755_6911631-hq.ogg', None, 0.5, 'the purr of a tom cat at half speed'),
+                 ('d', 'lion_den_488348/488348__gj55gb__lion.wav', 40.0, 1.0, 'a lion growling low and breathing')],
     'long_scream': [('a', 'long_scream/682177_10938187-hq.ogg', None, 1.0, 'an airy scream of pain, whole'),
                     ('b', 'long_scream/243382_3229685-hq.ogg', None, 1.0, 'the start of a longer dry scream'),
                     ('c', 'long_scream/542128_318949-hq.ogg', None, 1.0, 'the loudest part of a rising scream')],
@@ -47,7 +48,16 @@ PICKS = {
                ('c', 'strain/464677_7358035-hq.ogg', None, 1.0, 'one deep grunt')],
 }
 # The candidate chosen by ear for each sound (the user, 12 Nov 2026)
-CHOSEN = {'dragon_grunt': 'c', 'lion_den': 'a', 'long_scream': 'b', 'rat_bite': 'b', 'strain': 'a'}
+CHOSEN = {'dragon_grunt': 'c', 'lion_den': 'd', 'long_scream': 'b', 'rat_bite': 'b', 'strain': 'a'}
+# Sounds that are not a copy of the Amiga sample's size: name -> the level of its loud moments (RMS over 50 ms, as
+# a part of full scale). The den: the Amiga plays eight parts of a one-second sample back and forth, a new part
+# every 0.12 s. Its own sample is a noise-like rumble that hides the joins; a recording of a low growl clicks at
+# every one of them (the first den, 'a', was cut that way; the user: "rapid clicking", and 14 dB too loud). So the
+# den is one stretch as long as the den's notes together (462 frames of 1/50 s at 7830 Hz), which
+# export_sound_programs.py plays as one note. It is a background sound under the roar; the user set the level by
+# ear in two steps (0.08, the level of the Amiga's own den, was too quiet as a file, and 0.16 was not heard in a
+# fight). It is kept in 16 bits.
+LONG = {'lion_den': 0.52}
 
 def decode(vlc, src, dst):
     """Any audio file -> 16-bit WAV, 44.1 kHz mono, with VLC."""
@@ -109,13 +119,21 @@ def make(sounds, name, rel, start, speed):
         start = (lo + loudest(x[lo:int(start[1] * src_rate)], src_rate, seconds, steady)) / src_rate
     piece = x[int(start * src_rate):int((start + seconds) * src_rate)].copy()
     if len(piece) < 0.9 * seconds * src_rate: raise SystemExit(f'{rel}: too short for {name} at speed {speed}')
-    edge = int(0.004 * src_rate)
+    edge = int((0.03 if name in LONG else 0.004) * src_rate)
     piece[:edge] *= np.linspace(0, 1, edge)
-    tail = edge if steady else int(0.04 * src_rate)
+    tail = edge if steady or name in LONG else int(0.04 * src_rate)
     piece[-tail:] *= np.linspace(1, 0, tail)
     y = resample(piece, n)
     y -= y.mean()
+    if name in LONG:                                                 # 16 bits, at its own level
+        e, _ = envelope(y, rate, 50)
+        y = 0.95 * np.tanh(y * LONG[name] / np.percentile(e, 95) / 0.95)     # the highest peaks rounded off, not clipped
+        return np.round(y * 32767).astype(np.int16), start
     return to_8bit(y), start
+
+def write_sound16(path, pcm, rate):
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate); w.writeframes(pcm.astype('<i2').tobytes())
 
 def main(sounds, which='candidates'):
     manifest = {m['file'].replace('\\', '/'): m for m in json.load(open(os.path.join(sounds, 'sources', 'manifest.json'), encoding='utf-8'))}
@@ -134,7 +152,7 @@ def main(sounds, which='candidates'):
         for name, letter in CHOSEN.items():
             _, rel, start, speed, how = next(p for p in PICKS[name] if p[0] == letter)
             pcm, _ = make(sounds, name, rel, start, speed)
-            write_sound(os.path.join(sounds, f'{name}.wav'), pcm, SOUNDS[name][2])
+            (write_sound16 if name in LONG else write_sound)(os.path.join(sounds, f'{name}.wav'), pcm, SOUNDS[name][2])
         print(f'{len(CHOSEN)} chosen recordings written to {sounds}')
         return
     os.makedirs(os.path.join(out, 'preview'), exist_ok=True)
@@ -150,8 +168,8 @@ def main(sounds, which='candidates'):
                     f'{html.escape(stands_for)})</th></tr>')
         for letter, rel, start, speed, how in picks:
             pcm, start = make(sounds, name, rel, start, speed)
-            write_sound(os.path.join(out, f'{name}_{letter}.wav'), pcm, rate)
-            write_preview(os.path.join(out, 'preview', f'{name}_{letter}.wav'), pcm, rate, volume, steady)
+            (write_sound16 if name in LONG else write_sound)(os.path.join(out, f'{name}_{letter}.wav'), pcm, rate)
+            write_preview(os.path.join(out, 'preview', f'{name}_{letter}.wav'), pcm / 256.0 if name in LONG else pcm, rate, volume, steady)
             m = manifest[rel]
             mark = ' (chosen)' if CHOSEN.get(name) == letter else ''
             page.append(f'<tr><td>{letter}{mark}</td><td>{html.escape(how)}</td>'

@@ -1194,6 +1194,24 @@ class SoundPrograms(unittest.TestCase):
                 self.assertGreater(rate, 0, p)
                 self.assertTrue(start is None or start == -1 or str(start) in instruments, f'{p}: {start}')
 
+    def test_loops_go_back_to_a_step_of_a_program_that_begins_again(self):
+        # D67: "loop" is the step a program goes back to after its last one; the sounds the game plays on a
+        # channel of their own are such loops
+        import patches
+        programs = self.table['programs']
+        for p, program in programs.items():
+            if 'loop' in program:
+                self.assertTrue(program['loops'], p)
+                self.assertIsInstance(program['loop'], int, p)
+                self.assertTrue(0 <= program['loop'] < len(program['steps']), p)
+                start = program['steps'][program['loop']][3]
+                self.assertTrue(start is not None and start >= 0, f'{p}: the round that repeats starts a note')
+        for sound, channel in patches.AMIGA_FIXED.items():
+            self.assertIn('loop', programs[str(patches.amiga_program(sound))], sound)
+            self.assertIn(channel, range(4), sound)
+        self.assertEqual(sorted(int(p) for p, x in programs.items() if 'loop' in x),
+                         [27, 29] + list(range(34, 43)) + [62, 78, 79, 80])
+
     def test_instruments_come_from_the_dos_game_or_the_sounds_folder(self):
         import wave
         game_files = (ROOT / 'setup' / 'gog-dos-1.json').read_text(encoding='utf-8')

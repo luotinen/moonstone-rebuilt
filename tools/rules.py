@@ -216,7 +216,7 @@ POTION_LIFE = 4                               # K23: a potion gives no life to a
 EXPLOIT_FIXES = KEEP_DRAGON_TARGET | NO_EXTRA_TURN | POTION_LIFE
 G_CYCLES = G_EXPLOIT_FIXES + 1                # 2 words: DOSBox-X cycles, more per knight in a fight (D17)
 G_DEATHS = G_CYCLES + 4                       # byte: death_animations (D20), DEATHS
-DEATHS = {'extended': 0, 'vanilla': 1, 'off': 2}   # all deaths / only the game's beheading / no blood (as gore off)
+DEATHS = {'extended': 0, 'vanilla': 1, 'off': 2}   # all deaths / only the game's beheading / the plain death (Gore at most Less, D76)
 G_DRAGON_DEBUG = G_DEATHS + 1                 # byte: dragon_debug_mode (D21), 0 or 1
 G_INPUT_BUFFER = G_DRAGON_DEBUG + 1           # byte: input_buffer (D24), 1 = on
 G_REST_FIXED = G_INPUT_BUFFER + 1             # byte: rest_heal_fixed_percentage (0-100)
@@ -264,7 +264,15 @@ TD_DEFAULTS = {'defence_window': 18, 'fast_swing_time': 30, 'stagger_time': 16, 
                'purple_knight_mistimed': 10, 'black_knight_defence': 25, 'black_knight_mistimed': 15, 'computer_defence_pause': 2}
 G_CHOP_CHEESE = G_TD_PAUSE + 1                # byte: from anticheese (D46): 2 = chop rule for all, 1 = knights only, 0 = none
 ANTICHEESE = {'yes': 2, 'true': 2, 'blackknights_only': 1, 'no': 0, 'false': 0}   # 2: all the rules; 1: knights keep out from under a chop; 0: none
-TABLE_SIZE = G_CHOP_CHEESE + 1
+G_MOVE_BAR = G_CHOP_CHEESE + 1                # byte: move_bar (D75), 1 = on
+G_GORE = G_MOVE_BAR + 1                       # byte: gore (D76), the first menu's Gore at the start, GORE_LEVELS
+GORE_LEVELS = {'off': 0, 'less': 1, 'on': 2, 'more': 3}   # no blood / blood, no fatalities (K16) / the game / ABACABB
+G_SECONDARY = G_GORE + 1                      # byte: secondary_button (D77), SECONDARY_MOVES, 0 = none
+SECONDARY_MOVES = {'none': 0, 'dagger': 1, 'attack': 2, 'swing': 2, 'chop': 3, 'lunge': 4, 'upward_thrust': 5,
+                   'backward_thrust': 6, 'block': 7, 'dodge': 8}   # SAVEHOOK sec_bits: the directions of each, facing right
+G_HARDCORE = G_SECONDARY + 1                  # byte: hardcore_autosave_mode (D78), 1 = on: Game Over with no human
+                                              # knight's life left deletes the automatic saves (slots 91-100)
+TABLE_SIZE = G_HARDCORE + 1
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
@@ -323,6 +331,7 @@ HOOKS = [
     (0x4e97, '8b36e877', 'mon_walk'),                   # LUNAR: the monsters' walk (trolls, troggs) at half speed
     (0x3ab4, '8b4428', 'dragon_hit'),                   # D46 anticheese: a knight's blow on the dragon: a run of them may end in its bite
     (0x389c, '830e867710', 'dragon_long'), (0x39a6, '8bc7', 'dragon_depth'),   # D46 anticheese: the long fire's depth reach
+    (0x3c6a, 'a1e877', 'dragon_walk'),                # D68: ... and its flames' depth while it breathes on
     (0x05b6, 'c745080100', 'lair_loot'),                # catchup: a lair won the first time, before its chest
     (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
     (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
@@ -344,8 +353,8 @@ HOOKS = [
     (0xa6c4, '8a453e', 'turn_move'),                    # D37: a turn's movement: the armour's value from the ini
     (0x0d59, 'e89d82', 'horse_town_w'), (0x0e14, 'e8cb81', 'horse_town_h'),   # D40: slot 4 is rolled as a town is entered
     (0xc3be, 'e8beb9', 'gold5'), (0xb32b, 'e851ca', 'gold5'), (0xbdcb, 'e8b1bf', 'gold5'), (0x0bbe, '014432', 'gold_add'),   # D41
-    (0x0de4, 'e8f9a3', 'visit_tavern'), (0x0e93, 'e84aa3', 'visit_tavern'), (0x0df6, 'e8b3b1', 'visit_merchant'), (0x0ea5, 'e804b1', 'visit_merchant'), (0x0eb4, 'e8f5b0', 'visit_merchant'),   # D43: max_gold as these are left
-    (0xb4c7, '014432', 'gold_add'),                     # D43: the dice's wins, up to 32767 until the tavern is left
+    (0x0e0e, 'e88698', 'town_exit'),                    # D79: max_gold as the town is left (gold noted by horse_town_w/_h)
+    (0xb4c7, '014432', 'gold_add'),                     # D43, D79: the dice's wins, up to 32767 until the town is left
     (0xb491, '8b4432', 'gold999'), (0xb4e3, '8b4432', 'gold999'),   # D41: the dice result's three-character field
     (0xc55c, '8b3690e4', 'horse_panel'),                # D40: the knight's own horse on its panel
     (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
@@ -379,6 +388,7 @@ HOOKS = [
     (0x00df, 'e9cea3', 'no_computer'),                  # D44: a new campaign's last step (jmp A4B0), the knights are set
     (0xa410, '3bfe742a', 'map_others'),                 # D44: the map draws the other knights: none for removed ones
     (0x08d4, '8b4420', 'colour_si'), (0xa417, '8b4420', 'colour_si'),   # map icons: mov ax,[si+20h]
+    (0xa4d6, 'e8f0fe', 'move_bar'),                    # D75: the map loop's call SHOW: the movement bar first
     (0xa3cd, '8b4520', 'colour_di'),                    # map icon of the knight whose turn it is: mov ax,[di+20h]
     (0x0732, '3d15007506837d200075c63d16007506837d200175bb3d17007506837d200275b03d18007506837d200375a5', 'place'),
     (0xcc0f, '268b5e12268b4e10', 'sell'),               # item screen click: mov bx,es:[bp+12h] / mov cx,es:[bp+10h]
@@ -561,6 +571,7 @@ def read_ini(path):
                     if cp.has_option(g, 'catchup') else 1)
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
     r['deaths'] = _get(cp, g, 'death_animations', _choice(DEATHS)) if cp.has_option(g, 'death_animations') else 0
+    r['gore'] = _get(cp, g, 'gore', _choice(GORE_LEVELS)) if cp.has_option(g, 'gore') else GORE_LEVELS['on']   # D76
     r['dragon_debug'] = _get(cp, g, 'dragon_debug_mode', int, 0, 1) if cp.has_option(g, 'dragon_debug_mode') else 0
     r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
     r['input_chord'] = (_get(cp, g, 'input_chord', int, 0, 6) if cp.has_option(g, 'input_chord')
@@ -588,6 +599,7 @@ def read_ini(path):
                          if cp.has_option(g, 'fight_cycles') else FIGHT_CYCLES_DEFAULT)
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
+    r['hardcore'] = _get(cp, g, 'hardcore_autosave_mode', _onoff) if cp.has_option(g, 'hardcore_autosave_mode') else 1   # D78
     r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
     r['xp_per_stat'] = [_get(cp, g, f'xp_per_stat_{n}_player{"s" if n > 1 else ""}', int, *rb['xp_per_stat'])
                         for n in (1, 2, 3, 4)]
@@ -598,6 +610,8 @@ def read_ini(path):
     def opt(sec, key, conv, default, *bounds):            # a setting older ini files do not have
         return _get(cp, sec, key, conv, *bounds) if cp.has_option(sec, key) else default
     r['horses'] = opt(g, 'horses', _onoff, 1)
+    r['move_bar'] = opt(g, 'move_bar', _onoff, 1)
+    r['secondary'] = opt(g, 'secondary_button', _choice(SECONDARY_MOVES), SECONDARY_MOVES['dagger'])   # D77
     r['horse_chance'] = opt(g, 'rare_horse_chance', int, HORSE_CHANCE_DEFAULT, 0, 100)
     r['trade_in'] = opt(g, 'merchant_trade_in', _onoff, 1)
     r['horse_list'] = [(text, opt(g, f'{name}_horse_price', int, price, 0, 999), opt(g, f'{name}_horse_movement', int, move, -20, 20),
@@ -687,8 +701,8 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming',
-                 'merchant_selling', 'merchant_trade_in', 'horses', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode',
+                 'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
@@ -783,6 +797,10 @@ def table(r=None):
     t[G_BK_AI] = r.get('black_knight_ai', 1) if r else 0
     t[G_BK_HEAL] = r.get('healer_heal', 10) if r else 10
     t[G_CHOP_CHEESE] = r.get('anticheese', 0) if r else 0
+    t[G_MOVE_BAR] = r.get('move_bar', 1) if r else 0       # D75
+    t[G_GORE] = r.get('gore', GORE_LEVELS['on']) if r else GORE_LEVELS['on']   # D76
+    t[G_SECONDARY] = r.get('secondary', SECONDARY_MOVES['dagger']) if r else 0   # D77: without custom rules as the game
+    t[G_HARDCORE] = r.get('hardcore', 1) if r else 1          # D78: on by default, also without custom rules
     t[G_TD] = r.get('timed_defence', 0) if r else 0
     for at, key in ((G_TD_WINDOW, 'defence_window'), (G_TD_FAST, 'fast_swing_time'), (G_TD_STAGGER, 'stagger_time'), 
                     (G_TD_PURPLE, 'purple_knight_defence'), (G_TD_PURPLE + 1, 'purple_knight_mistimed'), (G_TD_BLACK, 'black_knight_defence'),
@@ -867,9 +885,9 @@ def main_patches(r, img):
             continue
         new, _ = hook_bytes(where, old, kind)
         out.append((where, bytes.fromhex(old), new))
-    for site in (0xb4cd, 0xb4d4, 0xba11, 0xba18, 0xcef6):   # gold cap 150: dice, Math, loot
+    for site in (0xb4cd, 0xb4d4, 0xcef6):                # gold cap 150: dice (its test is jumped over, D43), loot
         imm(site, 2, r['max_gold'])
-    for site in (0xd060, 0xd068):                        # D43: the High Temple's sale only stops at 32767; max_gold as it is left
+    for site in (0xd060, 0xd068, 0xba11, 0xba18):        # D43, D79: the High Temple's sale and Math only stop at 32767; max_gold as the town is left
         imm(site, 2, 0x7fff)
     for site, old, new in ((0xb4cf, 0x7e, 0xeb), (0xba13, 0x7c, 0x72), (0xd062, 0x7e, 0x76)):   # D41: the cap's test unsigned, so a sum past 32767 is capped
         out.append((site, bytes([old]), bytes([new])))
