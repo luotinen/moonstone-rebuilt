@@ -4,3 +4,4 @@
 *.conf text eol=crlf
 *.txt text eol=crlf
 *.map text eol=crlf
+*.py text eol=lf
