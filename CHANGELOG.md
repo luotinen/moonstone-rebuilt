@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 – Amiga location music, GM music with Amiga effects and first-menu options
 
 * Pointer coordinates (D84; custom rules, `pointer_coordinates = on`, off by default): a debug aid. On the screens with a mouse pointer (the towns, the tavern, the shops) the pointer's x and y are shown next to it, and the point where a click counts is marked with one pixel. For reporting a button that reacts in the wrong place.
 * One press is one gold at the healer and at Mythral the Mystic (D83): a short press on an arrow of the donation screen could move two to four gold. Now a press moves one; held, the amount runs on after a short pause, faster after two seconds, and ten gold a step after four. The Enter that opened the screen no longer clicks anything. **Run Setup.bat again.**
