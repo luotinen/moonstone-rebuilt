@@ -617,6 +617,8 @@ def main(folder, out, what='wav'):
         return
     if what == 'install':                                       # folder: the installation
         print(f'{out}: ' + build_soundfont(folder, out))
+        import merge_soundfont                                  # D82: and merged with the GM SoundFont
+        print(f'{merge_soundfont.MERGED} (GM music with the Amiga effects): ' + merge_soundfont.update_install(folder))
         return
     drv = Driver(read_disks(folder))
     print('mog: ' + ('the known file' if drv.verified else 'another dump (the driver was found by its signature; not verified)'))

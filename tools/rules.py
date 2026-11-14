@@ -272,7 +272,8 @@ SECONDARY_MOVES = {'none': 0, 'dagger': 1, 'attack': 2, 'swing': 2, 'chop': 3, '
                    'backward_thrust': 6, 'block': 7, 'dodge': 8}   # SAVEHOOK sec_bits: the directions of each, facing right
 G_HARDCORE = G_SECONDARY + 1                  # byte: hardcore_autosave_mode (D78), 1 = on: Game Over with no human
                                               # knight's life left deletes the automatic saves (slots 91-100)
-TABLE_SIZE = G_HARDCORE + 1
+G_POINTER_XY = G_HARDCORE + 1                 # byte: pointer_coordinates (D84, a debug aid), 1 = on
+TABLE_SIZE = G_POINTER_XY + 1
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
@@ -332,6 +333,9 @@ HOOKS = [
     (0x3ab4, '8b4428', 'dragon_hit'),                   # D46 anticheese: a knight's blow on the dragon: a run of them may end in its bite
     (0x389c, '830e867710', 'dragon_long'), (0x39a6, '8bc7', 'dragon_depth'),   # D46 anticheese: the long fire's depth reach
     (0x3c6a, 'a1e877', 'dragon_walk'),                # D68: ... and its flames' depth while it breathes on
+    (0x3a6b, 'c706ee770200', 'dragon_far'),          # D68: ... and the far fire's
+    (0xa014, 'e80b00', 'dragon_pass'),                # D68: a knight's steps are not cut by the dragon in its far fire
+    (0xa15a, '897c0c', 'dragon_burn'),                # D68: ... and its far fire hurts only from its 14th frame
     (0x05b6, 'c745080100', 'lair_loot'),                # catchup: a lair won the first time, before its chest
     (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
     (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
@@ -344,6 +348,7 @@ HOOKS = [
     (0x0fd2, '807c140f', 'valley_keys'),                # SIRPICKSALOT: the Valley with any number of keys
     (0xa45f, 'b81400', 'lair_icon'),                    # IDROPPEDMYKEY: the lairs holding keys glow
     (0x3711, '8b36e877', 'balok_land'),                 #   ... and its hop lands on a knight
+    (0xd119, 'e8b88c', 'pointer_xy'),                   # D84: pointer_coordinates, the pointer's x,y drawn by it
     (0xd08c, 'e831b3', 'pointer'),                      # D36: the item screen's pointer moves by the time held
     (0x43d1, 'c744281000', 'fireblock'),                # D35: the dragon's fire on a knight
     (0x2da4, '83fa107502d1e0', 'ench_hit'),             # D35: a knight's blow's damage (the chop's double, the banes)
@@ -353,6 +358,7 @@ HOOKS = [
     (0xa6c4, '8a453e', 'turn_move'),                    # D37: a turn's movement: the armour's value from the ini
     (0x0d59, 'e89d82', 'horse_town_w'), (0x0e14, 'e8cb81', 'horse_town_h'),   # D40: slot 4 is rolled as a town is entered
     (0xc3be, 'e8beb9', 'gold5'), (0xb32b, 'e851ca', 'gold5'), (0xbdcb, 'e8b1bf', 'gold5'), (0x0bbe, '014432', 'gold_add'),   # D41
+    (0xb316, 'e8c2e5', 'tavern_loop'), (0xb423, 'e8b0fd', 'dice_roll'), (0x0de7, 'e8d04d', 'tavern_left'), (0x0e96, 'e8214d', 'tavern_left'),   # D80: LOADEDDICE
     (0x0e0e, 'e88698', 'town_exit'),                    # D79: max_gold as the town is left (gold noted by horse_town_w/_h)
     (0xb4c7, '014432', 'gold_add'),                     # D43, D79: the dice's wins, up to 32767 until the town is left
     (0xb491, '8b4432', 'gold999'), (0xb4e3, '8b4432', 'gold999'),   # D41: the dice result's three-character field
@@ -385,10 +391,9 @@ HOOKS = [
     (0xabd7, '837c4600', 'bk_target'),                  # D45: where a computer knight walks (four keys: Stonehenge)
     (0xae78, '8b36e877', 'bk_shop'),                    # D45: what a computer knight wants from town (weak: a heal)
     (0xafa3, '8b36e877', 'bk_town'),                    # D45: a computer knight in town
-    (0x00df, 'e9cea3', 'no_computer'),                  # D44: a new campaign's last step (jmp A4B0), the knights are set
-    (0xa410, '3bfe742a', 'map_others'),                 # D44: the map draws the other knights: none for removed ones
     (0x08d4, '8b4420', 'colour_si'), (0xa417, '8b4420', 'colour_si'),   # map icons: mov ax,[si+20h]
     (0xa4d6, 'e8f0fe', 'move_bar'),                    # D75: the map loop's call SHOW: the movement bar first
+    (0xa68e, 'e838fd', 'move_bar'),                    # D75: the same in the loop's frame path (A604 -> A68B)
     (0xa3cd, '8b4520', 'colour_di'),                    # map icon of the knight whose turn it is: mov ax,[di+20h]
     (0x0732, '3d15007506837d200075c63d16007506837d200175bb3d17007506837d200275b03d18007506837d200375a5', 'place'),
     (0xcc0f, '268b5e12268b4e10', 'sell'),               # item screen click: mov bx,es:[bp+12h] / mov cx,es:[bp+10h]
@@ -600,6 +605,7 @@ def read_ini(path):
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
     r['hardcore'] = _get(cp, g, 'hardcore_autosave_mode', _onoff) if cp.has_option(g, 'hardcore_autosave_mode') else 1   # D78
+    r['pointer_xy'] = _get(cp, g, 'pointer_coordinates', _onoff) if cp.has_option(g, 'pointer_coordinates') else 0   # D84
     r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
     r['xp_per_stat'] = [_get(cp, g, f'xp_per_stat_{n}_player{"s" if n > 1 else ""}', int, *rb['xp_per_stat'])
                         for n in (1, 2, 3, 4)]
@@ -701,7 +707,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
                  'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
                  'xp_per_stat_1_player',
@@ -801,6 +807,7 @@ def table(r=None):
     t[G_GORE] = r.get('gore', GORE_LEVELS['on']) if r else GORE_LEVELS['on']   # D76
     t[G_SECONDARY] = r.get('secondary', SECONDARY_MOVES['dagger']) if r else 0   # D77: without custom rules as the game
     t[G_HARDCORE] = r.get('hardcore', 1) if r else 1          # D78: on by default, also without custom rules
+    t[G_POINTER_XY] = r.get('pointer_xy', 0) if r else 0     # D84
     t[G_TD] = r.get('timed_defence', 0) if r else 0
     for at, key in ((G_TD_WINDOW, 'defence_window'), (G_TD_FAST, 'fast_swing_time'), (G_TD_STAGGER, 'stagger_time'), 
                     (G_TD_PURPLE, 'purple_knight_defence'), (G_TD_PURPLE + 1, 'purple_knight_mistimed'), (G_TD_BLACK, 'black_knight_defence'),

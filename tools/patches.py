@@ -275,6 +275,34 @@ PATCHES = {
                   # the spear trogg's frames of a fallen knight on its spear (1000:2F90)
                   ((0x1000, 0x2f90), bytes.fromhex('8bc6'), bytes.fromhex('cd63'))],
     },
+    'K41': {
+        'title': 'The Balok hid a knight for good (user report 13 Nov 2026). Its hold toggles the pause of the knight it '
+                 'touched (1000:37A7) and toggles [0978h] at the let-go (3810): two Baloks touching the knight in the same '
+                 'frame grabbed it twice, and a grab of anything else (a dagger) paused that, so the let-go hid the knight '
+                 'and the fight went on without it. mov ax,di at 3810 becomes int 63h: the grab takes only a knight on the '
+                 'screen not already held (else the plain hit), the let-go acts on the knight held (K28, now in every '
+                 'fight) and only when it is hidden. Needs SAVEHOOK.COM resident and K28',
+        'bytes': [((0x1000, 0x3810), bytes.fromhex('8bc7'), bytes.fromhex('cd63'))],
+    },
+    'K42': {
+        'title': 'Co-op colours of a knight\'s death (user report 13 Nov 2026). The Guardian\'s zap that kills a knight '
+                 '(KnightON, 1000:52BC) blacks out the fight palette\'s entries 2-7, which in co-op are every knight\'s '
+                 'greys: all knights went black. In co-op the palette now stays and only the knight killed is drawn '
+                 'burnt. The boar\'s toss and impaling (BeastStruck1 4453, 4487) show the knight in the colours of the '
+                 'knight the boar goes for, which changes once that knight is down: they now show the knight struck. '
+                 'mov si,7A84h at 52BC and mov si,[di+0Eh] at 4453 and 4487 become int 63h. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x52bc), bytes.fromhex('be847a'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x4453), bytes.fromhex('8b750e'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0x4487), bytes.fromhex('8b750e'), bytes.fromhex('cd6390'))],
+    },
+    'K43': {
+        'title': 'The troll swung at the air (user report 14 Nov 2026, slot 3). Its step (56E5h) counts a knight as in reach '
+                 'at a distance of at most [si+52h] (150, 3CBFh with bp from 1000:5745), but its attack picks the chop only '
+                 'from 100 to 149 (5690h): at exactly 150 it took the swing, which reaches about 100, and swung at the air '
+                 'for as long as the knight stood still. mov bp,[si+52h] (1000:5745) becomes int 63h: for the troll the '
+                 'reach is 149, so it steps in to 145 and chops. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x5745), bytes.fromhex('8b6c52'), bytes.fromhex('cd6390'))],
+    },
     'K40': {
         'title': 'The Guardian hid knights for good (user report 12 Nov 2026, co-op). Its whip catch (1000:5155, '
                  '518A) and its zap\'s script (KnightOFF 5254) take a knight off the screen with the pause toggle '
@@ -381,9 +409,40 @@ PATCHES = {
                  '+ nop x3: SAVEHOOK.COM steps its gore_level (left back, fire and right on) within what the age rating '
                  'allows and sets [0700h] (1 for Off). The value\'s text (139F, mov word [050Eh],0581h) becomes int 63h '
                  '+ jmp 13B2 + nop x2: SAVEHOOK.COM points the value record at "Off", "On" or "Less"/"More" (written to '
-                 'DS:FE80). Needs SAVEHOOK.COM resident',
+                 'DS:FE80). Less (and K16): the gore checks of the game where a death is chosen (2E88 the beheading of a deadly sweep, '
+                 '2F89 and 434D the impaling by the spear trogg, 4446 the kill by the boar) ask SAVEHOOK.COM (gore_death: '
+                 'the gore-off way unless the deaths may be gory), and those of the draw (9A73, blood pieces) and the '
+                 'scripts (9CFD) treat a death on the screen as gore off (gore_slot). Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x1359), bytes.fromhex('8336000701'), bytes.fromhex('cd63909090')),
-                  ((0x1000, 0x139f), bytes.fromhex('c7060e058105'), bytes.fromhex('cd63eb0f9090'))],
+                  ((0x1000, 0x139f), bytes.fromhex('c7060e058105'), bytes.fromhex('cd63eb0f9090'))]
+                 # Less (and K16): the game's gore checks (cmp word [0700h],0) where a death is chosen (2E88, 2F89,
+                 # 434D, 4446) and where a death's blood is drawn (9A73) or its script branches (9CFD) -> int 63h
+                 + [((0x1000, site), bytes.fromhex('833e000700'), bytes.fromhex('cd63909090'))
+                    for site in (0x2e88, 0x2f89, 0x434d, 0x4446, 0x9a73, 0x9cfd)],
+    },
+    'D81': {
+        'title': 'Computer knights chosen in the first menu (user request 14 Nov 2026): the Players value goes '
+                 '"1 + CPU" (the start), "2 + CPU", "3 + CPU", "4", "3", "2", "1"; with "+ CPU" the knights not '
+                 'played are computer knights as in the game, without it there are none. The step of the player count '
+                 '(1000:13C2, add [091Eh],ax) becomes int 63h + nop x2: SAVEHOOK.COM steps its players choice '
+                 '(left back, right on, 0 = as it is), remembers it in C:\\SAVEHOOK.PLY and sets [091Eh] to the '
+                 'humans; the text after the digit comes with the value text of D76 (139F). The two sites of D44 move here '
+                 'from the custom rules: the end of a new campaign set-up (00DF, jmp A4B0) and the other '
+                 'knights (A410, cmp di,si / je A43E). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x13c2), bytes.fromhex('01061e09'), bytes.fromhex('cd639090')),
+                  ((0x1000, 0x00df), bytes.fromhex('e9cea3'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xa410), bytes.fromhex('3bfe742a'), bytes.fromhex('cd639090'))],
+    },
+    'D83': {
+        'title': 'One press, one gold in the donation screen of the healer and Mythral the Mystic (user report 14 Nov '
+                 '2026): DonateLoop acted on fire held, a pass is about 3 frames, so a short press moved 2-4 gold. '
+                 'Its pointer read (1000:BDF9, mov ax,[E492h]) becomes int 63h + nop: SAVEHOOK.COM lets fire through '
+                 'on a new press and, held, as a delayed auto-repeat, else sets [E496h] = 1 (fire up). The steps '
+                 'of the arrows (BE4B, BE66: dec/inc of the two amounts) become int 63h + nop x6: 10 gold a step '
+                 'after 4 s held. Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0xbdf9), bytes.fromhex('a192e4'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xbe4b), bytes.fromhex('ff0e43e2ff0645e2'), bytes.fromhex('cd63909090909090')),
+                  ((0x1000, 0xbe66), bytes.fromhex('ff0643e2ff0e45e2'), bytes.fromhex('cd63909090909090'))],
     },
     'D24': {
         'title': 'Responsive controls (user request 4 Nov 2026). The game reads its key table once a frame (two BIOS '
@@ -597,7 +656,13 @@ AMIGA_MUSIC = {'tavern': (0xb2cc, (125, 126, 127)),        # Amiga 01A4EC; DOS t
 # the stops: LeaveTavern, the henge's end (HengeLOOP), the wizard's end, MysticFini (Mythral and the healer)
 MUSIC_STOPS = (0xb360, 0xb5ef, 0xb8d3, 0xbc15)
 AMIGA_MUSIC_PRESET = 2                     # the music parts are keys program - 90 of preset 2 (110-160: keys 20-70)
-AMIGA_MUSIC_CHANNELS = (4, 5, 6, 7)        # MIDI channels of the parts: the effects and amiga_stop use 0-3
+AMIGA_MUSIC_CHANNELS = (4, 5, 6, 7)        # MIDI channels of the parts: the effects and amiga_stop use 12-15 (D82)
+# D82: GM music with the Amiga effects. The GM tunes use MIDI channels 1-6 and 9 (their player's start resets 0-9 in
+# the UART set), so the effects' four slots (0-3, the Amiga's channels; amiga_reserved's bits) play on 12-15. The
+# Amiga presets are in bank AMIGA_BANK (= soundfont.AMIGA_BANK) of the SoundFont, also of the plain amiga.sf2, so
+# that the same bytes serve with or without GM music; a bank select goes before every program change.
+AMIGA_FX_CHANNEL = 12                      # the MIDI channel of slot 0
+AMIGA_BANK = 100
 # D74: the Amiga's music of the gods' message screen ("The Gods pause for a moment...", 1000:9085, shown before a
 # fight's or the wizard's files load; Amiga 012F5A -> 012F20, the drums): it starts at the message's
 # inc word [8E20h] (an int 63h there) and stops where the fight starts (InitCombat, SAVEHOOK's int 66h) or where the

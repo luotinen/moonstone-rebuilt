@@ -4,8 +4,8 @@
    StarTrekker modules (tools/rnc.py).
 2. Renders them to WAV with VLC (only needed here; the game plays the WAV files with Windows' own sound player).
 3. Makes muted copies of the DOS intro and ending tunes (DISKA/ATUNE1.BIN and ATUNE6.BIN) for every music set, so
-   the tune keeps its timing (and the intro skip, K9, still sees a loaded module) but plays nothing. General MIDI and
-   MT-32: every note-on gets velocity 0. AdLib: the tune file holds its own player, and with velocity-0 notes the
+   the tune keeps its timing (and the intro skip, K9, still sees a loaded module) but plays nothing. General MIDI (both
+   sets, D82) and MT-32: every note-on gets velocity 0. AdLib: the tune file holds its own player, and with velocity-0 notes the
    intro froze where the tune ends, with a tone left on; there the player's note-on loses its key-on bit instead,
    and the notes stay as they are.
 The results go to <rebuilt>/_music/amiga/. amiga_music.ps1 plays the WAV files while INTR.EXE runs.
@@ -20,7 +20,7 @@ MODULES = {'music.cmp': 'intro', 'vmusic.cmp': 'ending'}
 # SHA-256 of the unpacked modules from the disks this was made with; other dumps of the same disks should match
 KNOWN = {'intro': '26b78aeda0ac1dbdaa68e3be0706159121557db224370227489e63298fcd4faa',
          'ending': '606e033e6c436ad6e347c47a8fae57f58a2c7464deedbc5eab533ac7e77b8358'}
-MUSIC_SETS = ('adlib', 'gm', 'mt32')
+MUSIC_SETS = ('adlib', 'gm', 'gm_amiga', 'mt32')   # gm_amiga: the UART player (D82), for GM music with the Amiga effects
 VLC_PATHS = (r'C:\Program Files\VideoLAN\VLC\vlc.exe', r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe')
 
 PREFERRED = 'Moonstone_Disk1.adf'          # the name the Moonstone Rebuilt instructions ask for

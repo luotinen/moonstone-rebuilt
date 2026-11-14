@@ -363,7 +363,7 @@ class SetupFlow(unittest.TestCase):
                 patch.object(make_intr_exe, 'make_intr_exe', lambda gog, fixes=None: b'FIXED_INTR'), \
                 patch.object(death_frames, 'install', lambda here, exe: exe), \
                 patch.object(horse_frames, 'install', lambda here: None), \
-                patch.object(make_gm_tunes, 'main', lambda gog, out: None), \
+                patch.object(make_gm_tunes, 'main', lambda *args: None), \
                 patch.object(hook, 'make_savehook', lambda table=None: b'DEFAULT_HOOK'), \
                 patch('rules.build', lambda g, r: (b'RULES_MAIN', b'RULES_HOOK')), \
                 patch('rules.os.replace', replace):
@@ -736,6 +736,103 @@ class Launchers(unittest.TestCase):
         self.assertEqual(self.run_bat(game, 'Start.bat')[0], 1)
 
 
+@unittest.skipUnless(os.name == 'nt', 'Windows batch files')
+class SoundSwitches(unittest.TestCase):
+    """D82: separate switches for the music and the sound effects (tools/set_sound.bat), with made-up files."""
+    SETS = ('adlib', 'gm', 'gm_amiga', 'mt32')
+    run_bat = Launchers.run_bat
+
+    def game(self):
+        game = Launchers.game(self)
+        for name in ('Music_AdLib.bat', 'Music_GM.bat', 'Music_MT32.bat', 'AmigaSound_On.bat', 'AmigaSound_Off.bat'):
+            shutil.copyfile(ROOT / name, game / name)
+        shutil.copytree(ROOT / '_music' / 'profiles', game / '_music' / 'profiles')
+        for music_set in self.SETS:
+            for disk in ('DISKA', 'DISKB'):
+                (game / '_music' / music_set / disk).mkdir(parents=True)
+                (game / '_music' / music_set / disk / 'ATUNE1.BIN').write_text(music_set)
+                (game / disk).mkdir(exist_ok=True)
+        (game / 'soundfonts').mkdir()
+        (game / 'soundfonts' / 'GeneralUser-GS.sf2').write_bytes(b'GU')
+        (game / 'mt32-roms').mkdir()
+        (game / 'mt32-roms' / 'MT32_CONTROL.ROM').write_bytes(b'R')
+        (game / '_music' / 'amiga').mkdir()
+        (game / '_music' / 'amiga' / 'amiga.sf2').write_bytes(b'A')
+        (game / '_music' / 'amiga' / 'amiga_gm.sf2').write_bytes(b'M')   # not real fonts: the merge fails, the file stays
+        return game
+
+    def state(self, game):
+        conf = (game / 'music.conf').read_text()
+        return (conf, (game / 'effects.cfg').read_text().strip(), (game / 'DISKA' / 'ATUNE1.BIN').read_text())
+
+    def profile(self, game, name):
+        return (game / '_music' / 'profiles' / f'{name}.conf').read_text()
+
+    def switch(self, game, name):
+        code, out = self.run_bat(game, name)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def test_each_switch_keeps_the_other_choice(self):
+        game = self.game()
+        self.switch(game, 'Music_AdLib.bat')
+        self.assertEqual(self.state(game), (self.profile(game, 'adlib'), 'dos', 'adlib'))
+        self.assertIn('Music: AdLib (original). Sound effects: Amiga.', self.switch(game, 'AmigaSound_On.bat'))
+        self.assertEqual(self.state(game), (self.profile(game, 'amiga'), 'amiga', 'adlib'))
+        self.switch(game, 'Music_GM.bat')            # GM with the Amiga effects: the merged font, the UART tunes
+        self.assertEqual(self.state(game), (self.profile(game, 'amiga_gm'), 'amiga', 'gm_amiga'))
+        self.switch(game, 'AmigaSound_Off.bat')      # GM without them: the fluidsynth device, the shipped font
+        conf, effects, tunes = self.state(game)
+        self.assertEqual((effects, tunes), ('dos', 'gm'))
+        self.assertTrue(conf.startswith(self.profile(game, 'gm')))
+        self.assertIn('fluid.soundfont = soundfonts\\GeneralUser-GS.sf2', conf)
+        (game / 'soundfonts' / 'default.sf2').write_bytes(b'OWN')
+        self.switch(game, 'Music_GM.bat')            # the user's own font: the conf's default.sf2
+        self.assertEqual(self.state(game), (self.profile(game, 'gm'), 'dos', 'gm'))
+
+    def test_mt32_and_the_amiga_effects_exclude_each_other(self):
+        game = self.game()
+        self.switch(game, 'AmigaSound_On.bat')
+        out = self.switch(game, 'Music_MT32.bat')
+        self.assertIn('the effects are now the DOS game', out)
+        self.assertEqual(self.state(game), (self.profile(game, 'mt32'), 'dos', 'mt32'))
+        out = self.switch(game, 'AmigaSound_On.bat')
+        self.assertIn('the music is now AdLib', out)
+        self.assertEqual(self.state(game), (self.profile(game, 'amiga'), 'amiga', 'adlib'))
+
+    def test_start_follows_effects_cfg(self):
+        game = self.game()
+        self.switch(game, 'Music_GM.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        (game / 'DISKA' / 'ATUNE1.BIN').write_text('as left')
+        code, out = self.run_bat(game, 'Start.bat')
+        self.assertEqual(code, 0, out)
+        self.assertTrue((game / 'AMIGASND.FLG').exists())
+        self.assertEqual(self.state(game), (self.profile(game, 'amiga_gm'), 'amiga', 'as left'))   # nothing to fix
+        self.switch(game, 'AmigaSound_Off.bat')
+        self.assertEqual(self.run_bat(game, 'Start.bat')[0], 0)
+        self.assertFalse((game / 'AMIGASND.FLG').exists())
+
+    def test_start_falls_back(self):
+        game = self.game()
+        self.switch(game, 'Music_GM.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        (game / '_music' / 'amiga' / 'amiga.sf2').unlink()      # the effects gone: DOS effects, GM music stays
+        code, out = self.run_bat(game, 'Start.bat')
+        self.assertEqual(code, 0, out)
+        self.assertIn('not set up', out)
+        conf, effects, tunes = self.state(game)
+        self.assertEqual((effects, tunes, 'GeneralUser-GS.sf2' in conf), ('dos', 'gm', True))
+        self.assertFalse((game / 'AMIGASND.FLG').exists())
+
+    def test_old_install_without_effects_cfg(self):
+        game = self.game()
+        shutil.copyfile(game / '_music' / 'profiles' / 'amiga.conf', game / 'music.conf')   # AmigaSound_On.bat before D82
+        self.assertEqual(self.run_bat(game, 'Start.bat')[0], 0)
+        self.assertTrue((game / 'AMIGASND.FLG').exists())
+        self.assertEqual((game / 'effects.cfg').read_text().strip(), 'amiga')
+
+
 @unittest.skipUnless(has_unicorn(), 'the package unicorn')
 class GeneratedRoutines(unittest.TestCase):
     def test_token_failures_refuse(self):
@@ -1022,6 +1119,9 @@ class ReviewFixes(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT) as folder:
             game = Path(folder)
             shutil.copyfile(ROOT / 'Start.bat', game / 'Start.bat')
+            (game / 'tools').mkdir()                          # D82: Start.bat sets the sound with tools\set_sound.bat
+            for name in ('set_sound.bat', 'find_python.bat'):
+                shutil.copyfile(ROOT / 'tools' / name, game / 'tools' / name)
             (game / 'CUSTOM_RULES.FLG').write_text('custom rules\n')
             (game / 'music.conf').write_text('[midi]\nmididevice = default\n')
             # Only discovery is exercised: MOONSTONE_NOLAUNCH prevents executing this stub.

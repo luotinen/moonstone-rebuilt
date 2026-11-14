@@ -29,23 +29,15 @@ if not defined DBX (
   pause
   exit /b 1
 )
-if not exist music.conf call :adlib || goto musicfail
-rem If the extra files for the chosen music are missing, AdLib music is used (otherwise the music would be silent).
-findstr /c:"= mt32" music.conf >nul && if not exist "mt32-roms\*CONTROL.ROM" (
-  echo No MT-32 ROMs found in mt32-roms - using AdLib music.
-  call :adlib || goto musicfail
-)
-findstr /c:"= fluidsynth" music.conf >nul && if not exist "soundfonts\default.sf2" (
-  echo SoundFont soundfonts\default.sf2 not found - using AdLib music.
-  call :adlib || goto musicfail
-)
-findstr /c:"amiga.sf2" music.conf >nul && if not exist "_music\amiga\amiga.sf2" (
-  echo The Amiga sound effects are not set up - run AmigaSound_Setup.bat. Using the DOS effects and AdLib music.
-  call :adlib || goto musicfail
-)
-rem D65: SAVEHOOK.COM sends the effects to the SoundFont only while AMIGASND.FLG is there; it follows music.conf.
+rem The music and the sound effects (D82, tools\set_sound.bat): music.conf and effects.cfg as the switches left them,
+rem with their tune files; if the extra files for the choice are missing, AdLib music or the DOS effects are used
+rem (otherwise the music would be silent). GM music with the Amiga effects plays from one SoundFont, made again here
+rem when the GM SoundFont or the effects' changed.
+call tools\set_sound.bat keep keep || goto musicfail
+if defined SOUND_NOTE echo %SOUND_NOTE%
+rem D65: SAVEHOOK.COM sends the effects to the SoundFont only while AMIGASND.FLG is there; it follows effects.cfg.
 if exist AMIGASND.FLG del AMIGASND.FLG
-findstr /c:"amiga.sf2" music.conf >nul && > AMIGASND.FLG echo amiga
+if /i "%SOUND_EFFECTS%"=="amiga" > AMIGASND.FLG echo amiga
 rem D73: and the location music while the SoundFont has it (amiga.music, written beside it when it is built
 rem from the Amiga disk images).
 if exist AMIGAMUS.FLG del AMIGAMUS.FLG
@@ -57,21 +49,14 @@ rem keyboard focus; otherwise Enter and Space would not reach the game until its
 if defined AMIGA start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0amiga_music.ps1"
 start "" "%DBX%" -conf "%~dp0moonstone-dosbox-x.conf" -conf "%~dp0music.conf"
 exit /b 0
-:adlib
-for %%F in ("_music\adlib\DISKA\*.BIN" "_music\adlib\DISKB\*.BIN" "_music\profiles\adlib.conf") do if not exist %%F exit /b 1
-copy /y "_music\adlib\DISKA\*.BIN" DISKA >nul || exit /b 1
-copy /y "_music\adlib\DISKB\*.BIN" DISKB >nul || exit /b 1
-copy /y "_music\profiles\adlib.conf" music.conf >nul || exit /b 1
-exit /b 0
 :amiga
 rem Amiga intro and ending music (D8): muted DOS intro and ending tunes, amiga_music.ps1 plays the Amiga modules.
 if not exist "_music\amiga\intro.wav" (
   echo Amiga music is not set up - run AmigaMusic_Setup.bat. Using the DOS music.
   exit /b 0
 )
-set "SET=adlib"
-findstr /c:"= mt32" music.conf >nul && set "SET=mt32"
-findstr /c:"= fluidsynth" music.conf >nul && set "SET=gm"
+rem The muted copies of the set in use (gm_amiga: GM music with the Amiga effects, D82)
+set "SET=%SOUND_TUNES%"
 if not exist "_music\amiga\%SET%\*.BIN" (
   echo Amiga music is not set up - run AmigaMusic_Setup.bat. Using the DOS music.
   exit /b 0

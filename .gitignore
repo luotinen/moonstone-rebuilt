@@ -9,9 +9,11 @@
 /MOON.CFG
 /SAVEHOOK.COM
 /music.conf
+/effects.cfg
 /_fixes/
 /_music/adlib/
 /_music/gm/
+/_music/gm_amiga/
 /_music/mt32/
 /_music/amiga/
 /save/
@@ -27,6 +29,8 @@
 /mt32-roms/*.ROM
 /mt32-roms/*.rom
 /soundfonts/*.sf2
+# ... but the GeneralUser GS SoundFont that the release ships (D82; soundfonts/README.txt)
+!/soundfonts/GeneralUser-GS.sf2
 /moonstone.map
 /moonstone.map.bak
 __pycache__/

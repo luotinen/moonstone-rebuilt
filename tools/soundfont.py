@@ -6,10 +6,15 @@ points until the note-off.
 
 sounds: [(preset number, key, name, samples as numpy floats -1..1, rate in Hz, loop)], loop = None for a one-shot or
 (first sample of the loop, sample after its end). write(path, sounds, name) makes one preset per preset number
-(bank 0) and returns nothing. With cut=True every sound is in one exclusive class: a new note on a MIDI channel
+(in bank `bank`, AMIGA_BANK unless told otherwise) and returns nothing. With cut=True every sound is in one exclusive class: a new note on a MIDI channel
 stops the sound that channel was playing, as a new sound does on an Amiga channel."""
 import struct
 import numpy as np
+
+# D82: the bank of the Amiga presets, in the plain amiga.sf2 and in the font merged with a GM one
+# (tools/merge_soundfont.py). The GM programs are in bank 0 and the drums in 128; GeneralUser GS 2.0.3 uses banks
+# 0-9, 11-13, 16, 24-26, 120 and 128. SAVEHOOK.COM selects this bank before every program change.
+AMIGA_BANK = 100
 
 # generator numbers (SoundFont 2.01, section 8.1.2)
 PAN, ATTACK, RELEASE, INSTRUMENT, KEY_RANGE, VEL_RANGE = 17, 34, 38, 41, 43, 44
@@ -24,14 +29,14 @@ def _list(kind, *chunks):
 def _name(s):
     return s.encode('ascii', 'replace')[:19].ljust(20, b'\0')
 
-def write(path, sounds, name='Moonstone', cut=False):
+def write(path, sounds, name='Moonstone', cut=False, bank=AMIGA_BANK):
     presets = sorted({s[0] for s in sounds})
     smpl, shdr = bytearray(), bytearray()
     inst, ibag, igen = bytearray(), bytearray(), bytearray()
     phdr, pbag, pgen = bytearray(), bytearray(), bytearray()
     sample_no = 0
     for inst_no, preset in enumerate(presets):
-        phdr += _name(f'{name} {preset}') + struct.pack('<HHHIII', preset, 0, len(pbag) // 4, 0, 0, 0)
+        phdr += _name(f'{name} {preset}') + struct.pack('<HHHIII', preset, bank, len(pbag) // 4, 0, 0, 0)
         pbag += struct.pack('<HH', len(pgen) // 4, 0)
         pgen += struct.pack('<HH', INSTRUMENT, inst_no)
         inst += _name(f'{name} {preset}') + struct.pack('<H', len(ibag) // 4)

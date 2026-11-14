@@ -1,23 +1,21 @@
 @echo off
-rem Switches the music to: General MIDI (SoundFont) (needs a SoundFont at soundfonts\default.sf2).
+rem Switches the music to: General MIDI (SoundFont). It uses soundfonts\default.sf2 if you put one there, else the
+rem GeneralUser GS SoundFont that comes with Moonstone Rebuilt (soundfonts\GeneralUser-GS.sf2). The sound effects stay
+rem as they are (D82): with the Amiga effects on, both play from one SoundFont, made here the first time
+rem (_music\amiga\amiga_gm.sf2; needs Python, as Setup.bat).
 cd /d "%~dp0"
-if not exist "soundfonts\default.sf2" (
-  echo The music was not changed: it needs a SoundFont at soundfonts\default.sf2.
+if not exist "soundfonts\default.sf2" if not exist "soundfonts\GeneralUser-GS.sf2" (
+  echo The music was not changed: it needs a SoundFont, soundfonts\default.sf2 or soundfonts\GeneralUser-GS.sf2.
   pause
   exit /b 1
 )
-for %%F in ("_music\gm\DISKA\*.BIN" "_music\gm\DISKB\*.BIN" "_music\profiles\gm.conf") do if not exist %%F goto missing
-copy /y "_music\gm\DISKA\*.BIN" DISKA >nul || goto failed
-copy /y "_music\gm\DISKB\*.BIN" DISKB >nul || goto failed
-copy /y "_music\profiles\gm.conf" music.conf >nul || goto failed
-echo Music: General MIDI (SoundFont)
+call tools\set_sound.bat gm keep
+if errorlevel 1 goto failed
+if defined SOUND_NOTE echo %SOUND_NOTE%
+echo %SOUND_SAID%.
 pause
 exit /b 0
-:missing
-echo The General MIDI (SoundFont) music files are missing (_music). Run Setup.bat first. Nothing was changed.
-pause
-exit /b 1
 :failed
-echo Copying failed: the game may be half switched. Close DOSBox-X and run %~nx0 again.
+echo %SOUND_NOTE%
 pause
 exit /b 1

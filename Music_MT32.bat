@@ -1,23 +1,19 @@
 @echo off
-rem Switches the music to: Roland MT-32 (needs the MT-32 ROMs in mt32-roms).
+rem Switches the music to: Roland MT-32 (needs the MT-32 ROMs in mt32-roms). The Amiga sound effects cannot play with
+rem it (both need the MIDI device): if they are on, the sound effects become the DOS game's (D82).
 cd /d "%~dp0"
 if not exist "mt32-roms\*CONTROL.ROM" (
   echo The music was not changed: it needs the MT-32 ROMs in mt32-roms.
   pause
   exit /b 1
 )
-for %%F in ("_music\mt32\DISKA\*.BIN" "_music\mt32\DISKB\*.BIN" "_music\profiles\mt32.conf") do if not exist %%F goto missing
-copy /y "_music\mt32\DISKA\*.BIN" DISKA >nul || goto failed
-copy /y "_music\mt32\DISKB\*.BIN" DISKB >nul || goto failed
-copy /y "_music\profiles\mt32.conf" music.conf >nul || goto failed
-echo Music: Roland MT-32
+call tools\set_sound.bat mt32 keep
+if errorlevel 1 goto failed
+if defined SOUND_NOTE echo %SOUND_NOTE%
+echo %SOUND_SAID%.
 pause
 exit /b 0
-:missing
-echo The Roland MT-32 music files are missing (_music). Run Setup.bat first. Nothing was changed.
-pause
-exit /b 1
 :failed
-echo Copying failed: the game may be half switched. Close DOSBox-X and run %~nx0 again.
+echo %SOUND_NOTE%
 pause
 exit /b 1

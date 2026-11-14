@@ -4,6 +4,7 @@ cd /d "%~dp0"
 set "SET=adlib"
 findstr /c:"= mt32" music.conf >nul && set "SET=mt32"
 findstr /c:"= fluidsynth" music.conf >nul && set "SET=gm"
+findstr /c:"amiga_gm.sf2" music.conf >nul && set "SET=gm_amiga"
 if not exist "_music\%SET%\DISKA\*.BIN" (
   echo The DOS music files are missing ^(_music^). Run Setup.bat first. Nothing was changed.
   pause

@@ -45,10 +45,10 @@ your game files into this folder and patches the copies; your GOG installation i
 | **Your own three Amiga Moonstone disks** as ADF images | The same effects with the Amiga's own samples for every sound. |
 | **VLC media player** | Needed once, to turn the Amiga music into WAV files. Not needed for playing. <https://www.videolan.org/> |
 | **Roland MT-32 ROMs** (`MT32_CONTROL.ROM`, `MT32_PCM.ROM`, or the CM-32L ones) | The best DOS music. Put them in `mt32-roms`, then run `Music_MT32.bat`. Tested with MT-32 v1.07 (SHA-1 of `MT32_CONTROL.ROM`: `b083518fffb7f66b03c23b7eb4f868e62dc5a987`). They are Roland's copyright; obtain them legally. |
-| **A General MIDI SoundFont** (e.g. the freely distributable *GeneralUser GS*, from <https://www.schristiancollins.com/generaluser.php>) | General MIDI music. Save it as `soundfonts\default.sf2`, then run `Music_GM.bat`. Tested with GeneralUser GS 2.0.3 (rename `GeneralUser-GS.sf2` to `default.sf2`); the GM profile uses the reverb and chorus settings its author recommends for DOSBox-X. |
+| **A General MIDI SoundFont of your own** | Not needed: Moonstone Rebuilt comes with *GeneralUser GS* 2.0.3 by S. Christian Collins (`soundfonts\GeneralUser-GS.sf2`, see [Credits](#credits-and-legal)), and `Music_GM.bat` plays the General MIDI music with it. To use another SoundFont, save it as `soundfonts\default.sf2`; it is then used instead. The GM profile uses the reverb and chorus settings the GeneralUser GS author recommends for DOSBox-X. |
 
-The setup picks the music for you: MT-32 if the ROMs are there (the music was written for it), else General MIDI if
-a SoundFont is there, else the original AdLib music. Put the files in place before running `Setup.bat`, or switch later with the `Music_*.bat` files.
+The setup picks the music for you: MT-32 if the ROMs are there (the music was written for it), else General MIDI
+(with your `soundfonts\default.sf2`, or the GeneralUser GS that comes with it). Put the files in place before running `Setup.bat`, or switch later with the `Music_*.bat` files.
 
 ## Installation
 
@@ -99,9 +99,18 @@ Rebuilt can play the effects the way the Amiga's sound driver does, in the DOS g
 * **Setup:** `Setup.bat` builds them (`AmigaSound_Setup.bat` does it again, for example after adding the disk
   images). It needs the Python package numpy, which `AmigaSound_Setup.bat` installs into the `_python` folder here
   if Python does not have it. The effects are saved as a SoundFont (`_music\amiga\amiga.sf2`, about 27 MB).
-* **On and off:** `AmigaSound_On.bat` / `AmigaSound_Off.bat`. A `Music_*.bat` also turns the Amiga effects off.
-* **Music:** while the Amiga effects are on, the music is AdLib (original). The effects are played by DOSBox-X's
-  SoundFont synthesizer, which is the MIDI device, so MT-32 and General MIDI music cannot play at the same time.
+* **On and off:** `AmigaSound_On.bat` / `AmigaSound_Off.bat`. The effects and the music have switches of their own:
+  turning the effects on or off keeps the music, and a `Music_*.bat` keeps the effects.
+* **Music:** AdLib (original) or General MIDI can play with the Amiga effects; MT-32 cannot (the effects are played
+  by DOSBox-X's SoundFont synthesizer, which is then the MIDI device). `Music_MT32.bat` turns the Amiga effects off,
+  and `AmigaSound_On.bat` with MT-32 music chosen switches the music to AdLib; both say so.
+* **General MIDI with the Amiga effects:** both play from one SoundFont, the GM SoundFont merged with the effects'
+  (`_music\amiga\amiga_gm.sf2`, made on your machine by Setup and the switches, about 59 MB, or 87 MB with the disk
+  images; it is made again when either SoundFont changes, which needs Python). The music is 6 dB quieter there than
+  on its own, so that the two suit one mixer level. With the disk images, the places still play the Amiga's own music
+  (below), so the GM music is heard in the first menu and the ending (when the Amiga intro and ending music is off)
+  and in the scenes without the disk images. DOSBox-X's SoundFont synthesizer has reverb and chorus but not the
+  settings of the GM profile, so GeneralUser GS sounds a little different here than with General MIDI alone.
 * **Loudness:** the line `mixer synth 600:600` near the end of `moonstone-dosbox-x.conf` sets the effects' level.
 
 * **Loops:** the dragon's breath and fire, the mudmen's mud (very quiet) and the lions' den after a Balok's roar
@@ -154,11 +163,17 @@ Amiga's 140 effect programs are silent (they use the instruments of the location
   Second player: W, A, S and D (up, left, down, right) plus Tab. The original used X for down; Moonstone Rebuilt
   changes it to S (D9).
 
-  Third player (D70): with 3 or 4 players chosen and no game controller connected, player 3 uses I J K L (up,
+  Third player (D70): with 3 or 4 players chosen, player 3 uses I J K L (up,
   left, down, right), B (attack) and N (the secondary button; player 1's is right Shift, player 2's left Shift).
   Each player then keeps their own keys in every fight, also when two knights fight each other, on the map (the
-  arrows and Enter still work there for everyone) and on the item screen. A fourth player has no keys of their own. Many keyboards
+  arrows and Enter still work there for everyone) and on the item screen. A controller still plays for player 1 (the first) and player 2
+  (the second), and player 3 can also use the first. A fourth player has no keys of their own. Many keyboards
   cannot report every combination of six or more keys held at once; if a key seems to drop, use a controller.
+* **Computer knights from the first menu** (D81): *Players* goes *1 + CPU* (the start), *2 + CPU*, *3 + CPU*,
+  *4*, *3*, *2*, *1* with right (left goes back). With *+ CPU* the knights nobody plays are computer knights, as
+  in the original; *3*, *2* and *1* alone start a campaign with only the players' knights and no computer knights
+  on the map. The choice is remembered (`SAVEHOOK.PLY`). It works also without the custom rules; with
+  `computer_knights = off` the menu offers only *4*, *3*, *2* and *1*. A practice is the same with or without *+ CPU*.
 * **Practice:** with 1 player chosen in the menu, *Practice* is you against a Black Knight played by the computer
   (D11); with 2 players it is two players against each other, as in the original. With 3 or 4 players (D12-D14),
   players 3 and 4 use the game controllers that are connected, and one of them can use the keys I J K L (move),
@@ -250,7 +265,8 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 
 | File | Does |
 |---|---|
-| `Music_AdLib.bat` / `Music_GM.bat` / `Music_MT32.bat` | Music version. If the ROMs or the SoundFont are missing, `Start.bat` falls back to AdLib. |
+| `Music_AdLib.bat` / `Music_GM.bat` / `Music_MT32.bat` | Music version; the sound effects stay as they are (MT-32 turns the Amiga effects off). If the ROMs or the SoundFont are missing, `Start.bat` falls back to AdLib. |
+| `AmigaSound_On.bat` / `AmigaSound_Off.bat` | The Amiga version's sound effects or the DOS game's (after `Setup.bat` or `AmigaSound_Setup.bat` has built them); the music stays as it is (MT-32 becomes AdLib). |
 | `SoundCard_SoundBlaster.bat` / `SoundCard_AdLib.bat` | Sound effects as digitised samples (Sound Blaster, default) or on the AdLib synthesiser. |
 | `Fixes_On.bat` / `Fixes_Off.bat` | All fixes (default) or the original game: the original programs (only unpacked, so that they run in DOSBox-X) and sound files. Saves do not carry over between the two. In original mode there are no automatic saves. |
 | `AmigaMusic_On.bat` / `AmigaMusic_Off.bat` | Amiga intro and ending music on or off (after it has been set up). |
@@ -339,6 +355,13 @@ published by Mindscape; the DOS version is sold by GOG.com. Moonstone Rebuilt is
 not affiliated with or endorsed by the rights holders. It contains only its own scripts, settings and tools; all game
 files come from your own copy, and the Amiga music only from your own disk image. Do not share the game folder after
 setup: it then contains the game's files.
+
+The General MIDI SoundFont *GeneralUser GS* 2.0.3 (`soundfonts\GeneralUser-GS.sf2`) is by S. Christian Collins,
+© 1997–2025, and is included unchanged under its own license, the GeneralUser GS License v2.0
+(`soundfonts\GeneralUser-GS-LICENSE.txt`); updates and more are on its author's website,
+<https://www.schristiancollins.com>. It is not covered by Moonstone Rebuilt's license. With the Amiga sound effects
+and General MIDI music on, Setup and the switches merge it with the effects into a file of your own
+(`_music\amiga\amiga_gm.sf2`), which is not part of the release and is not to be shared.
 
 ## License
 

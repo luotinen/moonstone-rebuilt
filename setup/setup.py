@@ -7,9 +7,11 @@ Only files from the user's installation are used; nothing of the original game i
 3. Builds the original programs, only unpacked (the packed ones fail in DOSBox-X's lowest 64 KB, and LOADFIX would
    leave too little memory), and keeps the original sound files, in _fixes/original; builds the fixed ones in
    _fixes/fixed (MAIN.EXE: K1 K2 K4 K5 K6 K11 K16 K17 K18 K19 K20 K21 K22 K23 K24 K25 K26 K27 K28 D6 D7 D9 D11 D12 D13 D14 D15 D17 D19 D20 D21 D22 D23 D24 D25, INTR.EXE: K9, sound files: K10).
-4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones),
+4. Builds the music sets in _music (adlib: the original modules, mt32: the Roland modules, gm: General MIDI ones,
+   gm_amiga: the GM ones with their player in UART mode, for GM music with the Amiga effects, D82),
    SAVEHOOK.COM, MOON.CFG (Sound Blaster) and music.conf: on the first setup the best music available (MT-32 if
-   the ROMs are in mt32-roms, else General MIDI if soundfonts/default.sf2 exists, else AdLib); later runs keep the choice.
+   the ROMs are in mt32-roms, else General MIDI: with soundfonts/default.sf2 if it exists, else with the shipped
+   soundfonts/GeneralUser-GS.sf2, whose SHA-256 is checked); later runs keep the choice.
 5. Installs the fixed set, or the original one if ORIGINAL.FLG exists (Fixes_Off.bat); applies the game rules in
    custom_rules.ini (tools/rules.py) again if CUSTOM_RULES.FLG exists (Custom_rules_on.bat). custom_rules.ini is
    checked right after the GOG files, so a bad value stops the setup before anything here changes; if the rules
@@ -17,7 +19,8 @@ Only files from the user's installation are used; nothing of the original game i
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
 7. Builds the Amiga version's sound effects (_music/amiga/amiga.sf2; needs the Python package numpy): from the
    images of all three Amiga disks if the amiga folder holds them, else from the DOS game's own samples and the
-   substitute sounds in sounds/ (tools/sound_programs.json). AmigaSound_On.bat turns them on.
+   substitute sounds in sounds/ (tools/sound_programs.json). AmigaSound_On.bat turns them on. Then merges the GM
+   SoundFont with them (_music/amiga/amiga_gm.sf2, tools/merge_soundfont.py, D82) for GM music with the effects.
 It can be run again at any time; saves (save/) and the MT-32 ROMs and SoundFont are left alone.
 Usage: python -I setup/setup.py [GOG Moonstone folder]"""
 import sys, os, json, hashlib, shutil, glob
@@ -30,12 +33,33 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'K41', 'K42', 'K43', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76', 'D81', 'D83']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
 def say(text):
     print(text, flush=True)
+
+# D82: the GeneralUser GS 2.0.3 SoundFont shipped in soundfonts/ (S. Christian Collins, GeneralUser GS License v2.0;
+# soundfonts/GeneralUser-GS-LICENSE.txt), the GM font when the user has no soundfonts/default.sf2 of their own
+GENERALUSER = os.path.join('soundfonts', 'GeneralUser-GS.sf2')
+GENERALUSER_SHA256 = '9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe'
+
+def check_generaluser():
+    """-> True if General MIDI music has a SoundFont (the user's default.sf2, or the shipped GeneralUser GS). A
+    shipped file that is not the released one (a broken download, a Git checkout without the file) is reported."""
+    if os.path.exists(os.path.join(HERE, 'soundfonts', 'default.sf2')):
+        return True
+    path = os.path.join(HERE, GENERALUSER)
+    if not os.path.exists(path):
+        say(f'  {GENERALUSER} is missing: General MIDI music needs a SoundFont (soundfonts\\README.txt)')
+        return False
+    with open(path, 'rb') as f:
+        digest = hashlib.file_digest(f, 'sha256').hexdigest() if hasattr(hashlib, 'file_digest') else hashlib.sha256(f.read()).hexdigest()
+    if digest != GENERALUSER_SHA256:
+        say(f'  {GENERALUSER} is not the file this release ships (SHA-256 {digest[:12]}...): download the release '
+            'again, or put a SoundFont of your own at soundfonts\\default.sf2. General MIDI music may not play.')
+    return True
 
 def gog_from_registry():
     try:
@@ -155,7 +179,8 @@ def _main(arg=None):
         disk = os.path.basename(os.path.dirname(path))
         copy(path, os.path.join(music, 'mt32', disk, 'A' + os.path.basename(path)[1:]))
     import make_gm_tunes
-    make_gm_tunes.main(gog, os.path.join(music, 'gm'))
+    make_gm_tunes.main(gog, os.path.join(music, 'gm'), os.path.join(music, 'gm_amiga'))   # D82: and the UART set
+    gm_font = check_generaluser()
     from make_savehook import make_savehook
     write(os.path.join(HERE, 'SAVEHOOK.COM'), make_savehook())
     write(os.path.join(fixed, 'SAVEHOOK.COM'), make_savehook())
@@ -165,15 +190,19 @@ def _main(arg=None):
     if not os.path.exists(music_conf):                         # first setup: the best music available
         if glob.glob(os.path.join(HERE, 'mt32-roms', '*CONTROL.ROM')):
             chosen = 'mt32'                                    # the device the music was written for
-        elif os.path.exists(os.path.join(HERE, 'soundfonts', 'default.sf2')):
+        elif gm_font:
             chosen = 'gm'
         else:
             chosen = 'adlib'
         copy(os.path.join(music, 'profiles', f'{chosen}.conf'), music_conf)
+        if chosen == 'gm' and not os.path.exists(os.path.join(HERE, 'soundfonts', 'default.sf2')):
+            with open(music_conf, 'a') as f:                   # as tools/set_sound.bat writes it
+                f.write('fluid.soundfont = soundfonts\\GeneralUser-GS.sf2\n')
     conf = open(music_conf).read()                             # music in use, also if a Music_*.bat chose it
-    chosen = 'mt32' if '= mt32' in conf else 'gm' if '= fluidsynth' in conf else 'adlib'
+    chosen = 'mt32' if '= mt32' in conf else 'gm' if '= fluidsynth' in conf or 'amiga_gm.sf2' in conf else 'adlib'
+    tunes = 'gm_amiga' if 'amiga_gm.sf2' in conf else chosen  # D82: GM music with the Amiga effects
     for disk in ('DISKA', 'DISKB'):
-        for path in glob.glob(os.path.join(music, chosen, disk, '*.BIN')):
+        for path in glob.glob(os.path.join(music, tunes, disk, '*.BIN')):
             copy(path, os.path.join(HERE, disk, os.path.basename(path)))
     say(f'  music: {dict(gm="General MIDI", mt32="MT-32", adlib="AdLib")[chosen]}')
     os.makedirs(os.path.join(HERE, 'save'), exist_ok=True)
@@ -221,6 +250,11 @@ def _main(arg=None):
         try:
             built = make_amiga_audio.build_soundfont(HERE, os.path.join(HERE, '_music', 'amiga', 'amiga.sf2'))
             say(f'  Amiga sound effects: built, {built} (AmigaSound_On.bat turns them on)')
+            import merge_soundfont                              # D82: with the GM SoundFont, for GM music with them
+            try:
+                say('  GM music with the Amiga effects: SoundFont ' + merge_soundfont.update_install(HERE))
+            except (ValueError, OSError) as e:
+                say(f'  GM music with the Amiga effects: SoundFont not made ({e}); AmigaSound_On.bat then uses AdLib music')
         except make_amiga_audio.AudioError as e:
             say(f'  Amiga sound effects not built: {e}')
     say('Done. Start the game with Start.bat.')

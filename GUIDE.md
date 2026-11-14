@@ -52,7 +52,7 @@ The dragon flies over all of them, and Black Knights roam the land hunting the q
 
 The menu has these options *(manual p. 14)*:
 
-* **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer.
+* **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer. [Moonstone Rebuilt, D81: the value goes *1 + CPU* (the start), *2 + CPU*, *3 + CPU*, *4*, *3*, *2*, *1* (right on, left back). With *+ CPU* the knights nobody plays are computer knights, as in the original; *3*, *2* and *1* alone have no computer knights at all. The last choice is remembered; with the custom rule `computer_knights = off` only *4*, *3*, *2* and *1* are offered.]
 * **Gore:** turns the bloody deaths on or off. [Moonstone Rebuilt: four values, D76: Off, Less (blood, but no fatalities or special deaths), On (the game) and More (as the ABACABB cheat code); Enter and right go to the next, left to the one before. The last choice is remembered (at first On; custom rules: `gore`); the age rating limits the choice (K16: Off or Less, K12: Off), `death_animations = off` to Less.]
 * **Practice:** two players fight each other straight away, without the map. [Moonstone Rebuilt: with 1 player chosen, you fight a Black Knight played by the computer, D11; with 3 or 4 and game controllers, everyone against everyone (Enter on Practice) or two teams (Space anywhere in the first menu), D12-D14; with 1 player the keys 1-9 start a practice against the monsters of a lair (with 2-4 players all knights together, D15) and 0 against the Black Knight, D14.]
 * **Select knight:** pick a knight and type a name, then press Enter (or fire).
@@ -81,7 +81,7 @@ The manual describes only a joystick. The DOS keys are:
 
 [Moonstone Rebuilt, custom rules: in fights the secondary button throws a dagger at once, as back + up + fire does, the way the knight faces (D77). `secondary_button` in `custom_rules.ini` can make it the swing, the overhead chop, the lunge, the upward or backward thrust, the block, the special defence or nothing. A controller's second button is the secondary button with custom rules on. Without custom rules the button does nothing in fights, as in the original.]
 
-[Moonstone Rebuilt: player 3's keys work with 3 or 4 players chosen and no joystick; each player then keeps their own keys in every fight and on the map, D70. The menus and the shop still use player 1's keys; on the item screen each player uses their own.]
+[Moonstone Rebuilt: player 3's keys work with 3 or 4 players chosen; each player then keeps their own keys in every fight and on the map, D70. The menus and the shop still use player 1's keys; on the item screen each player uses their own.]
 
 On the map *(manual p. 6)*:
 
