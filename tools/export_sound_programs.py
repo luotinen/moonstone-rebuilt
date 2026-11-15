@@ -26,7 +26,7 @@ SUBSTITUTES = {'dragthud1c': 'dragon_thud.wav', 'BALSWISH2b': 'balok_swish.wav',
                'wind2': 'wind.wav', 'sparx2b': 'guardian_sparks.wav', 'bash': 'troll_bash.wav',
                'BEASTGALLOP.SND': 'beast_gallop.wav', 'dice2c': 'dice.wav', 'clik2': 'menu_click.wav',
                'chimpgruntloB': 'dragon_grunt.wav', 'rolandscreamB': 'long_scream.wav',
-               'ratbite1': 'rat_bite.wav', 'Strain1d': 'strain.wav'}
+               'ratbite1': 'rat_bite.wav', 'Strain1d': 'strain.wav', 'he.a': 'thunder.wav'}
 # Amiga samples that the game plays as short parts in a shuffled order and whose substitute is one continuous
 # recording instead: the Amiga sample's name -> our file. A run of notes of the sample's parts becomes one note that
 # plays the file from its start (merged); the file must be as long as the longest run. The lions' den after a

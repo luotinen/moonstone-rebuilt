@@ -4,7 +4,8 @@ Disk 1, named
 
     Moonstone_Disk1.adf
 
-holds the Amiga intro and ending music. Run Setup.bat (or AmigaMusic_Setup.bat). See README.md, "Amiga music".
+holds the Amiga intro and ending music, which then plays from the SoundFont of the Amiga sound effects (with
+AdLib or General MIDI music). Run Setup.bat (or AmigaMusic_Setup.bat). See README.md, "Amiga music".
 
 All three disks (any names ending in .adf, the one above included) hold the Amiga version's sound effects.
 Run Setup.bat (or AmigaSound_Setup.bat), then AmigaSound_On.bat. See README.md, "Amiga sound effects".

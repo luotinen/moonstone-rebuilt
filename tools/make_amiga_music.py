@@ -1,8 +1,8 @@
-"""Set up the Amiga intro and ending music for Moonstone Rebuilt (D8, D87), from the user's own Amiga disk images.
+"""Set up the Amiga intro and ending music for Moonstone Rebuilt (D87), from the user's own Amiga disk images.
 
-1. Finds the disk with music.cmp and vmusic.cmp among the .adf files in a folder (tools/adf.py) and unpacks the two
-   modules (tools/rnc.py).
-2. D87: writes the tune modules that play them from the SoundFont (_music/amiga/font/ATUNE1.BIN and ATUNE6.BIN).
+1. Finds the disk with music.cmp and vmusic.cmp among the .adf files in a folder (tools/adf.py) and checks the two
+   modules (tools/rnc.py unpacks them).
+2. Writes the tune modules that play them from the SoundFont (_music/amiga/font/ATUNE1.BIN and ATUNE6.BIN).
    INTR.EXE loads a tune module to 0492:0000 and calls it through int 60h: ah = 0 starts the tune, 1 is the timer's
    tick, 2 stops it. Ours is a few bytes of machine code written here: the start sends the two notes of the tune's
    left and right sample (make_amiga_audio.py puts them in the SoundFont, preset 3 of the Amiga bank) to the MIDI
@@ -11,19 +11,14 @@
    BIOS clock, which times the scenes' frame loops, by holding back some of the ticks INTR.EXE passes to the BIOS.
    The intro starts our tune in its first sequence, as the Amiga does (K9's cave); a start while it plays does
    nothing, so the game's own start later changes nothing.
-   Start.bat uses these modules when the Amiga sound effects are on, so the SoundFont is loaded, and it has the tunes.
-3. For the other cases the older way (D8) stays: renders the modules to WAV with VLC, if VLC is there (the game
-   then plays the WAV files with Windows' own sound player, amiga_music.ps1), and makes muted copies of the DOS
-   intro and ending tunes (DISKA/ATUNE1.BIN and ATUNE6.BIN) for every music set, so the tune keeps its timing (and
-   the intro skip, K9, still sees a loaded module) but plays nothing. General MIDI (both sets, D82) and MT-32: every
-   note-on gets velocity 0. AdLib: the tune file holds its own player, and with velocity-0 notes the intro froze
-   where the tune ends, with a tone left on; there the player's note-on loses its key-on bit instead, and the notes
-   stay as they are.
+   tools/set_sound.bat and Start.bat use these modules whenever DOSBox-X can load a SoundFont that has the tunes:
+   with AdLib or General MIDI music, with the DOS or the Amiga sound effects; MT-32 music keeps its Roland tunes.
+3. Removes what the older way (D8, retired in phase 5 step 7) left in the folder: the modules, VLC's WAV files and
+   the muted DOS tunes.
 The results go to <rebuilt>/_music/amiga/.
-Usage: python -I tools/make_amiga_music.py <folder with .adf files> <rebuilt folder> [vlc.exe]"""
-import sys, os, re, struct, subprocess, hashlib
+Usage: python -I tools/make_amiga_music.py <folder with .adf files> <rebuilt folder>"""
+import sys, os, struct, hashlib, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract_music import find_smf, walk
 from amiga_module import read_disk, PREFERRED, TUNE_PRESET, TUNE_KEYS, TUNE_CHANNELS, TUNE_VOLUME, TUNE_PANS
 from patches import (AMIGA_BANK, INTR_TUNE_SIGN, INTR_TUNE_N, INTR_TUNE_M, INTR_TUNE_SKIP, INTR_TUNE_OF,
                      INTR_TUNE_ACC, INTR_TUNE_TICKS, INTR_TUNE_ON, INTR_TUNE_LEFT, INTR_TUNE_SWITCH, INTR_TUNE_FIRST,
@@ -32,8 +27,9 @@ from patches import (AMIGA_BANK, INTR_TUNE_SIGN, INTR_TUNE_N, INTR_TUNE_M, INTR_
 # SHA-256 of the unpacked modules from the disks this was made with; other dumps of the same disks should match
 KNOWN = {'intro': '26b78aeda0ac1dbdaa68e3be0706159121557db224370227489e63298fcd4faa',
          'ending': '606e033e6c436ad6e347c47a8fae57f58a2c7464deedbc5eab533ac7e77b8358'}
-MUSIC_SETS = ('adlib', 'gm', 'gm_amiga', 'mt32')   # gm_amiga: the UART player (D82), for GM music with the Amiga effects
-VLC_PATHS = (r'C:\Program Files\VideoLAN\VLC\vlc.exe', r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe')
+# What D8 (the host player, retired) wrote into _music/amiga: removed when the music is set up again
+D8_FILES = ('intro.mod', 'ending.mod', 'intro.wav', 'ending.wav', 'amiga_music.log')
+D8_SETS = ('adlib', 'gm', 'gm_amiga', 'mt32')      # the muted DOS tunes, one folder per music set
 
 # --- D87: the tune modules that play from the SoundFont -----------------------------------------------------------
 FONT_SET = 'font'                                  # _music/amiga/font
@@ -130,39 +126,24 @@ def write_font_modules(out):
     for name, file in TUNE_FILES.items():
         open(os.path.join(folder, file), 'wb').write(tune_module(name))
 
-# --- D8: the WAV files and the muted DOS tunes ------------------------------------------------------------------------
 def find_modules(folder):
     found = read_disk(folder)
     if not found:
         raise SystemExit(f'No Amiga Moonstone disk 1 (with music.cmp and vmusic.cmp) found in {folder}; expected {PREFERRED}')
     return found[0], found[1]
 
-def render(vlc, mod_path, wav_path):
-    sout = '#transcode{acodec=s16l,channels=2,samplerate=44100}:std{access=file,mux=wav,dst=' + wav_path.replace('\\', '/') + '}'
-    subprocess.run([vlc, '-I', 'dummy', '--dummy-quiet', '--no-repeat', '--no-loop', mod_path, '--sout', sout,
-                    'vlc://quit'], check=True, timeout=600)
-    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100000:
-        raise SystemExit(f'VLC did not render {wav_path}')
+def remove_d8(out):
+    """The older player's files (D8): nothing reads them any more."""
+    gone = []
+    for name in D8_FILES:
+        if os.path.isfile(os.path.join(out, name)):
+            os.remove(os.path.join(out, name)); gone.append(name)
+    for music_set in D8_SETS:
+        if os.path.isdir(os.path.join(out, music_set)):
+            shutil.rmtree(os.path.join(out, music_set)); gone.append(music_set + '/')
+    return gone
 
-# The AdLib player's note-on: mov [di+8],ax / or ah,20h (key on) / call the register write
-ADLIB_KEY_ON = re.compile(bytes.fromhex('894508 80cc20 e8'))
-
-def mute(module, music_set=''):
-    smf = find_smf(module)
-    start = module.find(smf)
-    if music_set == 'adlib':
-        hits = [m.start() for m in ADLIB_KEY_ON.finditer(module[:start])]
-        if len(hits) != 1:
-            raise SystemExit('The AdLib tune has another player than the one this tool knows (no single key-on found)')
-        return module[:hits[0] + 5] + bytes(1) + module[hits[0] + 6:]     # or ah,0: the note never sounds
-    out = bytearray(smf)
-    for k, status, _ in walk(smf):
-        if status & 0xf0 == 0x90:
-            out[k + 1] = 0                                   # note-on with velocity 0 = note-off
-    return module[:start] + bytes(out) + module[start + len(smf):]
-
-def main(adf_folder, rebuilt, vlc=None):
-    vlc = vlc or next((p for p in VLC_PATHS if os.path.exists(p)), None)
+def main(adf_folder, rebuilt):
     disk, modules = find_modules(adf_folder)
     print(f'Modules found on {os.path.basename(disk)}')
     out = os.path.join(rebuilt, '_music', 'amiga')
@@ -171,24 +152,12 @@ def main(adf_folder, rebuilt, vlc=None):
         digest = hashlib.sha256(data).hexdigest()
         if KNOWN[name] and KNOWN[name] != digest:
             print(f'  note: {name} module differs from the known disk version ({digest[:12]})')
-        mod = os.path.join(out, f'{name}.mod')
-        open(mod, 'wb').write(data)
-        if vlc:
-            render(vlc, mod, os.path.join(out, f'{name}.wav'))
-        print(f'  {name}: {len(data)} bytes, title {data[:20].split(bytes(1))[0].decode("latin-1")!r}'
-              + (f' -> {name}.wav' if vlc else ''))
+        print(f'  {name}: {len(data)} bytes, title {data[:20].split(bytes(1))[0].decode("latin-1")!r}')
     write_font_modules(out)
-    print(f'Tune modules that play the tunes from the SoundFont (with the Amiga sound effects on) -> {os.path.join(out, FONT_SET)}')
-    if not vlc:
-        print('  VLC was not found (https://www.videolan.org/): no WAV files were made, so without the Amiga sound '
-              'effects the DOS intro and ending music plays')
-    for music_set in MUSIC_SETS:
-        for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'):
-            src = os.path.join(rebuilt, '_music', music_set, 'DISKA', tune)
-            dst = os.path.join(out, music_set, tune)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            open(dst, 'wb').write(mute(open(src, 'rb').read(), music_set))
-    print(f'Muted DOS intro and ending tunes for {", ".join(MUSIC_SETS)} -> {out}')
+    print(f'Tune modules that play the tunes from the SoundFont -> {os.path.join(out, FONT_SET)}')
+    gone = remove_d8(out)
+    if gone:
+        print(f'  removed the files of the older player (D8): {", ".join(gone)}')
 
 if __name__ == '__main__':
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:3])

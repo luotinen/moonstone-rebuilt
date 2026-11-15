@@ -17,7 +17,8 @@ Only files from the user's installation are used; nothing of the original game i
    checked right after the GOG files, so a bad value stops the setup before anything here changes; if the rules
    still cannot be applied, custom rules are turned off (the default set stays installed) and the setup fails.
 6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music: the tune modules that play it
-   from the SoundFont of step 7 (D87), and for the older player (D8) WAV files, if VLC is installed.
+   from the SoundFont of step 7 (D87), with AdLib or General MIDI music and either sound effects (MT-32 music keeps
+   its Roland tunes). No other program is needed: the older player beside DOSBox-X (D8) is gone.
 7. Builds the Amiga version's sound effects (_music/amiga/amiga.sf2; needs the Python package numpy): from the
    images of all three Amiga disks if the amiga folder holds them, else from the DOS game's own samples and the
    substitute sounds in sounds/ (tools/sound_programs.json). AmigaSound_On.bat turns them on. Then merges the GM
@@ -34,7 +35,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'K41', 'K42', 'K43', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76', 'D81', 'D83', 'D85']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'K41', 'K42', 'K43', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76', 'D81', 'D83', 'D85', 'D90', 'D91', 'D95']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -167,6 +168,8 @@ def _main(arg=None):
     write(os.path.join(fixed, 'MAIN.EXE'), install_deaths(HERE, make_main_exe(gog, MAIN_FIXES)))
     from horse_frames import install as install_horses
     install_horses(HERE)                                      # D38: KH.CEL and MH.C, read only by the fixed MAIN.EXE
+    from gold_frames import install as install_gold
+    install_gold(HERE)                                        # D91: TV5.PIV and MY5.CEL, read only by the fixed MAIN.EXE
     write(os.path.join(fixed, 'INTR.EXE'), make_intr_exe(gog, INTR_FIXES))
     for name in samples:
         write(os.path.join(fixed, name), fix_rate(open(os.path.join(gog, name), 'rb').read(), os.path.basename(name)))
@@ -263,6 +266,9 @@ def _main(arg=None):
                 say(f'  GM music with the Amiga effects: SoundFont not made ({e}); AmigaSound_On.bat then uses AdLib music')
         except make_amiga_audio.AudioError as e:
             say(f'  Amiga sound effects not built: {e}')
+    if os.path.exists(disk1) and not os.path.exists(os.path.join(HERE, '_music', 'amiga', 'amiga.tunes')):
+        say('  Amiga intro and ending music: the SoundFont with the tunes was not built, so the DOS tunes play '
+            '(AmigaMusic_Setup.bat builds it)')
     say('Done. Start the game with Start.bat.')
 
 if __name__ == '__main__':

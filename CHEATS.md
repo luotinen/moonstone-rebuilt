@@ -16,7 +16,7 @@ They act on the knight whose turn it is.
 |---|---|
 | IDKFA | One more of every magic item, the Sword of Sharpness, the four keys, the four Moonstones, battle armour and 99 daggers |
 | ↑ ↑ ↓ ↓ ← → ← → B A | 99 lives |
-| HESOYAM, ROSEBUD, KLAPAUCIUS, MOTHERLODE | +20 000 gold (at most 65 535) |
+| HESOYAM, ROSEBUD, KLAPAUCIUS, MOTHERLODE | +20 000 gold (at most 32 767) |
 | POINTTAKEN | 99 daggers |
 | TINMAN | The next better armour (again and again, up to battle armour) |
 | SIRLOIN | The next better sword (up to the claymore; not the Sword of Sharpness) |

@@ -26,9 +26,20 @@ WEAPONS = {'long_sword': 0x16, 'broadsword': 0x17, 'claymore': 0x18, 'sword_of_s
 ARMOUR_MOVE_DEFAULT = (0, -1, -2, -4)                  # D37: each armour's movement with horses on (a knight's movement: endurance * 2 + 4 + this)
 ARMOUR_BONUS_DEFAULT = (0, 2, 0, 2)                    # D38: the same with horses off
 # D38: horses: (name for the ini, shop text, price, movement, speed in forest and swamp, in mountains and at the edges, in eighths)
-HORSES = (('brown', 'Brown horse', 20, 1, 4, 2), ('light', 'Light horse', 40, 2, 6, 4), ('armoured', 'Armoured horse', 60, 3, 7, 6),
-          ('black', 'Black charger', 80, 3, 8, 8), ('dappled', 'Dappled horse', 80, 5, 7, 6))
-HORSE_TEXT_SIZE, HORSE_CHANCE_DEFAULT = 30, 10
+# D92: the third one is the White horse (its ini keys were armoured_horse_*, still read); the sixth, the Armoured horse
+# (fully armoured), has the Light horse's movement and adds max HP. A horse's level is its number, at most 4: brown 1,
+# light 2, white 3, the rest 4. More level-4 horses can be added at the end (HORSE_MAX in all)
+HORSES = (('brown', 'Brown horse', 20, 1, 4, 2), ('light', 'Light horse', 40, 2, 6, 4), ('white', 'White horse', 60, 3, 7, 6),
+          ('black', 'Black charger', 80, 3, 8, 8), ('dappled', 'Dappled horse', 80, 5, 7, 6),
+          ('full_armour', 'Armoured horse', 80, 2, 6, 4))
+HORSE_OLD_KEYS = {'white': 'armoured'}                 # D92: an older ini's name for the same horse
+HORSE_HP = {'full_armour': 20}                         # D92: max HP while the horse is active (<name>_horse_hp)
+HORSE_N, HORSE_LEVELS = len(HORSES), 4
+HORSE_L4_MAX = 8                                       # D92: room for the level-4 horses in the table
+# D92: the town's stock: the chance (percent) of a horse of level 1-4 for sale, by the level of the knight's own horse
+HORSE_STOCK = (('none', (75, 50, 0, 0)), ('level_1', (100, 75, 50, 10)), ('level_2', (100, 100, 75, 20)),
+               ('level_3', (100, 100, 100, 25)), ('level_4', (100, 100, 100, 100)))
+HORSE_TEXT_SIZE = 30
 ARMOURS = {'padded': 0x1b, 'chain_mail': 0x1c, 'plate_mail': 0x1d, 'battle_armour': 0x1e}
 MODES = {'permadeath': 0, 'reincarnation': 1, 'respawn': 2, 'invulnerable': 3}
 VILLAGE = {'below_3': 0, 'below_max': 1, 'full': 2}
@@ -242,16 +253,16 @@ G_ARM_ENCH = G_ARMOUR_MOVE + 4                # byte: armour_enchantments (D37),
 G_ARM_CHANCE = G_ARM_ENCH + 1                 # byte: armour_enchantment_chance (D37), percent
 G_DISEASE = G_ARM_CHANCE + 1                  # byte: 1 = the ratmen's disease is on (Venomproof has a use)
 G_HORSES = G_DISEASE + 1                      # byte: horses (D38), 1 = on
-G_HORSE_CHANCE = G_HORSES + 1                 # byte: rare_horse_chance, percent
-G_HORSE_PRICE = G_HORSE_CHANCE + 1            # 5 words: each horse's price
-G_HORSE_MOVE = G_HORSE_PRICE + 10             # 5 signed bytes: movement
-G_HORSE_SOFT = G_HORSE_MOVE + 5               # 5 bytes: forest and swamp speed, eighths
-G_HORSE_HARD = G_HORSE_SOFT + 5               # 5 bytes: mountains and edges speed, eighths
-G_HORSE_TEXT = G_HORSE_HARD + 5               # 5 texts of HORSE_TEXT_SIZE bytes (the shop's hover)
-G_INPUT_RECENT = G_HORSE_TEXT + 5 * HORSE_TEXT_SIZE   # byte: input_recent_direction (D39), BIOS ticks, 0 = off
+G_HORSE_L4N = G_HORSES + 1                    # byte: how many level-4 horses (D92; was rare_horse_chance)
+G_HORSE_PRICE = G_HORSE_L4N + 1               # HORSE_N words: each horse's price
+G_HORSE_MOVE = G_HORSE_PRICE + 2 * HORSE_N    # HORSE_N signed bytes: movement
+G_HORSE_SOFT = G_HORSE_MOVE + HORSE_N         # HORSE_N bytes: forest and swamp speed, eighths
+G_HORSE_HARD = G_HORSE_SOFT + HORSE_N         # HORSE_N bytes: mountains and edges speed, eighths
+G_HORSE_TEXT = G_HORSE_HARD + HORSE_N         # HORSE_N texts of HORSE_TEXT_SIZE bytes (the shop's hover)
+G_INPUT_RECENT = G_HORSE_TEXT + HORSE_N * HORSE_TEXT_SIZE   # byte: input_recent_direction (D39), BIOS ticks, 0 = off
 G_TRADE_IN = G_INPUT_RECENT + 1               # byte: 1 = worse goods at the merchant are free in exchange (D40)
-G_HORSE_SELL = G_TRADE_IN + 1                 # 5 texts of HORSE_TEXT_SIZE bytes (the knight's own horse, hover)
-G_BUY = G_HORSE_SELL + 5 * HORSE_TEXT_SIZE    # 6 words: the merchant's full prices (SELL_ITEMS order), D42
+G_HORSE_SELL = G_TRADE_IN + 1                 # HORSE_N texts of HORSE_TEXT_SIZE bytes (the knight's own horse, hover)
+G_BUY = G_HORSE_SELL + HORSE_N * HORSE_TEXT_SIZE    # 6 words: the merchant's full prices (SELL_ITEMS order), D42
 G_COMPUTER = G_BUY + 12                       # byte: computer_knights (D44), 0 = none in the game
 G_BK_AI = G_COMPUTER + 1                      # byte: black_knight_ai (D45), 1 = smart, 0 = classic
 G_BK_HEAL = G_BK_AI + 1                       # byte: a full heal's price at the healer (D45: smart knights pay it)
@@ -275,7 +286,10 @@ SECONDARY_MOVES = {'none': 0, 'dagger': 1, 'attack': 2, 'swing': 2, 'chop': 3, '
 G_HARDCORE = G_SECONDARY + 1                  # byte: hardcore_autosave_mode (D78), 1 = on: Game Over with no human
                                               # knight's life left deletes the automatic saves (slots 91-100)
 G_POINTER_XY = G_HARDCORE + 1                 # byte: pointer_coordinates (D84, a debug aid), 1 = on
-TABLE_SIZE = G_POINTER_XY + 1
+G_HORSE_HP = G_POINTER_XY + 1                 # HORSE_N bytes: max HP while the horse is active (D92)
+G_HORSE_STOCK = G_HORSE_HP + HORSE_N          # 5 x 4 bytes: the town's stock chances (HORSE_STOCK), percent
+G_HORSE_L4 = G_HORSE_STOCK + 4 * len(HORSE_STOCK)   # HORSE_L4_MAX bytes: the level-4 horses (each as likely)
+TABLE_SIZE = G_HORSE_L4 + HORSE_L4_MAX
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
@@ -364,7 +378,9 @@ HOOKS = [
     (0xb3a4, 'e8da22', 'tavern_click'),                 # D86: the tavern's spots (cheat_codes = yes): gold, the scream
     (0x0e0e, 'e88698', 'town_exit'),                    # D79: max_gold as the town is left (gold noted by horse_town_w/_h)
     (0xb4c7, '014432', 'gold_add'),                     # D43, D79: the dice's wins, up to 32767 until the town is left
-    (0xb491, '8b4432', 'gold999'), (0xb4e3, '8b4432', 'gold999'),   # D41: the dice result's three-character field
+    (0xb497, 'e8e5c8', 'gold5'), (0xb4e9, 'e893c8', 'gold5'),   # D91: the dice result's gold, five digits
+    (0xbde2, 'e89abf', 'gold5'), (0xc95d, 'e81fb4', 'gold5'),   # D91: the donation, a chest's or the hoard's gold
+    (0xba1e, 'e85ec3', 'gold5'),                        # D91: Math's gift (gold_max up to 1000)
     (0xc55c, '8b3690e4', 'horse_panel'),                # D40: the knight's own horse on its panel
     (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
     (0xa918, 'be2ac4', 'horse_terrain'),
@@ -498,7 +514,8 @@ REMOVED_SETTINGS = {'dynamic_difficulty'}
 #   the item screen; that only looks wrong.
 # * max HP: SAVEHOOK.COM caps it at MAX_HP during the game: the item screen writes "current/max" into a small text
 #   buffer (DS:E4B4, 1000:C46B), and 999/999 is as long as the original's longest.
-# * gold at most 20000: a word that the game compares as signed (limit 32767); a dice win adds at most 150 x 30.
+# * gold 0-32767: a word that the game compares as signed; every gain stops at 32767 (D41, D79), and the screens show
+#   five digits (D91).
 # * experience per ability point at least 1: 0 would let the computer knights raise abilities without end.
 # * item counts 0-9: how bigger counts show on the item screen has not been checked.
 # * byte operands in MAIN.EXE are signed (at most 127): armour HP, moon days, the computer knights' XP, the shop
@@ -623,11 +640,17 @@ def read_ini(path):
     r['horses'] = opt(g, 'horses', _onoff, 1)
     r['move_bar'] = opt(g, 'move_bar', _onoff, 1)
     r['secondary'] = opt(g, 'secondary_button', _choice(SECONDARY_MOVES), SECONDARY_MOVES['dagger'])   # D77
-    r['horse_chance'] = opt(g, 'rare_horse_chance', int, HORSE_CHANCE_DEFAULT, 0, 100)
     r['trade_in'] = opt(g, 'merchant_trade_in', _onoff, 1)
-    r['horse_list'] = [(text, opt(g, f'{name}_horse_price', int, price, 0, 999), opt(g, f'{name}_horse_movement', int, move, -20, 20),
-                        opt(g, f'{name}_horse_forest_swamp_speed', int, soft, 1, 8), opt(g, f'{name}_horse_mountains_edges_speed', int, hard, 1, 8))
+    def horse_opt(name, what, default, *bounds):         # D92: the White horse's older keys are armoured_horse_*
+        key = f'{name}_horse_{what}'
+        if not cp.has_option(g, key) and name in HORSE_OLD_KEYS: key = f'{HORSE_OLD_KEYS[name]}_horse_{what}'
+        return opt(g, key, int, default, *bounds)
+    r['horse_list'] = [(text, horse_opt(name, 'price', price, 0, 999), horse_opt(name, 'movement', move, -20, 20),
+                        horse_opt(name, 'forest_swamp_speed', soft, 1, 8), horse_opt(name, 'mountains_edges_speed', hard, 1, 8))
                        for name, text, price, move, soft, hard in HORSES]
+    r['horse_hp'] = [opt(g, f'{name}_horse_hp', int, HORSE_HP[name], 0, 100) if name in HORSE_HP else 0 for name, *_ in HORSES]
+    r['horse_stock'] = [[opt(g, f'horse_stock_{own}_level_{lv + 1}', int, d, 0, 100) for lv, d in enumerate(chances)]
+                        for own, chances in HORSE_STOCK]
     r['armour_move'] = [opt(a, f'{name}_movement_penalty_with_horses', int, d, -20, 20) if r['horses'] else
                         opt(a, f'{name}_movement_bonus_without_horses', int, b, -20, 20)
                         for name, d, b in zip(ARMOURS, ARMOUR_MOVE_DEFAULT, ARMOUR_BONUS_DEFAULT)]
@@ -715,6 +738,8 @@ def read_ini(path):
                  'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
                  'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
+                 *(f'{old}_horse_{what}' for old in HORSE_OLD_KEYS.values() for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
+                 *(f'{name}_horse_hp' for name in HORSE_HP), *(f'horse_stock_{own}_level_{lv}' for own, _ in HORSE_STOCK for lv in range(1, 5)),
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
              w: set(WEAPONS), a: {f'{name}_hp' for name in ARMOURS} | {f'{name}_movement_penalty_with_horses' for name in ARMOURS} | {f'{name}_movement_bonus_without_horses' for name in ARMOURS} | {'ring_of_protection_hp'},
@@ -826,7 +851,13 @@ def table(r=None):
     t[G_ARM_CHANCE] = r.get('arm_chance', ENCH_CHANCE_DEFAULT) if r else 0
     t[G_DISEASE] = 1 if r and r.get('ratmen_disease') else 0
     t[G_HORSES] = r.get('horses', 1) if r else 0          # D38
-    t[G_HORSE_CHANCE] = r.get('horse_chance', HORSE_CHANCE_DEFAULT) if r else 0
+    level4 = [i + 1 for i in range(HORSE_N) if i + 1 >= HORSE_LEVELS]   # D92
+    if len(level4) > HORSE_L4_MAX: raise ValueError(f"{len(level4)} level-4 horses, room for {HORSE_L4_MAX}")
+    t[G_HORSE_L4N] = len(level4); t[G_HORSE_L4:G_HORSE_L4 + len(level4)] = bytes(level4)
+    t[G_HORSE_HP:G_HORSE_HP + HORSE_N] = bytes(r.get('horse_hp') if r and r.get('horse_hp') else [HORSE_HP.get(n, 0) for n, *_ in HORSES])
+    stock = r.get('horse_stock') if r else None
+    stock = stock or [list(c) for _, c in HORSE_STOCK]
+    t[G_HORSE_STOCK:G_HORSE_STOCK + 4 * len(HORSE_STOCK)] = bytes(v for row in stock for v in row)
     t[G_TRADE_IN] = r.get('trade_in', 1) if r else 0      # D40
     horses = r.get('horse_list') if r else None
     horses = horses or [(text, price, move, soft, hard) for _, text, price, move, soft, hard in HORSES]
@@ -904,8 +935,6 @@ def main_patches(r, img):
         imm(site, 2, 0x7fff)
     for site, old, new in ((0xb4cf, 0x7e, 0xeb), (0xba13, 0x7c, 0x72), (0xd062, 0x7e, 0x76)):   # D41: the cap's test unsigned, so a sum past 32767 is capped
         out.append((site, bytes([old]), bytes([new])))
-    for site in (0xbdc6, 0xbdcf):                        # D41: the donation screen's gold in E4B4h, its own buffer has four bytes
-        out.append((site, b'\x3f\xe2', b'\xb4\xe4'))
     if r['speedrun']:                                    # K24 undone: the damage bonus as the game
         out += [(where, new, old) for (_, where), old, new in PATCHES['K24']['bytes'] + PATCHES['K32']['bytes']]
     # the secondary button: a controller's button 2 (joystick A's, B's) no longer fires as button 1 does

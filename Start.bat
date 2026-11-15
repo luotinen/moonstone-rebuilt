@@ -20,7 +20,6 @@ if exist ORIGINAL.FLG goto paired
 fc /b MAIN.EXE "_fixes\rules\MAIN.EXE" >nul 2>&1 || goto mismatch
 :paired
 set "DBX="
-set "AMIGA="
 if exist "C:\DOSBox-X\dosbox-x.exe" set "DBX=C:\DOSBox-X\dosbox-x.exe"
 if not defined DBX if exist "%ProgramFiles%\DOSBox-X\dosbox-x.exe" set "DBX=%ProgramFiles%\DOSBox-X\dosbox-x.exe"
 if not defined DBX for %%P in (dosbox-x.exe) do if not "%%~$PATH:P"=="" set "DBX=%%~$PATH:P"
@@ -42,15 +41,17 @@ rem D73: and the location music while the SoundFont has it (amiga.music, written
 rem from the Amiga disk images).
 if exist AMIGAMUS.FLG del AMIGAMUS.FLG
 if exist AMIGASND.FLG if exist "_music\amiga\amiga.music" > AMIGAMUS.FLG echo music
-rem D87: a tune module that plays from the SoundFont must not stay in DISKA when the SoundFont may not be there to
-rem play it (AMIGA.FLG deleted by hand, the effects turned off): the DOS tunes of the set in use come back first.
+rem D87: the Amiga intro and ending music (AMIGA.FLG) plays from the SoundFont, inside DOSBox-X, through tune modules of
+rem our own, whenever tools\set_sound.bat found a SoundFont with the tunes for the music in use (SOUND_AMIGA_TUNES): with
+rem AdLib or General MIDI music, with the DOS or the Amiga effects, and not in original mode, since the fixed INTR.EXE
+rem slows the pictures to the Amiga's pace for them. MT-32 music keeps its Roland tunes. A tune module must not stay in
+rem DISKA when the SoundFont may not be there to play it: the DOS tunes of the set in use come back first.
+rem AMIGATUN.FLG gives the SoundFont its level in DOSBox-X's mixer also when it is loaded for the tunes alone.
+if exist AMIGATUN.FLG del AMIGATUN.FLG
 if exist "_music\amiga\font\ATUNE1.BIN" call :dostunes || goto musicfail
-if exist AMIGA.FLG call :amiga || goto musicfail
+if defined SOUND_AMIGA_TUNES call :amiga || goto musicfail
+if exist AMIGA.FLG if not defined SOUND_AMIGA_TUNES if /i not "%SOUND_MUSIC%"=="mt32" if not exist ORIGINAL.FLG echo The Amiga intro and ending music needs the SoundFont with the tunes - run AmigaMusic_Setup.bat. Using the DOS music.
 if "%MOONSTONE_NOLAUNCH%"=="1" exit /b 0
-rem The Amiga music player (D8; not needed when the tunes play from the SoundFont, D87) starts first (it waits for
-rem the DOSBox-X window), so that DOSBox-X, started last, gets the keyboard focus; otherwise Enter and Space would
-rem not reach the game until its window is clicked.
-if defined AMIGA start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0amiga_music.ps1"
 start "" "%DBX%" -conf "%~dp0moonstone-dosbox-x.conf" -conf "%~dp0music.conf"
 exit /b 0
 :dostunes
@@ -59,29 +60,8 @@ copy /y "_music\%SOUND_TUNES%\DISKA\ATUNE1.BIN" DISKA >nul || exit /b 1
 copy /y "_music\%SOUND_TUNES%\DISKA\ATUNE6.BIN" DISKA >nul || exit /b 1
 exit /b 0
 :amiga
-rem Amiga intro and ending music. D87: with the Amiga sound effects on, DOSBox-X has the SoundFont loaded, and if it
-rem holds the two tunes (amiga.tunes beside amiga.sf2; amiga_gm.tunes beside the font merged with the GM one), tune
-rem modules of our own play them from it, inside DOSBox-X. The fixed INTR.EXE slows the pictures to the Amiga's pace
-rem for them, so not in original mode.
-set "TUNES=_music\amiga\amiga.tunes"
-if /i "%SOUND_PROFILE%"=="amiga_gm" set "TUNES=_music\amiga\amiga_gm.tunes"
-if exist AMIGASND.FLG if not exist ORIGINAL.FLG if exist "%TUNES%" if exist "_music\amiga\font\ATUNE6.BIN" (
-  copy /y "_music\amiga\font\*.BIN" DISKA >nul || exit /b 1
-  exit /b 0
-)
-rem In every other case (D8): muted DOS intro and ending tunes, amiga_music.ps1 plays the Amiga modules.
-if not exist "_music\amiga\intro.wav" (
-  echo Amiga music is not set up - run AmigaMusic_Setup.bat. Using the DOS music.
-  exit /b 0
-)
-rem The muted copies of the set in use (gm_amiga: GM music with the Amiga effects, D82)
-set "SET=%SOUND_TUNES%"
-if not exist "_music\amiga\%SET%\*.BIN" (
-  echo Amiga music is not set up - run AmigaMusic_Setup.bat. Using the DOS music.
-  exit /b 0
-)
-copy /y "_music\amiga\%SET%\*.BIN" DISKA >nul || exit /b 1
-set "AMIGA=1"
+copy /y "_music\amiga\font\*.BIN" DISKA >nul || exit /b 1
+(> AMIGATUN.FLG echo tunes) || exit /b 1
 exit /b 0
 :musicfail
 echo The music files could not be set up ^(_music^). Run Setup.bat. The game was not started.

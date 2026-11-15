@@ -356,13 +356,14 @@ class SetupFlow(unittest.TestCase):
         sys.path.insert(0, str(ROOT / 'setup'))
         self.addCleanup(sys.path.remove, str(ROOT / 'setup'))
         import setup as installer
-        import death_frames, horse_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
+        import death_frames, gold_frames, horse_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
         with patch.object(installer, 'HERE', str(game)), patch.object(installer, 'check_gog', lambda g: []), \
                 patch.object(installer, 'find_gog', lambda a: str(game)), patch.object(make_voc_rates, 'FILES', []), \
                 patch.object(make_main_exe, 'make_main_exe', main_exe), \
                 patch.object(make_intr_exe, 'make_intr_exe', lambda gog, fixes=None: b'FIXED_INTR'), \
                 patch.object(death_frames, 'install', lambda here, exe: exe), \
                 patch.object(horse_frames, 'install', lambda here: None), \
+                patch.object(gold_frames, 'install', lambda here: None), \
                 patch.object(make_gm_tunes, 'main', lambda *args: None), \
                 patch.object(hook, 'make_savehook', lambda table=None: b'DEFAULT_HOOK'), \
                 patch('rules.build', lambda g, r: (b'RULES_MAIN', b'RULES_HOOK')), \
@@ -1326,6 +1327,14 @@ class SoundPrograms(unittest.TestCase):
             if x:
                 self.assertTrue(x['at'] >= 0 and x['n'] > 0, k)
 
+    def test_the_henge_thunder_has_its_substitute(self):
+        # D95: program 157 plays instrument 130 (the Amiga's he.a), which without the disks is sounds/thunder.wav
+        import wave
+        self.assertEqual(self.table['programs']['157']['steps'][0][3], 130)
+        self.assertEqual(self.table['instruments']['130'], {'file': 'thunder.wav', 'at': 0, 'n': 12012})
+        with wave.open(str(ROOT / 'sounds' / 'thunder.wav'), 'rb') as w:
+            self.assertEqual((w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()), (1, 1, 7830, 12012))
+
     def test_every_substitute_has_its_source_listed(self):
         sources = (ROOT / 'sounds' / 'SOURCES.md').read_text(encoding='utf-8')
         for path in (ROOT / 'sounds').glob('*.wav'):
@@ -1835,10 +1844,12 @@ class AmigaTunes(unittest.TestCase):
 
 @unittest.skipUnless(os.name == 'nt', 'Windows batch files')
 class AmigaTuneSwitches(unittest.TestCase):
-    """D87: which intro and ending tune files Start.bat puts in DISKA, for each combination of the switches."""
+    """D87 (phase 5, step 7: the host player retired): which intro and ending tunes Start.bat puts in DISKA, and which
+    music profile it uses, for each combination of the music, the effects and the switches."""
     SETS = SoundSwitches.SETS
     run_bat = Launchers.run_bat
     switch = SoundSwitches.switch
+    profile = SoundSwitches.profile
 
     def game(self, flag=True, tunes=('amiga', 'amiga_gm')):
         game = SoundSwitches.game(self)
@@ -1846,14 +1857,11 @@ class AmigaTuneSwitches(unittest.TestCase):
             shutil.copyfile(ROOT / name, game / name)
         amiga = game / '_music' / 'amiga'
         for music_set in SoundSwitches.SETS:
-            (game / '_music' / music_set / 'DISKA' / 'ATUNE6.BIN').write_text(music_set)
-            (amiga / music_set).mkdir()
-            for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'):
-                (amiga / music_set / tune).write_text('muted ' + music_set)
+            for disk in ('DISKA', 'DISKB'):
+                (game / '_music' / music_set / disk / 'ATUNE6.BIN').write_text(music_set)
         (amiga / 'font').mkdir()
         for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'):
             (amiga / 'font' / tune).write_text('font')
-        (amiga / 'intro.wav').write_bytes(b'W')
         for name in tunes:
             (amiga / f'{name}.tunes').write_text('x')
         if flag:
@@ -1861,61 +1869,116 @@ class AmigaTuneSwitches(unittest.TestCase):
         return game
 
     def start(self, game):
+        """-> (DISKA's two tunes, the profile music.conf was written from, DISKB's tune, AMIGATUN.FLG there), Start's output"""
         code, out = self.run_bat(game, 'Start.bat')
         self.assertEqual(code, 0, out)
-        return tuple((game / 'DISKA' / tune).read_text() for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'))
+        conf = (game / 'music.conf').read_text()
+        profile = next((name for name in ('amiga_gm', 'amiga', 'gm', 'mt32', 'adlib')
+                        if conf.startswith(self.profile(game, name))), conf)
+        return ((game / 'DISKA' / 'ATUNE1.BIN').read_text(), (game / 'DISKA' / 'ATUNE6.BIN').read_text(), profile,
+                (game / 'DISKB' / 'ATUNE6.BIN').read_text(), (game / 'AMIGATUN.FLG').exists()), out
 
-    def test_font_tunes_with_the_amiga_effects(self):
+    def test_font_tunes_with_adlib_and_gm_music_and_either_effects(self):
+        game = self.game()
+        for music, effects, profile, tunes in (('Music_AdLib.bat', 'AmigaSound_Off.bat', 'amiga', 'adlib'),
+                                               ('Music_AdLib.bat', 'AmigaSound_On.bat', 'amiga', 'adlib'),
+                                               ('Music_GM.bat', 'AmigaSound_On.bat', 'amiga_gm', 'gm_amiga'),
+                                               ('Music_GM.bat', 'AmigaSound_Off.bat', 'amiga_gm', 'gm_amiga')):
+            with self.subTest(music=music, effects=effects):
+                self.switch(game, music)
+                said = self.switch(game, effects)
+                self.assertIn('Intro and ending music: Amiga', said)
+                state, out = self.start(game)
+                self.assertEqual(state, ('font', 'font', profile, tunes, True), out)
+                self.assertEqual((game / 'AMIGASND.FLG').exists(), effects == 'AmigaSound_On.bat')
+                self.assertEqual((game / 'effects.cfg').read_text().strip(), 'amiga' if effects == 'AmigaSound_On.bat' else 'dos')
+
+    def test_mt32_keeps_its_roland_tunes(self):
         game = self.game()
         self.switch(game, 'Music_AdLib.bat')
-        self.switch(game, 'AmigaSound_On.bat')
-        self.assertEqual(self.start(game), ('font', 'font'))
-        self.switch(game, 'Music_GM.bat')                    # GM music with the effects: the merged font's marker
-        self.assertEqual(self.start(game), ('font', 'font'))
-        (game / '_music' / 'amiga' / 'amiga_gm.tunes').unlink()     # a merged font without the tunes: the older way
-        self.assertEqual(self.start(game), ('muted gm_amiga',) * 2)
-        self.switch(game, 'Music_AdLib.bat')                 # AdLib music plays from amiga.sf2, which has them
-        self.assertEqual(self.start(game), ('font', 'font'))
-        (game / '_music' / 'amiga' / 'amiga.tunes').unlink()
-        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+        self.assertEqual(self.start(game)[0][:3], ('font', 'font', 'amiga'))
+        said = self.switch(game, 'Music_MT32.bat')
+        self.assertNotIn('Intro and ending music: Amiga', said)
+        state, out = self.start(game)
+        self.assertEqual(state, ('mt32', 'mt32', 'mt32', 'mt32', False))
+        self.assertNotIn('AmigaMusic_Setup', out)                   # nothing to set up: MT-32 has its own tunes
 
-    def test_older_player_in_every_other_case(self):
+    def test_the_dos_tunes_and_profile_come_back_without_the_switch(self):
         game = self.game()
-        for music, tunes in (('Music_AdLib.bat', 'adlib'), ('Music_GM.bat', 'gm'), ('Music_MT32.bat', 'mt32')):
-            with self.subTest(music=music):
-                self.switch(game, music)                     # the DOS effects (MT-32 music turns the Amiga ones off)
-                self.assertEqual(self.start(game), ('muted ' + tunes,) * 2)
+        self.switch(game, 'Music_GM.bat')                           # GM with the DOS effects
+        self.assertEqual(self.start(game)[0], ('font', 'font', 'amiga_gm', 'gm_amiga', True))
+        (game / 'AMIGA.FLG').unlink()                               # deleted by hand: the fluidsynth device again
+        state, out = self.start(game)
+        self.assertEqual(state, ('gm', 'gm', 'gm', 'gm', False))
+        self.assertIn('fluid.soundfont = soundfonts\\GeneralUser-GS.sf2', (game / 'music.conf').read_text())
+        self.assertIn('Intro and ending music: Amiga', self.switch(game, 'AmigaMusic_On.bat'))
+        self.assertEqual(self.start(game)[0], ('font', 'font', 'amiga_gm', 'gm_amiga', True))
         self.switch(game, 'Music_AdLib.bat')
-        self.switch(game, 'AmigaSound_On.bat')
-        (game / 'ORIGINAL.FLG').write_text('original')       # original mode: INTR.EXE does not pace the pictures
-        self.assertEqual(self.start(game), ('muted adlib',) * 2)
-        (game / 'ORIGINAL.FLG').unlink()
-        self.assertEqual(self.start(game), ('font', 'font'))
-        self.switch(game, 'AmigaSound_Off.bat')              # the effects off again: the font modules must not stay
-        self.assertEqual(self.start(game), ('muted adlib',) * 2)
-
-    def test_font_modules_never_stay_without_the_switch(self):
-        game = self.game()
-        self.switch(game, 'Music_AdLib.bat')
-        self.switch(game, 'AmigaSound_On.bat')
-        self.assertEqual(self.start(game), ('font', 'font'))
-        (game / 'AMIGA.FLG').unlink()                        # deleted by hand: the DOS tunes of the set come back
-        self.assertEqual(self.start(game), ('adlib', 'adlib'))
-        (game / 'AMIGA.FLG').write_text('amiga')
-        self.assertEqual(self.start(game), ('font', 'font'))
+        self.assertEqual(self.start(game)[0], ('font', 'font', 'amiga', 'adlib', True))
         self.switch(game, 'AmigaMusic_Off.bat')
         self.assertFalse((game / 'AMIGA.FLG').exists())
-        self.assertEqual(self.start(game), ('adlib', 'adlib'))
-        (game / '_music' / 'amiga' / 'intro.wav').unlink()   # no WAV files (no VLC): the switch still turns on
-        self.switch(game, 'AmigaMusic_On.bat')
-        self.assertEqual(self.start(game), ('font', 'font'))
+        self.assertEqual(((game / 'DISKA' / 'ATUNE1.BIN').read_text(), self.start(game)[0]),
+                         ('adlib', ('adlib', 'adlib', 'adlib', 'adlib', False)))
 
-    def test_no_font_modules_is_as_before(self):
+    def test_original_mode_plays_the_dos_tunes(self):
         game = self.game()
-        shutil.rmtree(game / '_music' / 'amiga' / 'font')
         self.switch(game, 'Music_AdLib.bat')
-        self.switch(game, 'AmigaSound_On.bat')
-        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+        self.assertEqual(self.start(game)[0], ('font', 'font', 'amiga', 'adlib', True))
+        (game / 'ORIGINAL.FLG').write_text('original')              # the original INTR.EXE does not pace the pictures
+        state, out = self.start(game)
+        self.assertEqual(state, ('adlib', 'adlib', 'adlib', 'adlib', False))
+        self.assertNotIn('AmigaMusic_Setup', out)
+        self.switch(game, 'AmigaSound_On.bat')                      # with the Amiga effects: their profile, DOS tunes
+        self.assertEqual(self.start(game)[0], ('adlib', 'adlib', 'amiga', 'adlib', False))
+        (game / 'ORIGINAL.FLG').unlink()
+        self.assertEqual(self.start(game)[0], ('font', 'font', 'amiga', 'adlib', True))
+
+    def test_without_the_tunes_in_the_font_as_the_dos_game(self):
+        for missing in ('amiga.tunes', 'font', 'amiga.sf2'):
+            with self.subTest(missing=missing):
+                game = self.game()
+                path = game / '_music' / 'amiga' / missing
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+                self.switch(game, 'Music_AdLib.bat')
+                state, out = self.start(game)
+                self.assertEqual(state, ('adlib', 'adlib', 'adlib', 'adlib', False))
+                self.assertIn('run AmigaMusic_Setup.bat. Using the DOS music.', out)
+        game = self.game(tunes=('amiga',))                          # the merged font without them: GM as before
+        self.switch(game, 'Music_GM.bat')
+        self.assertEqual(self.start(game)[0], ('gm', 'gm', 'gm', 'gm', False))
+        self.switch(game, 'AmigaSound_On.bat')                      # with the effects: their merged font, DOS tunes
+        self.assertEqual(self.start(game)[0], ('gm_amiga', 'gm_amiga', 'amiga_gm', 'gm_amiga', False))
+
+    def test_amiga_music_on_needs_the_font_tunes(self):
+        game = self.game(flag=False, tunes=())
+        code, out = self.run_bat(game, 'AmigaMusic_On.bat')
+        self.assertEqual(code, 1, out)
+        self.assertIn('run AmigaMusic_Setup.bat first', out)
+        self.assertFalse((game / 'AMIGA.FLG').exists())
+
+    def test_no_host_player_is_left(self):
+        self.assertFalse((ROOT / 'amiga_music.ps1').exists())
+        for name in ('Start.bat', 'AmigaMusic_On.bat', 'AmigaMusic_Off.bat', 'AmigaMusic_Setup.bat', 'Setup.bat',
+                     'tools/set_sound.bat', 'setup/setup.py'):
+            text = (ROOT / name).read_text().lower()
+            for word in ('amiga_music.ps1', 'powershell', 'vlc', 'intro.wav'):
+                self.assertFalse(word in text, f'{name}: {word}')
+        text = (ROOT / 'tools' / 'make_amiga_music.py').read_text().lower()   # it only removes the WAV files
+        for word in ('vlc.exe', 'subprocess', 'def render', 'def mute'):
+            self.assertFalse(word in text, f'make_amiga_music.py: {word}')
+
+    def test_setup_removes_what_the_older_player_left(self):
+        import make_amiga_music
+        out = Path(tempfile.mkdtemp(dir=ROOT))
+        self.addCleanup(shutil.rmtree, out, True)
+        for name in ('intro.mod', 'ending.mod', 'intro.wav', 'ending.wav', 'amiga.sf2', 'amiga.tunes'):
+            (out / name).write_text('x')
+        for name in ('adlib', 'gm', 'gm_amiga', 'mt32', 'font'):
+            (out / name).mkdir()
+            (out / name / 'ATUNE1.BIN').write_text('x')
+        self.assertEqual(sorted(make_amiga_music.remove_d8(str(out))),
+                         ['adlib/', 'ending.mod', 'ending.wav', 'gm/', 'gm_amiga/', 'intro.mod', 'intro.wav', 'mt32/'])
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ['amiga.sf2', 'amiga.tunes', 'font'])
 
 
 if __name__ == '__main__':

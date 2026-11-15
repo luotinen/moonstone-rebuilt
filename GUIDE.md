@@ -268,13 +268,15 @@ The manual only says that at least 10 gp improves your chances. The real odds of
   * [Custom rules: click your own sword, armour or horse on your side to sell it for half its price (`merchant_selling`):
     you get the starting sword or padded armour instead, and a sold horse is gone, which brings the armour's weight back.
     Click a worse sword, armour or horse on the merchant's side to get it free in exchange (`merchant_trade_in`).
-    Buying a better one credits half of the old one's price, also between black charger and dappled horse.
+    Buying a better one credits half of the old one's price, also between the level-4 horses.
     The Sword of Sharpness is not exchanged; the High Temple buys it for half its price and then sells it.]
   * [Custom rules: also horses, in the bottom row of the goods. See the table in 12. A knight has one horse at a time, shown on its panel;
     a new one replaces the old, and the same horse cannot be bought twice. A horse adds movement,
     makes rough ground less slow, and takes away the armour's movement penalty. It is never lost, not by death or
     looting. While its knight moves on the map the horse is shown instead of the helmet. With `horses = off` there are no
-    horses and the armour gives the movement bonus set for that case.]
+    horses and the armour gives the movement bonus set for that case. Click your own horse on the item screen
+    (not at a merchant that buys it) to switch it off: it turns grey and the knight moves as on foot, with the armour's
+    penalty; click it again to switch it on.]
 
 ### Home village
 
@@ -471,15 +473,16 @@ scroll in advance: there is a random chance each time a scroll is read *(`1000:C
 
 ## 12. Prices
 
-[Custom rules: horses at the merchant. The first three are always on sale, the last two appear on 10 % of town visits, one or the other (rolled as you enter the town). Black charger and dappled horse count as equal in an exchange.]
+[Custom rules: horses at the merchant, drawn as you enter the town: for each level the chance that one is for sale depends on the level of your own horse (no horse: level 1 75 %, level 2 50 %; level 1: 100, 75, 50, 10 %; level 2: 100, 100, 75, 20 %; level 3: 100, 100, 100, 25 %; level 4: all). Levels: brown 1, light 2, white 3, and 4 the black charger, the dappled horse or the armoured horse, each as likely; they count as equal in an exchange. The armoured horse adds 20 to the knight's maximum HP while it is switched on.]
 
 | Horse | Price | Movement | Forest, swamp | Mountains, map edges |
 |---|---|---|---|---|
 | Brown | 20 gp | +1 | 1/2 speed | 1/4 speed |
 | Light | 40 gp | +2 | 3/4 speed | 1/2 speed |
-| Armoured | 60 gp | +3 | 7/8 speed | 3/4 speed |
-| Black charger | 80 gp | +3 | full speed | full speed |
-| Dappled | 80 gp | +5 | 7/8 speed | 3/4 speed |
+| White (level 3) | 60 gp | +3 | 7/8 speed | 3/4 speed |
+| Black charger (level 4) | 80 gp | +3 | full speed | full speed |
+| Dappled (level 4) | 80 gp | +5 | 7/8 speed | 3/4 speed |
+| Armoured (level 4) | 80 gp | +2, +20 max HP | 3/4 speed | 1/2 speed |
 
 **Merchant** (both cities) *(manual p. 8; same in the program's texts)*:
 

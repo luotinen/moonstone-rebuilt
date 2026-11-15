@@ -12,8 +12,14 @@ rem   With the Amiga effects it plays from _music\amiga\amiga_gm.sf2, that font 
 rem   (tools\merge_soundfont.py, made again here when either changed; needs Python), and the tune files of
 rem   _music\gm_amiga, whose player suits the effects (D82).
 rem * Missing files fall back: no MT-32 ROMs or no GM font -> AdLib music; the Amiga effects not built -> DOS effects.
-rem Sets SOUND_MUSIC, SOUND_EFFECTS, SOUND_TUNES (the set in DISKA/DISKB), SOUND_SAID ("Music: ... Sound effects:
-rem ...") and SOUND_NOTE (what fell back, or empty). errorlevel 1 if the files could not be set up (SOUND_NOTE says why).
+rem * The Amiga intro and ending music (D87, AMIGA.FLG: AmigaMusic_On.bat) plays from the SoundFont of the Amiga
+rem   effects when that has the tunes (amiga.tunes, amiga_gm.tunes beside it) and the fixed game is in use, also with
+rem   the DOS effects: AdLib music then uses the amiga profile (DOSBox-X loads amiga.sf2; SAVEHOOK sends no effects to
+rem   it without AMIGASND.FLG), General MIDI the amiga_gm one with the tune files of _music\gm_amiga, as with the Amiga
+rem   effects. MT-32 music keeps its Roland intro and ending tunes. Start.bat puts the tune modules in DISKA.
+rem Sets SOUND_MUSIC, SOUND_EFFECTS, SOUND_TUNES (the set in DISKA/DISKB), SOUND_PROFILE, SOUND_AMIGA_TUNES (1 when the
+rem Amiga intro and ending music plays from the SoundFont), SOUND_SAID ("Music: ... Sound effects: ...") and SOUND_NOTE
+rem (what fell back, or empty). errorlevel 1 if the files could not be set up (SOUND_NOTE says why).
 set "SOUND_MUSIC=%~1"
 set "SOUND_EFFECTS=%~2"
 set "SOUND_NOTE="
@@ -62,11 +68,19 @@ set "SOUND_PROFILE=%SOUND_MUSIC%"
 set "SOUND_TUNES=%SOUND_MUSIC%"
 if /i "%SOUND_EFFECTS%"=="amiga" if /i "%SOUND_MUSIC%"=="adlib" set "SOUND_PROFILE=amiga"
 if /i "%SOUND_EFFECTS%"=="amiga" if /i "%SOUND_MUSIC%"=="gm" call :gm_amiga
+call :amiga_tunes
 rem Start.bat (keep keep) with nothing to fall back: music.conf and the tune files stay as the switches left them; only
-rem a GM music.conf is written again, so that it names the GM SoundFont there is now.
+rem a GM music.conf is written again, so that it names the GM SoundFont there is now. A change of the profile (the
+rem Amiga intro and ending music turned on or off, the SoundFont built or removed, original mode) writes them all.
 if /i not "%~1%~2"=="keepkeep" goto write
 if defined SOUND_NOTE goto write
 if not exist music.conf goto write
+set "SOUND_WAS=adlib"
+findstr /c:"= mt32" music.conf >nul && set "SOUND_WAS=mt32"
+findstr /c:"= fluidsynth" music.conf >nul && set "SOUND_WAS=gm"
+findstr /c:"amiga.sf2" music.conf >nul && set "SOUND_WAS=amiga"
+findstr /c:"amiga_gm.sf2" music.conf >nul && set "SOUND_WAS=amiga_gm"
+if /i not "%SOUND_WAS%"=="%SOUND_PROFILE%" goto write
 if /i "%SOUND_PROFILE%"=="gm" if exist "_music\profiles\gm.conf" (
   copy /y "_music\profiles\gm.conf" music.conf >nul || goto failed
   if not exist "soundfonts\default.sf2" (>> music.conf echo fluid.soundfont = soundfonts\GeneralUser-GS.sf2)
@@ -86,6 +100,32 @@ if /i "%SOUND_MUSIC%"=="gm" set "SOUND_SAID=Music: General MIDI (SoundFont)"
 if /i "%SOUND_MUSIC%"=="mt32" set "SOUND_SAID=Music: Roland MT-32"
 if /i "%SOUND_EFFECTS%"=="amiga" set "SOUND_SAID=%SOUND_SAID%. Sound effects: Amiga"
 if /i "%SOUND_EFFECTS%"=="dos" set "SOUND_SAID=%SOUND_SAID%. Sound effects: DOS"
+if defined SOUND_AMIGA_TUNES set "SOUND_SAID=%SOUND_SAID%. Intro and ending music: Amiga"
+exit /b 0
+:amiga_tunes
+rem D87: the Amiga intro and ending music from the SoundFont, with either effects (not with MT-32 music)
+set "SOUND_AMIGA_TUNES="
+if not exist AMIGA.FLG exit /b 0
+if exist ORIGINAL.FLG exit /b 0
+if not exist "_music\amiga\font\ATUNE1.BIN" exit /b 0
+if not exist "_music\amiga\font\ATUNE6.BIN" exit /b 0
+if /i "%SOUND_PROFILE%"=="adlib" if exist "_music\amiga\amiga.sf2" if exist "_music\amiga\amiga.tunes" set "SOUND_PROFILE=amiga"
+if /i "%SOUND_PROFILE%"=="gm" if exist "_music\amiga\amiga.tunes" call :gm_tunes
+if /i "%SOUND_PROFILE%"=="amiga" if exist "_music\amiga\amiga.tunes" set "SOUND_AMIGA_TUNES=1"
+if /i "%SOUND_PROFILE%"=="amiga_gm" if exist "_music\amiga\amiga_gm.tunes" set "SOUND_AMIGA_TUNES=1"
+exit /b 0
+:gm_tunes
+rem GM music with the DOS effects and the Amiga intro and ending music: the merged SoundFont, as with the Amiga effects;
+rem if it cannot be made (no Python), GM music as before with its own intro and ending tunes
+if not exist "_music\gm_amiga\DISKA\ATUNE1.BIN" exit /b 0
+if not exist "_music\amiga\amiga.sf2" exit /b 0
+set "PY="
+call tools\find_python.bat >nul 2>nul
+if defined PY %PY% -I tools\merge_soundfont.py --install . >nul 2>nul
+if not exist "_music\amiga\amiga_gm.sf2" exit /b 0
+if not exist "_music\amiga\amiga_gm.tunes" exit /b 0
+set "SOUND_PROFILE=amiga_gm"
+set "SOUND_TUNES=gm_amiga"
 exit /b 0
 :gm_amiga
 rem GM music with the Amiga effects: the merged SoundFont, made or brought up to date, and the UART tune set

@@ -40,10 +40,9 @@ your game files into this folder and patches the copies; your GOG installation i
 ### Optional
 | What | What it adds |
 |---|---|
-| **Your own Amiga Moonstone disk 1** as an ADF image | Richard Joseph's Amiga intro and ending music instead of the DOS tunes. See [Amiga music](#amiga-music-optional). |
+| **Your own Amiga Moonstone disk 1** as an ADF image | Richard Joseph's Amiga intro and ending music instead of the DOS tunes, with AdLib or General MIDI music (needs numpy, below, which Setup then installs). See [Amiga music](#amiga-music-optional). |
 | **The Python package numpy** | The Amiga version's sound effects in the DOS game, built from the DOS game's own samples and substitute sounds. See [Amiga sound effects](#amiga-sound-effects-optional). |
 | **Your own three Amiga Moonstone disks** as ADF images | The same effects with the Amiga's own samples for every sound. |
-| **VLC media player** | Only for the Amiga music without the Amiga sound effects: needed once, to turn the music into WAV files. Not needed for playing, and not needed at all when the Amiga sound effects are on. <https://www.videolan.org/> |
 | **Roland MT-32 ROMs** (`MT32_CONTROL.ROM`, `MT32_PCM.ROM`, or the CM-32L ones) | The best DOS music. Put them in `mt32-roms`, then run `Music_MT32.bat`. Tested with MT-32 v1.07 (SHA-1 of `MT32_CONTROL.ROM`: `b083518fffb7f66b03c23b7eb4f868e62dc5a987`). They are Roland's copyright; obtain them legally. |
 | **A General MIDI SoundFont of your own** | Not needed: Moonstone Rebuilt comes with *GeneralUser GS* 2.0.3 by S. Christian Collins (`soundfonts\GeneralUser-GS.sf2`, see [Credits](#credits-and-legal)), and `Music_GM.bat` plays the General MIDI music with it. To use another SoundFont, save it as `soundfonts\default.sf2`; it is then used instead. The GM profile uses the reverb and chorus settings the GeneralUser GS author recommends for DOSBox-X. |
 
@@ -79,22 +78,21 @@ and ending tunes; the music inside the game stays as chosen.
 * **Setup:** run `Setup.bat` (or `AmigaMusic_Setup.bat` if the game is already set up).
 * **On and off:** `AmigaMusic_On.bat` / `AmigaMusic_Off.bat`.
 
-The music plays in one of two ways:
+The two tunes are stored in the SoundFont of the [Amiga sound effects](#amiga-sound-effects-optional) and play
+inside DOSBox-X: Setup plays the Amiga modules with the Amiga's own player routine and stores each tune as a left
+and a right sound. This needs the Python package numpy, which Setup installs when the disk image is there.
 
-* **With the [Amiga sound effects](#amiga-sound-effects-optional) on** (`AmigaSound_On.bat`; AdLib or General MIDI
-  music), the two tunes are in the effects' SoundFont and play inside DOSBox-X, as the effects do: Setup plays
-  the Amiga modules with the Amiga's own player routine and stores each tune as a left and a right sound. The
-  intro starts its music where the Amiga version does, early in the first scene, 20 seconds sooner than the DOS
-  tunes. The Amiga shows its pictures more slowly than the DOS game, and its music is written to that pace (the
-  thunder comes with the lightning), so from the first lightning on the pictures run slower: the intro lasts
-  about 9 seconds longer, and the ending about half again as long. Needs the Python package numpy (as the effects
-  do), not VLC.
-* **Otherwise** (the DOS sound effects, MT-32 music, or the original game, `Fixes_Off.bat`) the DOS intro and
-  ending tunes are silent copies, and a small helper (`amiga_music.ps1`) plays the Amiga music beside DOSBox-X
-  while the intro or the ending runs. This way needs VLC once, at setup, and the music is not in step with the
-  pictures.
+* **Which music:** AdLib or General MIDI music, with the DOS or the Amiga sound effects. With the DOS effects
+  DOSBox-X loads the SoundFont for the two tunes alone; General MIDI music then plays from the SoundFont merged with
+  the effects' one, as it does with the Amiga effects (see below; made by Setup and the switches, which needs Python).
+  **MT-32 music** keeps its own Roland intro and ending tunes (the MT-32 is then the MIDI device), and so does the
+  **original game** (`Fixes_Off.bat`), whose intro program cannot keep the Amiga pace.
+* **In step with the pictures:** the intro starts its music where the Amiga version does, early in the first scene,
+  20 seconds sooner than the DOS tunes. The Amiga shows its pictures more slowly than the DOS game, and its music is
+  written to that pace (the thunder comes with the lightning), so from the first lightning on the pictures run
+  slower: the intro lasts about 9 seconds longer, and the ending about half again as long.
 
-Either way the music stops when you skip the intro.
+The music stops when you skip the intro.
 
 ## Amiga sound effects (optional)
 
@@ -103,9 +101,10 @@ are made of several notes (a lion's roar and then the rumble of its den), and up
 Rebuilt can play the effects the way the Amiga's sound driver does, in the DOS game.
 
 * **Without any Amiga files:** Setup builds the effects from the DOS game's own samples (48 of the Amiga's samples
-  are in it), with sounds of our own for the 14 it lacks: nine synthesized ones (wind, sparks, thuds, dice, the menu
-  click) and five made from public-domain recordings (the dragon's low grunt, the lions' den, the Guardian's long
-  scream, a rat's bite, a grunt of effort). See `sounds/SOURCES.md`. Nine more play another take of the same sound.
+  are in it), with sounds of our own for the 15 it lacks: nine synthesized ones (wind, sparks, thuds, dice, the menu
+  click) and six made from public-domain recordings (the dragon's low grunt, the lions' den, the Guardian's long
+  scream, a rat's bite, a grunt of effort, the henge's thunder). See `sounds/SOURCES.md`. Nine more play another take of the
+  same sound.
 * **With the images of your own three Amiga disks** in the `amiga` folder (any names ending in `.adf`; disk 1 can
   keep the name `Moonstone_Disk1.adf`), Setup uses the Amiga's own samples for everything instead. The images stay
   on your machine.
@@ -134,6 +133,9 @@ Rebuilt can play the effects the way the Amiga's sound driver does, in the DOS g
   a recording of a lion growling low.
 * **Two at once:** where the Amiga plays two sounds together, both are heard: the mudmen's voice and its second
   voice, the Guardian's screams and their echoes, a troll's two grunts.
+* **Dice and thunder:** the tavern's dice rattle as on the Amiga (the DOS game plays a thud), and the offering at
+  Stonehenge has its thunder clap (the DOS game is silent there; without the disk images it is a thunder
+  recording of our own).
 * **Music of the places (with the disk images only):** the tavern, the henge, the wizard, Mythral and the healer
   play the Amiga's own music instead of the DOS tune. It is built from your disk images into the same SoundFont
   (about 54 MB then), and `_music\amiga\amiga.music` beside it says so; without the disk images there is no such
@@ -284,7 +286,7 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 | `AmigaSound_On.bat` / `AmigaSound_Off.bat` | The Amiga version's sound effects or the DOS game's (after `Setup.bat` or `AmigaSound_Setup.bat` has built them); the music stays as it is (MT-32 becomes AdLib). |
 | `SoundCard_SoundBlaster.bat` / `SoundCard_AdLib.bat` | Sound effects as digitised samples (Sound Blaster, default) or on the AdLib synthesiser. |
 | `Fixes_On.bat` / `Fixes_Off.bat` | All fixes (default) or the original game: the original programs (only unpacked, so that they run in DOSBox-X) and sound files. Saves do not carry over between the two. In original mode there are no automatic saves. |
-| `AmigaMusic_On.bat` / `AmigaMusic_Off.bat` | Amiga intro and ending music on or off (after it has been set up). |
+| `AmigaMusic_On.bat` / `AmigaMusic_Off.bat` | Amiga intro and ending music on or off (after it has been set up), with AdLib or General MIDI music; MT-32 music keeps its Roland tunes. |
 | `Custom_rules_on.bat` / `Custom_rules_off.bat` / `Custom_rules_reset.bat` | Use the custom rules in `custom_rules.ini`, use the default rules (the normal game), or restore `custom_rules.ini` to the default state (`custom_rules-default.ini`) (D10). Restart DOSBox-X after a change. `Custom_rules_on.bat` needs Python. |
 | `custom_rules.ini` | The custom rules: each knight's starting abilities, life points, hit points, gold, weapon, armour and items, what happens when it dies, the computer knights' extras, and global rules (disease, curses, gold and life caps, home village, E key, moon, weapon damage, armour hit points). Every setting is explained in the file. |
 | `moonstone-dosbox-x.conf` | DOSBox-X settings: window size, shader, speed, saves. |
@@ -339,8 +341,8 @@ The original difficulty and rules are kept.
 ## Known limitations
 
 * Some fixes are worked out from the game code and not yet confirmed in play; [FIXES.md](FIXES.md) says which.
-* The Amiga music starts with the intro program, so it is not in step with the DOS intro's pictures, and DOSBox-X's
-  volume setting does not affect it.
+* The pace of the Amiga intro's pictures is set for the shipped speed setting (`cycles`); at another speed the
+  lightning no longer falls on the thunder.
 * The mouse is turned off: the game does not use it, and a captured mouse disturbed the intro's keyboard handling.
 
 ## Troubleshooting

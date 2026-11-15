@@ -1,5 +1,6 @@
-"""Make the substitute sounds that come from open-licence recordings (sounds/SOURCES.md): the five sounds of the Amiga
-version that the DOS version lacks and that synthesis does badly (a grunt, a den of lions, a scream, a rat, a strain).
+"""Make the substitute sounds that come from open-licence recordings (sounds/SOURCES.md): the six sounds of the Amiga
+version that the DOS version lacks and that synthesis does badly (a grunt, a den of lions, a scream, a rat, a strain,
+the henge's thunder).
 
 Each is a piece of a recording under CC0 or CC BY, cut, slowed or sped up, filtered and reduced to what the game
 plays: mono, 8 bits, as many samples as the sample it stands in for, at the rate the game plays that sample. Nothing
@@ -26,6 +27,7 @@ SOUNDS = {
     'long_scream': ('rolandscreamB', 13924, 12445, 60, False, 'the Guardian\'s long scream'),
     'rat_bite': ('ratbite1', 8396, 13982, 60, False, 'a ratman bites: a sharp squeal'),
     'strain': ('Strain1d', 5132, 12855, 60, False, 'a short grunt of effort'),
+    'thunder': ('he.a', 12012, 7830, 60, False, 'the henge\'s thunder: one close clap, a crack and a rough roll'),
 }
 # name: [(letter, source file under sounds/sources, start in seconds or None for the loudest part, speed, how)]
 # speed: how fast the source is played (0.5 = half speed, an octave down)
@@ -46,9 +48,17 @@ PICKS = {
     'strain': [('a', 'strain/841313_18316981-hq.ogg', None, 1.0, 'a grunt of exertion'),
                ('b', 'strain/803168_17274093-hq.ogg', (4.0, 7.0), 1.0, 'a soft short effort'),
                ('c', 'strain/464677_7358035-hq.ogg', None, 1.0, 'one deep grunt')],
+    'thunder': [('b', 'thunder_399656/399656__bajko__sfx_thunder-blast.wav', 0.39, 1.0,
+                 'a thunder blast on a beach: a bright crack, then a rough roll')],
 }
-# The candidate chosen by ear for each sound (the user, 12 Nov 2026)
-CHOSEN = {'dragon_grunt': 'c', 'lion_den': 'd', 'long_scream': 'b', 'rat_bite': 'b', 'strain': 'a'}
+# The candidate chosen by ear for each sound (the user, 12 Nov 2026; the thunder 15 Nov 2026)
+CHOSEN = {'dragon_grunt': 'c', 'lion_den': 'd', 'long_scream': 'b', 'rat_bite': 'b', 'strain': 'a', 'thunder': 'b'}
+# Sounds made to a description of where their energy lies and how loud they are, instead of brought to full scale:
+# name -> (high-pass in Hz, RMS over the file as a part of full scale, part of the file at its end that fades out).
+# The thunder (program 157, D95): a clap that starts at once and is gone by its end, its energy mostly between 300 and
+# 2000 Hz with little under 200 Hz, as loud as the Amiga's (RMS 0.168; the highest peaks rounded off under 0.97).
+# The user chose it by ear from nine candidates (eight CC0 recordings, one synthesized) on 15 Nov 2026.
+SHAPED = {'thunder': (250, 0.168, 0.35)}
 # Sounds that are not a copy of the Amiga sample's size: name -> the level of its loud moments (RMS over 50 ms, as
 # a part of full scale). The den: the Amiga plays eight parts of a one-second sample back and forth, a new part
 # every 0.12 s. Its own sample is a noise-like rumble that hides the joins; a recording of a low growl clicks at
@@ -109,6 +119,28 @@ def resample(x, n):
     out[:min(m, len(spectrum))] = spectrum[:min(m, len(spectrum))]
     return np.fft.irfft(out, n) * n / len(x)
 
+def highpass(x, rate, fc, order=4):
+    """A Butterworth-shaped high-pass applied in the frequency domain (no phase shift)."""
+    f = np.fft.rfftfreq(len(x), 1 / rate)
+    return np.fft.irfft(np.fft.rfft(x) / np.sqrt(1 + (fc / np.maximum(f, 1e-6)) ** (2 * order)), len(x))
+
+def shaped(piece, src_rate, n, rate, fc, level, tail):
+    """A SHAPED sound: high-passed, its ends faded (the last `tail` of it to silence), at `level` RMS with the highest
+    peaks rounded off with tanh under 0.97, in 8 bits."""
+    piece = highpass(piece, src_rate, fc)
+    edge, end = int(0.004 * src_rate), int(0.02 * src_rate)
+    piece[:edge] *= np.linspace(0, 1, edge)
+    piece[-end:] *= np.linspace(1, 0, end)
+    y = resample(piece, n)
+    y -= y.mean()
+    edge, fade = int(0.004 * rate), int(tail * n)
+    y[:edge] *= np.linspace(0, 1, edge)
+    y[-fade:] *= np.cos(np.linspace(0, np.pi / 2, fade)) ** 2
+    y = y / np.sqrt((y ** 2).mean()) * level
+    for _ in range(6):                                               # tanh lowers the RMS: raise it and round off again
+        y = y * level / np.sqrt(((0.97 * np.tanh(y / 0.97)) ** 2).mean())
+    return np.round(0.97 * np.tanh(y / 0.97) * 127).astype(np.int8)
+
 def make(sounds, name, rel, start, speed):
     stands_for, n, rate, volume, steady, what = SOUNDS[name]
     x, src_rate = load(sounds, rel)
@@ -119,6 +151,7 @@ def make(sounds, name, rel, start, speed):
         start = (lo + loudest(x[lo:int(start[1] * src_rate)], src_rate, seconds, steady)) / src_rate
     piece = x[int(start * src_rate):int((start + seconds) * src_rate)].copy()
     if len(piece) < 0.9 * seconds * src_rate: raise SystemExit(f'{rel}: too short for {name} at speed {speed}')
+    if name in SHAPED: return shaped(piece, src_rate, n, rate, *SHAPED[name]), start
     edge = int((0.03 if name in LONG else 0.004) * src_rate)
     piece[:edge] *= np.linspace(0, 1, edge)
     tail = edge if steady or name in LONG else int(0.04 * src_rate)

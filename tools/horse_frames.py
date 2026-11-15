@@ -1,6 +1,8 @@
-"""D38: the horses' pictures. KH.CEL is the game's KI.CEL with the five 16x18 shop pictures after its 50 frames (one frame
-per horse: the buyer's colour comes from palette entries 28 and 29), MH.C is the game's MI.C with the 9x11 map icons after its
-47 frames (five colours per horse). The original files stay as they are, for the original program.
+"""D38: the horses' pictures. KH.CEL is the game's KI.CEL with the 16x18 shop pictures after its 50 frames (one frame
+per horse: the buyer's colour comes from palette entries 28 and 29), then (D92) a grey copy of each, the knight's own horse
+switched off on the item screen; MH.C is the game's MI.C with the 9x11 map icons after its 47 frames (five colours per
+horse). D92 adds the sixth horse, the Armoured horse: the White horse's rows in steel plate (ARMOUR_SHOP, ARMOUR_MAP).
+The original files stay as they are, for the original program.
 Usage: python -I tools/horse_frames.py <game dir>"""
 import os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,7 +28,32 @@ SHOP = (
      '..#gwEEwwCDCC#..', '.#wwgwwgwCCDCC#.', '.#wgwwwww#CDCCC#', '#wwwgwwgw#CCDC#.', '#wwNwggw#wgCDCC#', '#wwww###gwCCDC#.',
      '#g#g#..#wgCDCC#.', '.###...#wwgCCD#.', '.......#gwwCDC#.', '......#wwgwCCC#.', '......#gwwgCCC#.', '......#########.'),
 )
-SHOP_COLOURS = {'.': 0, '#': 5, 'E': 5, 'N': 5, 'b': 11, 't': 12, 'w': 1, 'W': 9, 'g': 3, 'k': 6, 'd': 4, 'C': 28, 'D': 29}
+# D92: the Armoured horse: the White horse (the third) in steel: a chanfron over the head and the muzzle, the neck's
+# caparison (C, D) becomes plates with a seam every third row, a trim of the buyer's colour kept along its back edge
+SHOP_STEEL = {'g': 's', 'w': 'h', 'k': 'S', 'b': 's', 't': 'S'}
+
+
+def armour_rows(rows, steel, top, seam_every):
+    """The plates: head colours to steel, the caparison below row `top` to plates, the cell before the outline's right
+    end kept as trim."""
+    out = []
+    for y, row in enumerate(rows):
+        line = list(row)
+        for x, ch in enumerate(row):
+            if ch in steel: line[x] = steel[ch]
+            elif ch in 'CD' and y >= top:
+                trim = x + 1 < len(row) and row[x + 1] == '#'
+                line[x] = 'C' if trim else ('S' if y % seam_every == 0 else 's')
+        out.append(''.join(line))
+    return tuple(out)
+
+
+SHOP_COLOURS = {'.': 0, '#': 5, 'E': 5, 'N': 5, 'b': 11, 't': 12, 'w': 1, 'W': 9, 'g': 3, 'k': 6, 'd': 4, 'C': 28, 'D': 29,
+                's': 2, 'S': 4, 'h': 1}
+SHOP = SHOP + (armour_rows(SHOP[2], SHOP_STEEL, 3, 3),)
+# D92: the grey copy (the item screen's palette, CH.PIV: 1-4 are blue-greys light to dark, 6 the darkest): light tones
+# to 3, middle ones to 4, dark ones and the outline to 6
+GREY = {0: 0, 1: 3, 9: 3, 10: 3, 2: 3, 11: 3, 3: 4, 12: 4, 28: 4, 4: 6, 6: 6, 7: 6, 8: 6, 29: 6, 5: 6}
 MAP = (
     ('...##....', '..#b###..', '..#bbCC#.', '.#b#bCCC#', '.#bbtCCC#', '#bbb#CCC#', '#t#t#CCC#', '.###bCC#.', '...#bCC#.', '..#btCC#.', '..######.'),
     ('...##....', '..#w###..', '..#wwCC#.', '.#w#wCCC#', '.#wwgCCC#', '#www#CC#.', '#g#g#Cw#.', '.###wwC#.', '...#wwg#.', '..#wgg#..', '..#####..'),
@@ -34,12 +61,13 @@ MAP = (
     ('..#..#...', '..#d#C#..', '..#wdCC#.', '.#wdWCCC#', '.#wddCCC#', '#wdd#CC#.', '#W#d#C#..', '.###dC#..', '...#dCC#.', '..#ddCCC#', '..#######'),
     ('...##....', '..#w###..', '..#wgCC#.', '.#w#wCCC#', '.#gwgCCC#', '#wwg#CC#.', '#g#w#CCC#', '.###gCCC#', '...#wCg#.', '..#gwC#..', '..#####..'),
 )
-MAP_COLOURS = {'.': 0, '#': 19, 'w': 1, 'g': 3, 'b': 5, 't': 6, 'd': 16, 'W': 1}
+MAP_COLOURS = {'.': 0, '#': 19, 'w': 1, 'g': 3, 'b': 5, 't': 6, 'd': 16, 'W': 1, 's': 2, 'S': 3, 'h': 1}
+MAP = MAP + (armour_rows(MAP[2], SHOP_STEEL, 2, 3),)   # D92: map palette (MAP.CMP): steel 2, seams 3, light 1
 MAP_KNIGHT = (30, 29, 8, 28, 24)                 # blue, orange, green, red, computer (the helmets' MI.C frames 5-9 in this order)
 
 
-def shop_frame(rows):
-    return [[SHOP_COLOURS[ch] for ch in row] for row in rows]
+def shop_frame(rows, grey=False):
+    return [[GREY[SHOP_COLOURS[ch]] if grey else SHOP_COLOURS[ch] for ch in row] for row in rows]
 
 
 def map_frame(rows, colour):
@@ -83,7 +111,7 @@ def with_frames(data, new, first):
 def install(game):
     """Writes DISKB/KH.CEL and DISKB/MH.C from the game's own banks."""
     disk = os.path.join(game, 'DISKB')
-    pairs = (('KI.CEL', 'KH.CEL', [shop_frame(r) for r in SHOP], FIRST_SHOP),
+    pairs = (('KI.CEL', 'KH.CEL', [shop_frame(r) for r in SHOP] + [shop_frame(r, True) for r in SHOP], FIRST_SHOP),
              ('MI.C', 'MH.C', [map_frame(r, c) for r in MAP for c in MAP_KNIGHT], FIRST_MAP))
     for source, target, new, first in pairs:
         with open(os.path.join(disk, source), 'rb') as f: data = f.read()

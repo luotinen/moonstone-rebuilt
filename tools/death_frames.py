@@ -2,11 +2,13 @@
 dagger where it hit (face, back of the head, belly, back), a long thrust through the middle of the body, a back
 strike down through the helmet. The new pieces are made from the knight's own pieces in the user's KN3.OB (and
 HE3.OB, the other look) and appended to those banks; the scripts that draw them go into MAIN.EXE's data segment
-(D20 in make_savehook.py, which picks one when a slumped knight is hit). Pure Python: no numpy.
+(D20 in make_savehook.py, which picks one when a slumped knight is hit). D89: the knight's push script with its
+sword as a KN4.OB piece (push_scripts). Pure Python: no numpy.
 Usage: python -I tools/death_frames.py <game dir> [preview.png]   (the preview needs Pillow and msfmt.py)"""
 import os, random, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE, DF_PIC, BALL_PIC, BALL_W
+from make_savehook import PUSH_TAIL, PUSH_TAIL_SIZE, STANDING
 
 BANK = 8                                  # KN3.OB in the knights' bank table (DS:8933, loaded at 1000:8B10)
 FIRST = 64                                # KN3.OB's own frames are 0-63; the new ones follow
@@ -386,6 +388,33 @@ def script(frames, sound=0x09):
     return bytes(s)
 
 
+# D89: the knight pushed (the troll's push, the dragon's fireball, the demon letting go: script DS:1596) is drawn
+# from KN2.OB frames 11h, 13h and 17h, with the sword part of the body picture (so the armour's tint, no LIGHTSABER).
+# KN4.OB's sword frames 1 and 5 match those swords pixel for pixel (at these places in the body frames), so each frame
+# gets the sword drawn over them as its own piece, last, as in the game's other knight frames. The script grows by 18
+# bytes and the standing script follows it at STANDING, so its last frame moves to PUSH_TAIL (a jump, command 82h 3)
+PUSH_SCRIPT = 0x1596
+PUSH_ORIGINAL = bytes.fromhex(
+    '921292089800d744 84029800de44 0411ec00d8ff 04122e00dfff ff00 84029800de44 0413f400ebff 041407000e00'
+    '04152f00ebff ff00 82007a15 920e920f 8402 04172200eeff 04162900c8ff ffff')
+SWORD_BANK = 0x0c                                    # KN4.OB
+PUSH_SWORDS = ((1, 38, 1), (1, 16, 5), (5, 14, 20))  # each frame's sword: KN4.OB frame, x and y in its first piece
+
+
+def push_scripts():
+    """(the script at PUSH_SCRIPT, padded to its old length; its last frame at PUSH_TAIL)."""
+    def sword(piece, k):
+        n, x, y = PUSH_SWORDS[k]
+        _, _, dy, _, dx = struct.unpack('<BBbBh', piece)
+        return struct.pack('<BBbBh', SWORD_BANK, n, dy + y, 0, dx + x)
+    o = PUSH_ORIGINAL
+    head = o[:14] + o[14:26] + sword(o[14:20], 0) + o[26:28]           # sounds, the first frame
+    head += o[28:34] + o[34:52] + sword(o[34:40], 1) + o[52:54]       # the second
+    head += bytes((0x82, 0x03)) + struct.pack('<H', PUSH_TAIL)
+    tail = o[54:64] + o[64:76] + sword(o[64:70], 2) + o[76:78]        # the next script if down, sounds, the knight lying
+    return head + bytes(len(o) - len(head)), tail
+
+
 def falling_dagger(game):
     """D58 (DAGGERFALL): the thrown dagger (KN4.OB frame 10) turned a quarter: hilt up, blade down."""
     return rot_cw(bank_frames(open(os.path.join(game, 'DISKB', 'KN4.OB'), 'rb').read())[10])
@@ -455,6 +484,17 @@ def install(game, exe):
     if any(exe[at:at + MARKER_SIZE]) and exe[at:at + len(code)] != code:
         raise ValueError(f'MAIN.EXE: DS:{MARKER_SCRIPT:04X} is not free')
     exe[at:at + MARKER_SIZE] = code + bytes(MARKER_SIZE - len(code))
+    head, tail = push_scripts()                           # D89
+    if PUSH_SCRIPT + len(PUSH_ORIGINAL) != STANDING or len(tail) > PUSH_TAIL_SIZE:
+        raise ValueError('the push script does not fit its places')
+    at = image + PUSH_SCRIPT
+    if exe[at:at + len(head)] not in (PUSH_ORIGINAL, head):
+        raise ValueError(f'MAIN.EXE: DS:{PUSH_SCRIPT:04X} is not the original push script')
+    exe[at:at + len(head)] = head
+    at = image + PUSH_TAIL
+    if any(exe[at:at + PUSH_TAIL_SIZE]) and exe[at:at + len(tail)] != tail:
+        raise ValueError(f'MAIN.EXE: DS:{PUSH_TAIL:04X} is not free')
+    exe[at:at + PUSH_TAIL_SIZE] = tail + bytes(PUSH_TAIL_SIZE - len(tail))
     return bytes(exe)
 
 

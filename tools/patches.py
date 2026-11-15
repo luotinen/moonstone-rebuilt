@@ -303,6 +303,15 @@ PATCHES = {
                  'reach is 149, so it steps in to 145 and chops. Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x5745), bytes.fromhex('8b6c52'), bytes.fromhex('cd6390'))],
     },
+    'D90': {
+        'title': 'The finishing blow (Moonstone Rebuilt; user request, 15 Nov 2026). The troll and the troggs strike a '
+                 'fallen knight down every time, as the game\'s troggs did, except with Gore Less or Off. The troll went '
+                 'idle once its knight\'s HP was gone (55F9, K43\'s hook): it now goes on against a knight still in its '
+                 'slump, and its attack (TrollAttack, cmp ax,64h at 1000:568B) is then always the blow from above (56B5), '
+                 'never the push; the crush follows by the game\'s 43A3. cmp ax,64h becomes int 63h + nop. The rest is in '
+                 'SAVEHOOK.COM (the trogg\'s check at 2E88, the slump held, co-op targets and end). Needs SAVEHOOK.COM resident',
+        'bytes': [((0x1000, 0x568b), bytes.fromhex('3d6400'), bytes.fromhex('cd6390'))],
+    },
     'K40': {
         'title': 'The Guardian hid knights for good (user report 12 Nov 2026, co-op). Its whip catch (1000:5155, '
                  '518A) and its zap\'s script (KnightOFF 5254) take a knight off the screen with the pause toggle '
@@ -456,6 +465,27 @@ PATCHES = {
                   ((0x1000, 0xbe4b), bytes.fromhex('ff0e43e2ff0645e2'), bytes.fromhex('cd63909090909090')),
                   ((0x1000, 0xbe66), bytes.fromhex('ff0643e2ff0e45e2'), bytes.fromhex('cd63909090909090'))],
     },
+    'D91': {
+        'title': 'Five-digit money (user request 15 Nov 2026): the gold sacks of the tavern (TAV.PIV) and of the donation '
+                 'screen (MYS.CEL frames 0, 1: Mythral, healer) had a dark box for three digits. tav.piv (DS:CE0F) and '
+                 'mys.cel (DS:D18E) become TV5.PIV and MY5.CEL (gold_frames.py: each sack 10 pixels wider); the right '
+                 'sack is drawn at x 262 (BE98). The three numbers are centred in their box: their draw calls (B33C, '
+                 'BDD9, BDF0, call 7BCB) become int 63h + nop (gold_centre: x = the centre in ax - the text\'s width / '
+                 '2, from the game\'s font), the centres 288, 29, 289 (B331, BDD1, BDE8). The numbers go to E4B4h (10 '
+                 'bytes, free on these screens), so five digits no longer write over the dice (D11Fh-D122h) or the '
+                 'donation ([E243h]). Needs SAVEHOOK.COM resident',
+        'bytes': [(('DS', 0xce0f), b'tav.piv', b'tv5.piv'), (('DS', 0xd18e), b'mys.cel', b'my5.cel'),
+                  ((0x1000, 0xbe98), bytes.fromhex('bb0e01'), bytes.fromhex('bb0601')),
+                  ((0x1000, 0xb323), bytes.fromhex('c6061dd100bb1dd1'), bytes.fromhex('c606b4e400bbb4e4')),
+                  ((0x1000, 0xb32e), bytes.fromhex('be1dd1b81a01'), bytes.fromhex('beb4e4b82001')),
+                  ((0x1000, 0xb33c), bytes.fromhex('e88cc8'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xbdc5), bytes.fromhex('bb3fe2'), bytes.fromhex('bbb4e4')),
+                  ((0x1000, 0xbdce), bytes.fromhex('be3fe2b81400'), bytes.fromhex('beb4e4b81d00')),
+                  ((0x1000, 0xbdd9), bytes.fromhex('e8efbd'), bytes.fromhex('cd6390')),
+                  ((0x1000, 0xbddc), bytes.fromhex('bb3fe2'), bytes.fromhex('bbb4e4')),
+                  ((0x1000, 0xbde5), bytes.fromhex('be3fe2b82001'), bytes.fromhex('beb4e4b82101')),
+                  ((0x1000, 0xbdf0), bytes.fromhex('e8d8bd'), bytes.fromhex('cd6390'))],
+    },
     'D24': {
         'title': 'Responsive controls (user request 4 Nov 2026). The game reads its key table once a frame (two BIOS '
                  'ticks, about 110 ms), so a key tapped between two reads was lost, and a knight reads its input only '
@@ -498,9 +528,9 @@ PATCHES = {
     'D38': {
         'title': 'Horses\' pictures (custom rules): the merchant\'s and map icons\' banks are loaded from KH.CEL and MH.C, '
                  'the game\'s KI.CEL and MI.C with the horses after their own frames (horse_frames.py); the original program '
-                 'keeps the originals. The area of those banks (1000:869E) grows by C0h paragraphs to hold them',
+                 'keeps the originals. The area of those banks (1000:869E) grows by 140h paragraphs to hold them (D92: C0h before the grey and armoured horses)',
         'bytes': [(('DS', 0x8b03), b'ki.cel', b'kh.cel'), (('DS', 0x8b0a), b'mi.c', b'mh.c'),
-                  ((0x1000, 0x869f), bytes.fromhex('8009'), bytes.fromhex('400a')),
+                  ((0x1000, 0x869f), bytes.fromhex('8009'), bytes.fromhex('c00a')),
                   # with EMS the files are cached at fixed places (DS:828A: page group, offset, size) and po.cel's copy
                   # overwrote MH.C past MI.C's 4810 bytes: MH.C moves to the free end of group 2 (after FO1.T; 36A0h there)
                   (('DS', 0x83ce), bytes.fromhex('18000000ca12'), bytes.fromhex('02006049fd15'))],
@@ -656,6 +686,17 @@ DRAGON_LANDS, DRAGON_LANDS_RET = 45, 0x3763   # 1000:375D asks for 45 (the Amiga
 TROLL_GRUNTS = (136, 142)                  # a troll's grunt (1000:5801): the Amiga's 03CE22 plays two picks of its table
 LOOP_RELEASE_SITE = 0x3e32                 # an unused ret -> int 63h: the dragon's scripts give their channels back
 LOOP_RELEASE_CALLS = (0x41cc, 0x450e, 0x4948)   # DS: the address in the scripts' three calls of the empty 1000:5833
+# D95: two scene sounds the DOS port lost. The tavern's dice: ShakeDiceSnd (1000:B508, called five times by the
+# dice script, DS:CE91-CF1F) asks for 16, the head's thud, and for nothing with Roland music; the Amiga's 01A8C2
+# plays one of DICE_SOUNDS (random) on channel 3, which it reserves. The henge's thunder: the Amiga's script
+# (03DD52) plays 157 and calls 01AAA8 (157 again, 51 times in 128, on the same channel in the same frame); the DOS
+# script lost the sound command and calls the empty HengeThunderSnd (1000:B5F2). ShakeDiceSnd's first instruction
+# (5 bytes) becomes int 63h (the dice), int 63h (what the henge's script now calls) and a ret.
+DICE_SITE, THUNDER_SITE = 0xb508, 0xb50a
+DICE_DOS, SOUND_CALL = 0xb50d, 0xb511      # ShakeDiceSnd goes on at je B514 / mov al,10h; its call 5970 / ret
+DICE_SOUNDS = (153, 154, 155, 153)         # the Amiga's table at 01A8E0
+AMIGA_DICE = {153: 3, 154: 3, 155: 3}      # the dice's channel, reserved as AMIGA_FIXED's (the Amiga's 02A470)
+THUNDER, THUNDER_CALL = 157, 0xcfc1        # DS: the address in the henge script's call (command 98h at DS:CFBF)
 # D73: the Amiga's location music, only in the SoundFont built from the user's own disk images (make_amiga_audio.py
 # writes amiga.music beside it then, and Start.bat makes AMIGAMUS.FLG from that). The DOS game starts a scene's tune
 # with int 60h, ah = 0 (its music driver) and stops it with ah = 2; these nine int 60h become int 63h. Scene: (the
@@ -839,6 +880,19 @@ def _sound_patches():
                      "it plays the Amiga's drums from the SoundFont on MIDI channels 4-7 until the fight or the "
                      "wizard's music starts. Needs D65, D73 and SAVEHOOK.COM resident",
             'bytes': [((0x1000, GODS_MUSIC_SITE), bytes.fromhex('ff06208e'), bytes.fromhex('cd639090'))],
+        },
+        'D95': {
+            'title': "The tavern's dice and the henge's thunder with the Amiga sound effects (Moonstone Rebuilt). "
+                     "ShakeDiceSnd (1000:B508) asks for sound 16, the head's thud, where the Amiga plays one of its "
+                     "three dice sounds (153-155) on channel 3, and the henge's script calls the empty "
+                     'HengeThunderSnd (1000:B5F2) where the Amiga plays its thunder (157). cmp word [8643h],2 at B508 '
+                     "becomes int 63h / int 63h / ret and the script's call (DS:CFC1) points to the second int. "
+                     "SAVEHOOK.COM handles both: with AMIGASND.FLG the first asks for a dice sound (by the clock's "
+                     'tick) and the second for 157; without it the first does the compare and the second returns. '
+                     "The four int 63h that stop a scene's tune (D73) also stop the effects, as the Amiga does at "
+                     "the end of a scene's fade-out. Needs D65, D73 and SAVEHOOK.COM resident",
+            'bytes': [((0x1000, DICE_SITE), bytes.fromhex('833e438602'), bytes.fromhex('cd63cd63c3')),
+                      (('DS', THUNDER_CALL), bytes.fromhex('f2b5'), bytes.fromhex('0ab5'))],
         },
         'K38': {
             'title': 'A blocked blow makes its sword clash. CheckBlock (1000:4219) is the Amiga\'s routine with the call '
