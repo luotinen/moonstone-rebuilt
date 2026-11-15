@@ -4,6 +4,8 @@ rem in the amiga folder (any names ending in .adf) they are the Amiga's own soun
 rem the DOS game's samples and the substitute sounds in the sounds folder. Needs Python 3; the package numpy is
 rem installed into the _python folder here if Python does not have it. Setup.bat does the same; use this after adding
 rem the disk images later. Then AmigaSound_On.bat turns the effects on.
+rem With your Amiga disk 1 in the amiga folder the SoundFont also gets the Amiga intro and ending music (D87), which
+rem AmigaMusic_On.bat turns on.
 cd /d "%~dp0"
 call tools\find_python.bat
 if errorlevel 1 (

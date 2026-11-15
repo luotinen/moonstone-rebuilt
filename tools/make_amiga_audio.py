@@ -20,10 +20,12 @@ Usage: python -I tools/make_amiga_audio.py <folder with the three .adf files> <o
        python -I tools/make_amiga_audio.py <folder with the three .adf files> <file.sf2> soundfont
        writes the SoundFont the game plays its effects from (D65): one key per program, see FONT_PROGRAMS, and the
        location music (D73): one looping key per part of each piece in preset 2, see AMIGA_MUSIC (and GODS_MUSIC,
-       D74); and <file>.music, which says the music is in it.
+       D74); and <file>.music, which says the music is in it. With disk 1 also the intro and ending tunes (D87):
+       a left and a right key each in preset 3, and <file>.tunes.
        python -I tools/make_amiga_audio.py <installation folder> <file.sf2> install
        the same for an installation: from the disk images in its amiga folder if all three are there (then with the
-       location music), else from its SAMPLES folder, its sounds folder and sound_programs.json (effects only)."""
+       location music), else from its SAMPLES folder, its sounds folder and sound_programs.json (effects only);
+       in both cases with the intro and ending tunes if disk 1 is in the amiga folder."""
 import sys, os, glob, json, struct, wave, hashlib, html
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '_python'))   # AmigaSound_Setup.bat puts numpy there if Python has none
@@ -341,9 +343,12 @@ class Replay:
             if self.k == len(self.steps) and self.loop is None: self.pc = None
 
 class Paula:
-    """One Paula channel: plays 8-bit samples at clock / period, without smoothing between samples."""
+    """One Paula channel: plays 8-bit samples at clock / period, without smoothing between samples. A looped
+    instrument plays to its end and then from its loop point to its end again. A module's sample (the intro and
+    ending tunes) also says where its first time through ends ('first') and where its loop ends ('end')."""
     def __init__(self):
         self.pcm, self.pos, self.loop_from = None, 0.0, None
+        self.limit = self.loop_end = 0
 
     def frame(self, ch, n):
         if ch.stop: self.pcm = None
@@ -351,6 +356,8 @@ class Paula:
             x = ch.ins
             self.pcm, self.pos = x['pcm'], 0.0
             self.loop_from = None if not x['looped'] else x['loop']     # the whole sample, or from the loop point
+            self.loop_end = x.get('end', len(self.pcm))
+            self.limit = x.get('first', self.loop_end)                  # where the pass being played ends
         out = np.zeros(n, dtype=np.float32)
         if self.pcm is None or len(self.pcm) == 0: return out
         step = ch.rate / RATE
@@ -362,11 +369,13 @@ class Paula:
             self.pos += step * n
             if self.pos >= size: self.pcm = None
         else:
-            span = max(size - self.loop_from, 2)
-            wrapped = np.where(pos < size, pos, self.loop_from + (pos - size) % span)
+            limit = self.limit
+            span = max(self.loop_end - self.loop_from, 2)
+            wrapped = np.where(pos < limit, pos, self.loop_from + (pos - limit) % span)
             out[:] = self.pcm[np.minimum(wrapped.astype(np.int64), size - 1)]
             end = self.pos + step * n
-            self.pos = end if end < size else self.loop_from + (end - size) % span
+            if end < limit: self.pos = end
+            else: self.pos, self.limit = self.loop_from + (end - limit) % span, self.loop_end
         return out * (ch.cur_vol / 64.0)
 
 def amiga_filter(x):
@@ -537,6 +546,85 @@ def write_music_marker(font, built):
     elif os.path.exists(marker):
         os.remove(marker)
 
+# --- the intro and ending tunes (D87), only from the user's own disk 1 ------------------------------------------------
+# The Amiga's intro and ending play a module each (music.cmp, vmusic.cmp), with a player of their own in `program`
+# (amiga_module.py steps it). A tune is one play-through here, as a left sample (Paula channels 0 and 3) and a right
+# one (1 and 2): keys of preset 3, which the tune module INTR.EXE loads starts as two notes on two MIDI channels
+# (make_amiga_music.py). A capture showed that two such notes stay together to under a microsecond for two minutes
+# (research/sf2_spike/make_spike12.py). Each sample loops over its whole play-through, as the Amiga's tune goes back
+# to its first order.
+import amiga_module
+from amiga_module import TUNE_PRESET, TUNE_KEYS
+from amiga_module import TUNE_LEVEL                # of a Paula channel at full volume; see there
+TUNE_RELEASE = 0.3                                 # seconds a tune rings on after its note-off: a soft cut
+TUNES_MARKER = '.tunes'                            # amiga.tunes beside amiga.sf2: the intro and ending tunes are in it
+
+class _Voice:
+    stop = False
+
+def tune_sides(module, periods):
+    """One of the two modules -> (left, right, loop points, seconds): the play-through as the Amiga plays it, Paula
+    channels 0 and 3 summed for the left and 1 and 2 for the right, through the Amiga 500 filter (mono each, RATE).
+    The loop is the whole play-through; it starts LOOP_TAIL samples in, since FluidSynth takes a loop from a
+    sample's first sample as broken (music_parts), and the first samples of the second time round follow the first."""
+    mod = amiga_module.Module(module)
+    ticks, loop, _, player = amiga_module.play_through(mod, periods)
+    if player.unmodelled:
+        raise AudioError('the tune does something this player does not model: ' + '; '.join(sorted(set(player.unmodelled))[:3]))
+    mem = np.concatenate([np.frombuffer(mod.mem, dtype=np.int8).astype(np.float32) / 128.0,
+                          np.zeros(2 * 0x20000, dtype=np.float32)])       # Paula plays on past the module's end
+    per_tick = RATE // amiga_module.TICK_HZ
+    voices, chans, instruments = [_Voice() for _ in range(4)], [Paula() for _ in range(4)], {}
+    sides = [[], []]
+    for tick in ticks + ticks[loop:loop + 1]:               # and one tick of the next time round
+        out = [np.zeros(per_tick, dtype=np.float32), np.zeros(per_tick, dtype=np.float32)]
+        for k, (trigger, ins, period, level) in enumerate(tick):
+            v = voices[k]
+            v.trigger, v.cur_vol, v.rate = trigger, level, PAULA_CLOCK / period if period else 0.0
+            if trigger:
+                if ins not in instruments:
+                    start, words, loop_at, replen = ins
+                    first, again = 2 * (words or 0x10000), 2 * (replen or 0x10000)    # Paula takes length 0 as 65536
+                    last = max(start + first, loop_at + again)
+                    instruments[ins] = dict(pcm=mem[start:last], looped=True, loop=loop_at - start, first=first,
+                                            end=loop_at - start + again)
+                v.ins = instruments[ins]
+            out[0 if k in LEFT else 1] += chans[k].frame(v, per_tick)
+        sides[0].append(out[0]); sides[1].append(out[1])
+    n = (len(ticks) - loop) * per_tick                      # one round of the loop
+    at = max(loop * per_tick, LOOP_TAIL)
+    left, right = (amiga_filter(np.concatenate(side)) * TUNE_LEVEL for side in sides)
+    cut = lambda x: np.concatenate([x[:at + n], x[at:at + LOOP_TAIL]])
+    return cut(left), cut(right), (at, at + n), len(ticks) / amiga_module.TICK_HZ
+
+def tune_sounds(folder):
+    """The two tunes of the Amiga disk 1 in a folder as SoundFont sounds [(preset, key, name, samples, rate, loop)]
+    -> (sounds, a line about them); no sounds if the disk is not there or its player's table is not the known one."""
+    found = amiga_module.read_disk(folder)
+    if not found: return [], ''
+    path, modules, periods = found
+    if periods is None:
+        return [], f'; no intro and ending tunes: the file `program` on {os.path.basename(path)} is not the known one'
+    sounds = []
+    try:
+        for name, (left_key, right_key) in TUNE_KEYS.items():
+            left, right, loop, seconds = tune_sides(modules[name], periods)
+            sounds.append((TUNE_PRESET, left_key, f'{name} left', left, RATE, loop, TUNE_RELEASE))
+            sounds.append((TUNE_PRESET, right_key, f'{name} right', right, RATE, loop, TUNE_RELEASE))
+    except (AudioError, amiga_module.ModuleError) as e:     # the effects are built all the same
+        return [], f'; no intro and ending tunes: {e}'
+    return sounds, ', with the intro and ending tunes from disk 1'
+
+def write_marker(font, ending, built, what):
+    """<font name>.music or .tunes says what the SoundFont holds (Start.bat reads them); a build without it removes
+    the marker."""
+    marker = os.path.splitext(font)[0] + ending
+    if built:
+        with open(marker, 'w', newline='\r\n') as f:
+            f.write(f'{os.path.basename(font)} has the Amiga {what} (built from your own Amiga disk images)\n')
+    elif os.path.exists(marker):
+        os.remove(marker)
+
 # --- without the Amiga disks: the same programs with the DOS game's samples -------------------------------------------
 TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sound_programs.json')
 
@@ -592,28 +680,33 @@ def build_soundfont(install, font):
     the table of programs. -> a line saying what was built."""
     amiga = os.path.join(install, 'amiga')
     os.makedirs(os.path.dirname(os.path.abspath(font)), exist_ok=True)
+    tunes, with_tunes = tune_sounds(amiga)                      # D87: needs disk 1 only
     if len(glob.glob(os.path.join(amiga, '*.[aA][dD][fF]'))) >= 3:
         drv = Driver(read_disks(amiga))
         n, seconds, silent = write_soundfont(drv.ins, {p: record_program(drv, p) for p in FONT_PROGRAMS}, font,
-                                             music_sounds(drv))
+                                             music_sounds(drv) + tunes)
         write_music_marker(font, True)
         source = 'with the location music, from your Amiga disks' + ('' if drv.verified else ' (mog is not the known file)')
     else:
         sources, programs = read_table()
         instruments = dos_instruments(sources, os.path.join(install, 'SAMPLES'), os.path.join(install, 'sounds'))
-        n, seconds, silent = write_soundfont(instruments, programs, font)
+        n, seconds, silent = write_soundfont(instruments, programs, font, tunes)
         write_music_marker(font, False)
-        source = 'from the DOS samples and the substitute sounds (no Amiga disks in the amiga folder)'
-    return f'{n} sounds, {seconds:.0f} s, {os.path.getsize(font) / 1e6:.1f} MB, {source}'
+        disks = 'not all three Amiga disks' if tunes else 'no Amiga disks'
+        source = f'from the DOS samples and the substitute sounds ({disks} in the amiga folder)'
+    write_marker(font, TUNES_MARKER, bool(tunes), 'intro and ending tunes')
+    return f'{n} sounds, {seconds:.0f} s, {os.path.getsize(font) / 1e6:.1f} MB, {source}{with_tunes}'
 
 def main(folder, out, what='wav'):
     if what == 'soundfont':                                     # folder: the three .adf files
         drv = Driver(read_disks(folder))
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        tunes, with_tunes = tune_sounds(folder)
         n, seconds, _ = write_soundfont(drv.ins, {p: record_program(drv, p) for p in FONT_PROGRAMS}, out,
-                                        music_sounds(drv))
+                                        music_sounds(drv) + tunes)
         write_music_marker(out, True)
-        print(f'{out}: {n} sounds (with the location music), {seconds:.0f} s, {os.path.getsize(out) / 1e6:.1f} MB' + ('' if drv.verified else ' (mog is not the known file)'))
+        write_marker(out, TUNES_MARKER, bool(tunes), 'intro and ending tunes')
+        print(f'{out}: {n} sounds (with the location music{with_tunes}), {seconds:.0f} s, {os.path.getsize(out) / 1e6:.1f} MB' + ('' if drv.verified else ' (mog is not the known file)'))
         return
     if what == 'install':                                       # folder: the installation
         print(f'{out}: ' + build_soundfont(folder, out))

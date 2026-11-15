@@ -884,56 +884,167 @@ def _tavern_gadgets():
 PATCHES['D85']['bytes'] = [(w, old, _tavern_gadgets()) for w, old, new in PATCHES['D85']['bytes']]
 
 # --- INTR.EXE (intro and ending) -----------------------------------------------------------------------------------
-# K9: skip the intro (and ending) with Enter, Space or Esc. Every intro scene waits for vertical retrace in the routine
-# at 0000:0F9E; it is replaced by a far jump to new code in the unused tail of the music-module buffer (segment 0492h,
-# offset 2300h; the largest intro module is 8274 bytes). When the module is loaded (first byte 1Eh = push ds) and one of
-# the keys is pressed, the new code resets the stack and jumps to the intro's own shutdown path at 0000:00D1 (stop music,
-# restore video and timer, exit). Otherwise it does the original retrace wait and returns through a RET at 0000:0FA3.
+# K9: skip the intro with any key (but Ctrl, Alt, Shift and the lock keys) and the ending with Enter, Space or Esc.
+# The new code is in the unused tail of the music-module buffer (segment 0492h, offset 2300h; the largest intro module
+# is 8274 bytes; the cave has 258 bytes, the image has other bytes from 0492:2402 on).
+#  * INTR.EXE's own keyboard handler (0000:4774) keeps a byte per scan code (00 held, FFh released, 0000:46F3); its
+#    store is replaced by a far call to the cave, which also notes a fresh press (a make code of a key that was
+#    released: not a key's repeat) of a key that skips. INTR.EXE never passes keys to the BIOS.
+#  * The noted press is acted on at three places the intro passes often: the retrace wait (0000:0F9E, replaced by a
+#    far jump to the cave), the start of every frame of the scenes' frame loops (0000:021F, where it sets the BIOS
+#    tick to wait for) and every pass of the first sequence (0000:0D76, the stage test, D87). There, when the music
+#    module is loaded (first byte 1Eh = push ds), the code resets the stack and jumps to the intro's own shutdown path
+#    at 0000:00D1 (stop music, restore video and timer, exit). Before the module is loaded a press is kept for later.
+#    Before 15 Nov 2026 the code looked only in the retrace wait, at whether a key was held: the scenes' frame loops
+#    (0162, 0694) and the first sequence do not wait for retraces, so a short press there was missed. (The game's own
+#    Esc check at 0000:00EA, called in every frame loop, is unchanged.)
 INTR_CAVE_SEG, INTR_CAVE_OFF = 0x0492, 0x2300
 INTR_DATA_SEG, INTR_STACK_TOP = 0x06d2, 0x0800
 
 KEY_STATE_TABLE = 0x46f3                                # INTR's own int 9 handler (0000:4774): byte per scan code,
-SKIP_SCANCODES = (0x1c, 0x39, 0x01)                     # 00 = held, FF = released. Enter, Space, Esc.
+SKIP_SCANCODES = (0x1c, 0x39, 0x01)                     # 00 = held, FF = released. Enter, Space, Esc: the ending's
+# Ctrl, Alt, Shift (left, right), Caps, Num and Scroll Lock never skip: they go with the emulator's shortcuts
+# (Alt+Enter: full screen) or only switch a light
+NOT_SKIP_SCANCODES = (0x1d, 0x38, 0x2a, 0x36, 0x3a, 0x45, 0x46)
+INTR_KEY_STORE = 0x477f                                 # mov al,ah / mov cs:[bx+table],al
+INTR_FRAME_SET = 0x0228                                 # inc ax / inc ax / mov [4103h],ax: the BIOS tick to wait for
+INTR_MODE = INTR_DATA_SEG * 16 + 0x12d1                 # INTR.EXE's [12D1h] from segment 0: 0 = the intro
+
+# D87: the Amiga intro and ending tunes play from the SoundFont, started by a tune module of our own
+# (make_amiga_music.py). The Amiga's pictures are slower than the DOS game's, so while that module plays its tune
+# the pictures are slowed, in two ways, because INTR.EXE times them in two ways:
+#  * by vertical retraces (this routine, and 0000:0FAE, which calls it ax times): of every INTR_TUNE_M calls of the
+#    retrace wait, INTR_TUNE_N wait for one more retrace. This is done here in the cave;
+#  * by the BIOS clock (the scenes' frame loops at 0129, 0162 and 0694 wait for two of its ticks, 0000:021F and
+#    022F). INTR.EXE's own timer runs at 54.6 Hz, calls the tune module on every tick (0000:09F1) and passes every
+#    third tick on to the BIOS, counting down the word INTR_TIMER_DIVIDER. The module's tick puts that word back
+#    up on INTR_TUNE_SKIP of every INTR_TUNE_OF ticks, so the BIOS clock runs slower. Nothing of INTR.EXE is
+#    changed for this.
+# The numbers and the working bytes are in the module's head, after push ds and a short jump over them, which is
+# also how the cave knows the module (the DOS tunes go on with push bx). The head holds two paces: the start puts
+# the first in use, and the module's tick puts the second in its place a set number of ticks later.
+# Our tune also starts where the Amiga starts its tune: in the first sequence (the scroll through the forest,
+# 0000:0D27), when its stage first reaches 4. DOS has the same test there (0000:0D76) and calls an empty routine
+# (0000:08EB); the test and the call are replaced by a far call to the cave, which does the test and, for our module
+# only, starts the tune (int 60h, ah = 0; the timer and the vector are set at 0000:0935, the module is loaded at
+# 0000:005F, both before). The game's own start at 0000:008B then finds the tune playing and does nothing.
+INTR_TUNE_SIGN = 0x13eb                                 # the word at 0492:0001: jmp short over the 19 bytes
+INTR_TUNE_N, INTR_TUNE_M, INTR_TUNE_SKIP, INTR_TUNE_OF = 3, 4, 5, 6      # the pace in use (the cave and the tick)
+INTR_TUNE_ACC, INTR_TUNE_TICKS, INTR_TUNE_ON = 7, 8, 9  # working bytes
+INTR_TUNE_LEFT, INTR_TUNE_SWITCH = 10, 12               # words: ticks left to the second pace; ticks from the start to it
+INTR_TUNE_FIRST, INTR_TUNE_SECOND = 14, 18              # the two paces (n, m, skip, of), set by make_amiga_music.py
+INTR_TUNE_CODE = 22                                     # where the code starts
+INTR_TIMER_DIVIDER = 0x12b9                             # INTR.EXE's data: 3, 2, 1: ticks until the BIOS gets one
+INTR_STAGE = 0x0162                                     # INTR.EXE's data: the first sequence's stage
+INTR_STAGE_TEST = 0x0d76                                # cmp word [stage],4 / jne +3 / call 08EB (empty)
 
 def _intr_skip_code():
-    """Machine code for the cave, plus offsets (within it) of words that need relocation. INTR replaces the keyboard
-    interrupt and never passes keys to the BIOS, so the code reads INTR's key state table instead of int 16h."""
-    c, relocs, fix = bytearray(), [], {}
+    """Machine code for the cave, plus offsets (within it) of words that need relocation."""
+    code, relocs, entries = _intr_cave()
+    return code, relocs
+
+def _intr_cave():
+    """Machine code for the cave, offsets (within it) of words that need relocation, and where its entries are
+    ('wait': the retrace wait, at the cave's start; 'stage': the first sequence's stage test, D87; 'frame': the frame
+    loops' tick; 'key': the keyboard handler's store; 'flag' and 'latch': its two bytes)."""
+    c, relocs, fix, near = bytearray(), [], {}, {}
     def emit(*b): c.extend(b)
     def jcc(op, label): emit(op, 0); fix[len(c) - 1] = label
-    emit(0x2e, 0x80, 0x3e); flag_ref = len(c); emit(0, 0, 0x00)   # cmp byte cs:[flag], 0     already skipping?
-    jcc(0x75, 'wait')                                  # jne wait
-    emit(0x2e, 0x80, 0x3e, 0x00, 0x00, 0x1e)          # cmp byte cs:[0000], 1Eh   music module loaded?
-    jcc(0x75, 'wait')                                  # jne wait
-    emit(0x50, 0x06)                                   # push ax / push es
-    emit(0xb8); relocs.append(len(c)); emit(0x00, 0x00)   # mov ax, segment 0 (INTR code)
-    emit(0x8e, 0xc0)                                   # mov es, ax
-    for code in SKIP_SCANCODES:
-        addr = KEY_STATE_TABLE + code
-        emit(0x26, 0x80, 0x3e, addr & 0xff, addr >> 8, 0x00)   # cmp byte es:[table+code], 0   held?
-        jcc(0x74, 'skip')
-    emit(0x07, 0x58)                                   # pop es / pop ax
-    labels = {'wait': len(c)}
+    def jump(op, label): emit(op, 0, 0); near[len(c) - 2] = label    # call or jmp with a 16-bit distance
+    def cs(*op, at): emit(0x2e, *op, at, 0x00)         # an instruction on a byte or word of the module's head
+    labels = {}
+    jump(0xe8, 'check')                                # call check                a noted key press: skip
     emit(0xba, 0xda, 0x03)                             # mov dx, 3DAh  (original retrace wait)
+    jump(0xe8, 'retrace')                              # call retrace
+    # D87: the pace of the pictures while the Amiga tune's module is loaded
+    emit(0x2e, 0x81, 0x3e, 0x01, 0x00, INTR_TUNE_SIGN & 0xff, INTR_TUNE_SIGN >> 8)   # cmp word cs:[0001], sign
+    jcc(0x75, 'back')                                  # jne back                  a DOS tune: as the game does
+    cs(0x80, 0x3e, at=INTR_TUNE_ON); emit(0x00)        # cmp byte cs:[on], 0
+    jcc(0x74, 'back')                                  # je back                   the tune is not playing
+    cs(0xa0, at=INTR_TUNE_ACC)                         # mov al, cs:[acc]          (al is free: the wait reads into it)
+    cs(0x02, 0x06, at=INTR_TUNE_N)                     # add al, cs:[n]
+    cs(0x3a, 0x06, at=INTR_TUNE_M)                     # cmp al, cs:[m]
+    jcc(0x72, 'keep')                                  # jb keep
+    cs(0x2a, 0x06, at=INTR_TUNE_M)                     # sub al, cs:[m]
+    cs(0xa2, at=INTR_TUNE_ACC)                         # mov cs:[acc], al
+    jump(0xe8, 'retrace')                              # call retrace              one more retrace
+    jcc(0xeb, 'back')                                  # jmp back
+    labels['keep'] = len(c)
+    cs(0xa2, at=INTR_TUNE_ACC)                         # mov cs:[acc], al
+    labels['back'] = len(c)
+    emit(0xea, 0xa3, 0x0f); relocs.append(len(c)); emit(0x00, 0x00)   # jmp far 0000:0FA3 (ret)
+    labels['retrace'] = len(c)                         # wait for the next vertical retrace (dx = 3DAh)
     emit(0xec, 0xa8, 0x08, 0x75, 0xfb)                 # in al,dx / test al,8 / jnz -5
     emit(0xec, 0xa8, 0x08, 0x74, 0xfb)                 # in al,dx / test al,8 / jz -5
-    emit(0xea, 0xa3, 0x0f); relocs.append(len(c)); emit(0x00, 0x00)   # jmp far 0000:0FA3 (ret)
-    labels['skip'] = len(c)
-    emit(0x07, 0x58)                                   # pop es / pop ax
-    emit(0x2e, 0xc6, 0x06); flag_set = len(c); emit(0, 0, 0x01)      # mov byte cs:[flag], 1
+    emit(0xc3)                                         # ret
+    # D87: the first sequence's stage test (far call from 0000:0D76, ds = INTR.EXE's data): at stage 4 our module
+    # starts its tune, as the Amiga does there; a DOS tune is left to start at 0000:008B, as the game does
+    labels['stage'] = len(c)
+    jump(0xe8, 'check')                                # call check                a noted key press: skip
+    emit(0x83, 0x3e, INTR_STAGE & 0xff, INTR_STAGE >> 8, 0x04)   # cmp word [stage], 4
+    jcc(0x75, 'out')                                   # jne out
+    emit(0x2e, 0x81, 0x3e, 0x01, 0x00, INTR_TUNE_SIGN & 0xff, INTR_TUNE_SIGN >> 8)   # cmp word cs:[0001], sign
+    jcc(0x75, 'out')                                   # jne out                   a DOS tune (or none)
+    emit(0x50, 0xb4, 0x00, 0xcd, 0x60, 0x58)          # push ax / mov ah,0 / int 60h / pop ax: start the tune
+    labels['out'] = len(c)
+    emit(0xcb)                                         # retf
+    # the scenes' frame loops (far call from 0000:0228, ds = INTR.EXE's data, ax = the BIOS clock)
+    labels['frame'] = len(c)
+    emit(0x40, 0x40, 0xa3, 0x03, 0x41)                 # inc ax / inc ax / mov [4103h], ax   (as the game)
+    jump(0xe8, 'check')                                # call check
+    emit(0xcb)                                         # retf
+    # check: a noted key press skips once the music module is loaded (and not again while it skips)
+    labels['check'] = len(c)
+    cs(0x80, 0x3e, at=0); latch_refs = [len(c) - 2]; emit(0x00)   # cmp byte cs:[latch], 0
+    jcc(0x74, 'no')                                    # je no
+    cs(0x80, 0x3e, at=0); flag_refs = [len(c) - 2]; emit(0x00)    # cmp byte cs:[flag], 0     already skipping?
+    jcc(0x75, 'no')                                    # jne no
+    emit(0x2e, 0x80, 0x3e, 0x00, 0x00, 0x1e)          # cmp byte cs:[0000], 1Eh   music module loaded?
+    jcc(0x74, 'leave')                                 # je leave
+    labels['no'] = len(c)
+    emit(0xc3)                                         # ret
+    labels['leave'] = len(c)
+    cs(0xc6, 0x06, at=0); flag_refs.append(len(c) - 2); emit(0x01)   # mov byte cs:[flag], 1
     emit(0xb8); relocs.append(len(c)); emit(INTR_DATA_SEG & 0xff, INTR_DATA_SEG >> 8)   # mov ax, data segment
     emit(0x8e, 0xd8)                                   # mov ds, ax
     emit(0xbc, INTR_STACK_TOP & 0xff, INTR_STACK_TOP >> 8)                         # mov sp, 0800h
     emit(0xea, 0xd1, 0x00); relocs.append(len(c)); emit(0x00, 0x00)   # jmp far 0000:00D1 (shutdown)
-    flag = INTR_CAVE_OFF + len(c); emit(0x00)          # flag byte
-    for pos in (flag_ref, flag_set):
-        c[pos:pos + 2] = bytes([flag & 0xff, flag >> 8])
+    # the keyboard handler's store (far call from 0000:477F, inside int 9): al = bl = scan code, bh = 0,
+    # ah = 00 for a press, FFh for a release
+    labels['key'] = len(c)
+    emit(0x1e, 0x50)                                   # push ds / push ax
+    emit(0xb8); relocs.append(len(c)); emit(0x00, 0x00)   # mov ax, segment 0 (INTR code)
+    emit(0x8e, 0xd8, 0x58)                             # mov ds, ax / pop ax
+    emit(0x84, 0xe4)                                   # test ah, ah
+    jcc(0x75, 'store')                                 # jnz store                 a release
+    emit(0x80, 0xbf, KEY_STATE_TABLE & 0xff, KEY_STATE_TABLE >> 8, 0xff)   # cmp byte [bx+table], FFh
+    jcc(0x75, 'store')                                 # jne store                 held already: the key's repeat
+    for code in NOT_SKIP_SCANCODES:
+        emit(0x3c, code); jcc(0x74, 'store')           # cmp al, code / je store
+    emit(0x83, 0x3e, INTR_MODE & 0xff, INTR_MODE >> 8, 0x00)   # cmp word [mode], 0
+    jcc(0x74, 'note')                                  # je note                   the intro: any key
+    for code in SKIP_SCANCODES[:-1]:
+        emit(0x3c, code); jcc(0x74, 'note')            # cmp al, code / je note    the ending: Enter, Space, Esc
+    emit(0x3c, SKIP_SCANCODES[-1]); jcc(0x75, 'store')
+    labels['note'] = len(c)
+    cs(0xc6, 0x06, at=0); latch_refs.append(len(c) - 2); emit(0x01)  # mov byte cs:[latch], 1
+    labels['store'] = len(c)
+    emit(0x88, 0xa7, KEY_STATE_TABLE & 0xff, KEY_STATE_TABLE >> 8)   # mov [bx+table], ah   (as the game)
+    emit(0x1f, 0xcb)                                   # pop ds / retf
+    flag = INTR_CAVE_OFF + len(c); emit(0x00)          # flag byte: skipping
+    latch = INTR_CAVE_OFF + len(c); emit(0x00)         # latch byte: a key that skips was pressed
+    for refs, at in ((flag_refs, flag), (latch_refs, latch)):
+        for pos in refs:
+            c[pos:pos + 2] = bytes([at & 0xff, at >> 8])
     for pos, label in fix.items():
         rel = labels[label] - (pos + 1)
         if not -128 <= rel < 128:
             raise ValueError(f'INTR.EXE: short jump to {label} is out of range ({rel})')
         c[pos] = rel & 0xff
-    return bytes(c), relocs
+    for pos, label in near.items():
+        c[pos:pos + 2] = struct.pack('<h', labels[label] - (pos + 2))
+    return bytes(c), relocs, {'wait': 0, 'stage': labels['stage'], 'frame': labels['frame'], 'key': labels['key'],
+                              'flag': flag - INTR_CAVE_OFF, 'latch': latch - INTR_CAVE_OFF}
 
 def patch_intr_skip(exe):
     """Apply K9 to an uncompressed INTR.EXE; returns the new EXE (relocation table extended)."""
@@ -945,15 +1056,27 @@ def patch_intr_skip(exe):
     expected = bytes.fromhex('bada0390eca80875fb90eca80874fbc3')
     if image[hook:hook + 16] != expected:
         raise ValueError('K9: unexpected bytes at 0000:0F9E (not the GOG INTR.EXE?)')
+    stage, key, frame = INTR_STAGE_TEST, INTR_KEY_STORE, INTR_FRAME_SET
+    for at, old in ((stage, '833e620104' '7503' 'e86bfb'), (key, '8ac4' '2e8887f346'), (frame, '4040' 'a30341')):
+        if image[at:at + len(old) // 2] != bytes.fromhex(old):
+            raise ValueError(f'K9: unexpected bytes at 0000:{at:04X} (not the GOG INTR.EXE?)')
     cave = INTR_CAVE_SEG * 16 + INTR_CAVE_OFF
-    code, code_relocs = _intr_skip_code()
+    code, code_relocs, entries = _intr_cave()
+    if len(code) > 258:
+        raise ValueError('K9: the code does not fit the cave')
     if any(image[cave:cave + len(code)]):
         raise ValueError('K9: cave area is not empty')
     image[cave:cave + len(code)] = code
     image[hook:hook + 5] = bytes([0xea, INTR_CAVE_OFF & 0xff, INTR_CAVE_OFF >> 8,
                                   INTR_CAVE_SEG & 0xff, INTR_CAVE_SEG >> 8])           # jmp far 0492:2300
     image[hook + 5] = 0xc3                                                               # ret (target of the jump back)
-    new = [hook + 3] + [cave + r for r in code_relocs]
+    def call_far(entry):
+        at = INTR_CAVE_OFF + entries[entry]
+        return bytes([0x9a, at & 0xff, at >> 8, INTR_CAVE_SEG & 0xff, INTR_CAVE_SEG >> 8])
+    image[stage:stage + 10] = call_far('stage') + b'\x90' * 5                          # call far 0492:stage test
+    image[key:key + 7] = call_far('key') + b'\x90' * 2                                 # call far 0492:key
+    image[frame:frame + 5] = call_far('frame')                                         # call far 0492:frame
+    new = [hook + 3, stage + 3, key + 3, frame + 3] + [cave + r for r in code_relocs]
     relocs += [(lin & 0xf, lin >> 4) for lin in new]                                     # (offset, segment) pairs
     return build_mz(bytes(image), relocs, h[11], h[10], h[7], h[8], h[5])
 

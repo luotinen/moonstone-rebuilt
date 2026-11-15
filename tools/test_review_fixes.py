@@ -1331,6 +1331,592 @@ class SoundPrograms(unittest.TestCase):
         for path in (ROOT / 'sounds').glob('*.wav'):
             self.assertIn(f'`{path.name}`', sources, f'{path.name} is not in sounds/SOURCES.md')
 
+def has_numpy():
+    try:
+        import numpy  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def tune_test_module():
+    """A module of our own for the tune player (D87): three square-wave samples and two patterns that use every
+    command of the Amiga's routine once. No Amiga data."""
+    def sample(words, vol, loop=0, replen=1, fine=0):
+        return struct.pack('>22sHBBHH', b'square', words, fine, vol, loop, replen)
+    def square(words, half):
+        return bytes((0x40 if (i // half) % 2 == 0 else 0xc0) for i in range(2 * words))
+    heads = [sample(64, 64, 8, 16), sample(32, 40), sample(16, 48, fine=3)] + [sample(0, 0)] * 28
+    data = [square(64, 4), square(32, 8), square(16, 2)]
+    def note(smp=0, period=0, cmd=0, par=0):
+        return bytes([(smp & 0xf0) | period >> 8, period & 0xff, (smp & 15) << 4 | cmd, par])
+    def pattern(rows):
+        out = bytearray(1024)
+        for r, row in rows.items():
+            for c, n in row.items():
+                out[16 * r + 4 * c:16 * r + 4 * c + 4] = n
+        return bytes(out)
+    p0 = pattern({0: {0: note(1, 428, 0xf, 3), 1: note(2, 320, 0xc, 0x20)},       # speed 3; volume 20h
+                  1: {0: note(cmd=0xa, par=0x04), 1: note(cmd=0xa, par=0x30)},     # volume slides down and up
+                  2: {0: note(cmd=1, par=0x10), 1: note(cmd=2, par=0x08)},         # slides up and down
+                  3: {0: note(0, 214, 3, 0x20), 1: note(cmd=4, par=0x41)},         # slide to a note; vibrato
+                  4: {0: note(cmd=3), 1: note(cmd=0, par=0x37)},                   # the slide goes on; arpeggio
+                  5: {0: note(cmd=0xd, par=0x05), 2: note(1, 428, 0xe, 1), 3: note(3, 214, 5, 0x11)}})   # break
+    p1 = pattern({0: {2: note(2, 340, 0xc, 0x50), 3: note(cmd=0xf)},               # volume over 40h; speed 0
+                  1: {1: note(cmd=0xb, par=1), 2: note(cmd=0xd)}})                 # a jump and a break on one row
+    orders = bytes([0, 1]) + bytes(126)
+    return b'test'.ljust(20, b'\0') + b''.join(heads) + bytes([2, 127]) + orders + b'M.K.' + p0 + p1 + b''.join(data)
+
+
+class AmigaTunes(unittest.TestCase):
+    """D87: the Amiga intro and ending tunes from the SoundFont. The player is checked with a module made here."""
+
+    def test_player_steps_every_command_as_the_amiga_routine(self):
+        import amiga_module
+        ticks, loop, rows, player = amiga_module.play_through(tune_test_module(), amiga_module.equal_periods())
+        self.assertEqual((len(ticks), loop, player.unmodelled), (24, 6, []))
+        # the rows: three ticks each (F03); the break's parameter is ignored; the jump and the break on one row
+        # cancel each other, and the jump's order is taken without a break: order 0 goes on from its row 2
+        self.assertEqual(rows, [(0, 0, 0), (3, 0, 1), (6, 0, 2), (9, 0, 3), (12, 0, 4), (15, 0, 5), (18, 1, 0), (21, 1, 1)])
+        periods = [[t[c][2] for t in ticks] for c in range(4)]
+        volumes = [[t[c][3] for t in ticks] for c in range(4)]
+        self.assertEqual(periods[0], [428] * 7 + [412, 396, 396, 364, 332, 332, 300, 268] + [268] * 9)
+        # slide down; the vibrato's two ticks; the arpeggio from the table's 321 (+3 and +7 notes), whose last
+        # period stays in the register on the next row's tick
+        self.assertEqual(periods[1], [320] * 7 + [328, 336, 336, 336, 337, 337, 270, 214, 214] + [336] * 8)
+        self.assertEqual(periods[2], [0] * 15 + [428] * 3 + [340] * 6)
+        self.assertEqual(periods[3], [0] * 15 + [214] * 9)
+        self.assertEqual(volumes[0], [64, 64, 64, 64, 60, 56] + [56] * 18)
+        # C20 sets the register only: the slide goes up from the sample's own 40
+        self.assertEqual(volumes[1], [32, 32, 32, 32, 43, 46] + [46] * 18)
+        self.assertEqual(volumes[2], [0] * 15 + [64] * 9)               # C50 is taken as 40h
+        self.assertEqual(volumes[3], [0] * 15 + [48] * 9)               # the finetune byte is not volume
+        starts = {(i, c): t[c][1] for i, t in enumerate(ticks) for c in range(4) if t[c][0]}
+        # (start byte, words, loop's start byte, loop's words): a looped sample ends at its loop's end
+        self.assertEqual(starts, {(0, 0): (0, 24, 16, 16), (0, 1): (128, 32, 128, 1), (15, 2): (0, 24, 16, 16),
+                                  (15, 3): (192, 16, 192, 1), (18, 2): (128, 32, 128, 1)})
+
+    def test_player_clears_each_samples_first_long(self):
+        import amiga_module
+        mod = amiga_module.Module(tune_test_module())
+        self.assertEqual([mod.mem[at:at + 5].hex() for at in (0, 128, 192)], ['00000000c0', '0000000040', '0000000040'])
+        self.assertEqual((mod.size, mod.songlen, len(mod.patterns)), (224, 2, 2048))
+
+    def test_player_says_what_it_does_not_model(self):
+        import amiga_module
+        data = bytearray(tune_test_module())
+        data[1084 + 16 + 2] = 0x20                          # row 1, channel 0: sample 2 without a note
+        ticks, loop, rows, player = amiga_module.play_through(bytes(data), amiga_module.equal_periods())
+        self.assertTrue(any('another sample' in line for line in player.unmodelled))
+        data = bytearray(tune_test_module())
+        data[1084 + 4:1084 + 6] = b'\x00\x7f'              # channel 1 starts at period 127: its arpeggio's seventh
+                                                            # note up is past the table's end
+        ticks, loop, rows, player = amiga_module.play_through(bytes(data), amiga_module.equal_periods())
+        self.assertTrue(any('past the table' in line for line in player.unmodelled))
+
+    def test_no_table_of_periods_is_kept(self):
+        import amiga_module
+        self.assertEqual(len(amiga_module.equal_periods()), amiga_module.PERIOD_WORDS)
+        self.assertIsNone(amiga_module.find_periods(bytes(4000)))
+        table = struct.pack('>37H', *amiga_module.equal_periods())
+        self.assertIsNone(amiga_module.find_periods(bytes(100) + table + bytes(100)))    # not the Amiga's own table
+
+    # --- the tune module INTR.EXE loads -----------------------------------------------------------------------------
+    S, MOD = 0x1000, 0x1000 + 0x0492                        # INTR's first segment as loaded; the tune module's segment
+    REGS = dict(AX=0x1234, BX=0x2345, CX=0x3456, DX=0x4567, SI=0x5678, DI=0x6789, BP=0x789a, DS=0x4000, ES=0x5000)
+
+    def machine(self, module):
+        from unicorn import Uc, UC_ARCH_X86, UC_MODE_16, UC_HOOK_INSN
+        from unicorn.x86_const import UC_X86_INS_IN, UC_X86_INS_OUT
+        import patches
+        uc = Uc(UC_ARCH_X86, UC_MODE_16)
+        uc.mem_map(0, 0x100000)
+        uc.mem_write(self.MOD * 16, module)
+        code, relocs = patches._intr_skip_code()            # K9's cave, relocated as DOS would
+        code = bytearray(code)
+        for r in relocs:
+            code[r:r + 2] = ((int.from_bytes(code[r:r + 2], 'little') + self.S) & 0xffff).to_bytes(2, 'little')
+        self.assertLessEqual(len(code), 258)                # the room behind the largest tune module
+        uc.mem_write(self.MOD * 16 + patches.INTR_CAVE_OFF, bytes(code))
+        uc.mem_write(self.S * 16 + 0x0f9e, bytes([0xea, 0x00, 0x23]) + self.MOD.to_bytes(2, 'little') + b'\xc3')
+        uc.mem_write(self.S * 16 + patches.KEY_STATE_TABLE, b'\xff' * 128)      # no key held
+        self.outs, self.reads, self.press_at = [], [0], None
+        def port_in(uc, port, size, user):
+            if port == 0x3da:                               # each retrace: one read outside it, one inside
+                self.reads[0] += 1
+                if self.reads[0] == self.press_at:          # a key that skips goes down: the keyboard handler notes it
+                    uc.mem_write(self.MOD * 16 + patches.INTR_CAVE_OFF + patches._intr_cave()[2]['latch'], b'\x01')
+                return 8 if self.reads[0] % 2 == 0 else 0
+            return 0xfe
+        uc.hook_add(UC_HOOK_INSN, lambda uc, port, size, value, user: self.outs.append((port, value & 0xff)),
+                    None, 1, 0, UC_X86_INS_OUT)
+        uc.hook_add(UC_HOOK_INSN, port_in, None, 1, 0, UC_X86_INS_IN)
+        return uc
+
+    def run_code(self, uc, cs, ip, stack, stops, **regs):
+        """Run from cs:ip with `stack` (words) on the stack until one of `stops` (linear) -> where it stopped."""
+        import unicorn.x86_const as x
+        for name, value in dict(self.REGS, **regs).items():
+            uc.reg_write(getattr(x, 'UC_X86_REG_' + name), value)
+        sp = 0xff00 - 2 * len(stack)
+        uc.reg_write(x.UC_X86_REG_SS, 0x6000); uc.reg_write(x.UC_X86_REG_SP, sp)
+        uc.mem_write(0x6000 * 16 + sp, b''.join(v.to_bytes(2, 'little') for v in stack))
+        uc.reg_write(x.UC_X86_REG_CS, cs)
+        for stop in stops:
+            uc.mem_write(stop, b'\xf4')
+        uc.emu_start(cs * 16 + ip, 0, count=200000)
+        at = uc.reg_read(x.UC_X86_REG_CS) * 16 + uc.reg_read(x.UC_X86_REG_IP) - 1      # the hlt it ran into
+        self.assertIn(at, stops)
+        return at, {name: uc.reg_read(getattr(x, 'UC_X86_REG_' + name)) for name in list(self.REGS) + ['SP']}
+
+    def int60(self, uc, ah):
+        """int 60h with ah, as INTR.EXE calls its tune module -> (bytes written to the ports, the registers after)."""
+        del self.outs[:]
+        back = self.S * 16 + 0x0050
+        _, regs = self.run_code(uc, self.MOD, 0, [0x0050, self.S, 0x0202], {back}, AX=ah << 8 | 0x34)
+        return list(self.outs), regs
+
+    def wait(self, uc):
+        """One call of INTR.EXE's retrace wait (0000:0F9E) -> (retraces waited, where it came out, registers)."""
+        before = self.reads[0]
+        at, regs = self.run_code(uc, self.S, 0x0f9e, [0x0050], {self.S * 16 + 0x0050, self.S * 16 + 0x00d1})
+        return (self.reads[0] - before) // 2, at - self.S * 16, regs
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_tune_module_sends_the_notes(self):
+        import amiga_module, make_amiga_music, patches
+        for name, tune in (('intro', 'ATUNE1.BIN'), ('ending', 'ATUNE6.BIN')):
+            with self.subTest(tune=name):
+                self.assertEqual(make_amiga_music.TUNE_FILES[name], tune)
+                module = make_amiga_music.tune_module(name)
+                self.assertEqual(module[0], 0x1e)           # push ds: what K9's skip knows a loaded module by
+                self.assertEqual(int.from_bytes(module[1:3], 'little'), patches.INTR_TUNE_SIGN)
+                self.assertLess(len(module), 0x200)
+                uc = self.machine(module)
+                left, right = amiga_module.TUNE_KEYS[name]
+                a, b = amiga_module.TUNE_CHANNELS
+                self.assertEqual((a, b, amiga_module.TUNE_PRESET, patches.AMIGA_BANK), (10, 11, 3, 100))
+                pans = amiga_module.TUNE_PANS
+                self.assertEqual((pans[0] + pans[1], pans[1] - pans[0]), (127, 95))       # three quarters of 127
+                start = [(0x331, 0x3f)] + [(0x330, v) for v in (
+                    0xb0 | a, 0, 100, 0xc0 | a, 3, 0xb0 | a, 7, amiga_module.TUNE_VOLUME, 0xb0 | a, 10, pans[0],
+                    0xb0 | b, 0, 100, 0xc0 | b, 3, 0xb0 | b, 7, amiga_module.TUNE_VOLUME, 0xb0 | b, 10, pans[1],
+                    0x90 | a, left, 0x7f, 0x90 | b, right, 0x7f)]
+                kept = dict(self.REGS, SP=0xff00)
+                outs, regs = self.int60(uc, 0)
+                self.assertEqual(outs, start)
+                self.assertEqual(regs, dict(kept, AX=0x0034))
+                outs, regs = self.int60(uc, 1)              # the timer's tick: nothing is sent
+                self.assertEqual((outs, regs), ([], dict(kept, AX=0x0134)))
+                outs, regs = self.int60(uc, 2)
+                self.assertEqual(outs, [(0x330, v) for v in (0x80 | a, left, 0, 0x80 | b, right, 0)])
+                self.assertEqual(regs, dict(kept, AX=0x0234))
+                self.assertEqual(self.int60(uc, 7)[0], [])
+        self.assertEqual(len({k for keys in amiga_module.TUNE_KEYS.values() for k in keys}), 4)
+        self.assertGreaterEqual(min(k for keys in amiga_module.TUNE_KEYS.values() for k in keys), 15)   # FluidSynth's root keys
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_pictures_are_paced_only_for_our_tune_module(self):
+        import make_amiga_music, patches
+        dos_tune = bytes.fromhex('1e538ccb8edb80fc') + bytes(64)        # how the game's tune modules begin
+        uc = self.machine(dos_tune)
+        waits = [self.wait(uc) for _ in range(20)]
+        self.assertEqual([w[0] for w in waits], [1] * 20)               # the DOS tunes: one retrace a call, as before
+        self.assertEqual({w[1] for w in waits}, {0x50})
+        self.assertEqual(bytes(uc.mem_read(self.MOD * 16, len(dos_tune))), dos_tune)
+        uc = self.machine(bytes(64))                                    # no module loaded yet
+        self.assertEqual([self.wait(uc)[0] for _ in range(5)], [1] * 5)
+        uc = self.machine(make_amiga_music.tune_module('intro', (2, 5, 0, 1)))
+        self.assertEqual([self.wait(uc)[0] for _ in range(5)], [1] * 5)     # loaded, not playing yet: as the game
+        self.int60(uc, 0)
+        got = [self.wait(uc) for _ in range(20)]
+        self.assertEqual([w[0] for w in got], [1, 1, 2, 1, 2] * 4)      # 7 retraces for 5 calls: 70 Hz -> 50 Hz
+        kept = dict(self.REGS, SP=0xff00)
+        for _, at, regs in got:                                         # the wait changes al and dx only, as the game's
+            self.assertEqual((at, dict(regs, AX=regs['AX'] & 0xff00, DX=0)), (0x50, dict(kept, AX=0x1200, DX=0)))
+        self.int60(uc, 2)                                               # stopped: as the game again
+        self.assertEqual([self.wait(uc)[0] for _ in range(5)], [1] * 5)
+        uc = self.machine(make_amiga_music.tune_module('intro', (0, 1, 0, 1)))
+        self.int60(uc, 0)
+        self.assertEqual([self.wait(uc)[0] for _ in range(6)], [1] * 6)
+        uc = self.machine(make_amiga_music.tune_module('intro', (1, 1, 0, 1)))
+        self.int60(uc, 0)
+        self.assertEqual([self.wait(uc)[0] for _ in range(6)], [2] * 6)
+        for bad in ((3, 2, 0, 1), (1, 2, 5, 5), (1, 2, 1, 200)):
+            with self.assertRaises(ValueError):
+                make_amiga_music.tune_module('intro', bad)
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_tick_slows_the_bios_clock_while_the_tune_plays(self):
+        import make_amiga_music, patches
+        divider = self.REGS['DS'] * 16 + patches.INTR_TIMER_DIVIDER     # the tick is called with INTR.EXE's ds
+        def bios_ticks(uc, ticks):
+            """INTR.EXE's timer handler, `ticks` times: the module's tick, then one off the count; at 0 the BIOS
+            gets its tick and the count is 3 again."""
+            n = 0
+            for _ in range(ticks):
+                self.assertEqual(self.int60(uc, 1)[0], [])
+                left = int.from_bytes(uc.mem_read(divider, 2), 'little') - 1
+                if left == 0:
+                    n, left = n + 1, 3
+                uc.mem_write(divider, left.to_bytes(2, 'little'))
+            return n
+        uc = self.machine(make_amiga_music.tune_module('intro', (0, 1, 11, 36)))
+        uc.mem_write(divider, (3).to_bytes(2, 'little'))
+        self.assertEqual(bios_ticks(uc, 108), 36)                       # not playing: every third tick, as the game
+        self.int60(uc, 0)
+        self.assertEqual(bios_ticks(uc, 108), 25)                       # 11 of every 36 held back: 1.44 times slower
+        self.assertEqual(bios_ticks(uc, 108), 25)
+        self.int60(uc, 2)
+        self.assertEqual(bios_ticks(uc, 108), 36)
+        self.int60(uc, 0)
+        uc.mem_write(divider, (500).to_bytes(2, 'little'))              # not INTR.EXE's count: left alone
+        for _ in range(72):
+            self.int60(uc, 1)
+        self.assertEqual(int.from_bytes(uc.mem_read(divider, 2), 'little'), 500)
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_skip_keys_work_with_our_tune_module(self):
+        import make_amiga_music, patches
+        uc = self.machine(make_amiga_music.tune_module('intro', (1, 1, 0, 1)))
+        self.int60(uc, 0)
+        self.assertEqual([self.wait(uc)[:2] for _ in range(2)], [(2, 0x50)] * 2)
+        self.press_at = self.reads[0] + 4                               # a key goes down during a call's second retrace
+        self.assertEqual(self.wait(uc)[:2], (2, 0x50))
+        n, at, regs = self.wait(uc)                                     # the next call leaves through the intro's
+        self.assertEqual((n, at, regs['DS'], regs['SP']),               # own shutdown, as K9 does for the DOS tunes
+                         (0, 0x00d1, self.S + patches.INTR_DATA_SEG, patches.INTR_STACK_TOP))
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_our_tune_starts_in_the_first_sequence_as_on_the_amiga(self):
+        """The first sequence's stage test (0000:0D76) calls the cave: at stage 4 our module's tune starts there; a
+        DOS tune (or none) is left to start at 0000:008B, as the game does, and the registers are kept."""
+        from unicorn import UC_HOOK_INTR
+        import unicorn.x86_const as x
+        import make_amiga_music, patches
+        code, relocs, entries = patches._intr_cave()
+        self.assertEqual(patches._intr_skip_code(), (code, relocs))
+        dos_tune = bytes.fromhex('1e538ccb8edb80fc') + bytes(64)
+        for module, stage, starts in ((make_amiga_music.tune_module('intro'), 4, [0x0034]),
+                                      (make_amiga_music.tune_module('intro'), 3, []),
+                                      (make_amiga_music.tune_module('intro'), 5, []),
+                                      (dos_tune, 4, []), (bytes(64), 4, [])):
+            with self.subTest(module=module[:3].hex(), stage=stage):
+                uc = self.machine(module)
+                calls = []
+                uc.hook_add(UC_HOOK_INTR, lambda uc, n, user: calls.append((n, uc.reg_read(x.UC_X86_REG_AX))))
+                uc.mem_write(self.REGS['DS'] * 16 + patches.INTR_STAGE, stage.to_bytes(2, 'little'))
+                back = self.S * 16 + patches.INTR_STAGE_TEST + 5            # after the far call
+                at, regs = self.run_code(uc, self.MOD, patches.INTR_CAVE_OFF + entries['stage'],
+                                         [patches.INTR_STAGE_TEST + 5, self.S], {back})
+                self.assertEqual([ax for n, ax in calls if n == 0x60], starts)
+                self.assertEqual([n for n, ax in calls if n != 0x60], [])
+                self.assertEqual(regs, dict(self.REGS, SP=0xff00))
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_second_pace_takes_over_after_its_ticks(self):
+        import make_amiga_music, patches
+        divider = self.REGS['DS'] * 16 + patches.INTR_TIMER_DIVIDER
+        def ticks(uc, k):                                               # INTR.EXE's timer -> BIOS ticks passed on
+            n = 0
+            for _ in range(k):
+                self.int60(uc, 1)
+                left = int.from_bytes(uc.mem_read(divider, 2), 'little') - 1
+                if left == 0:
+                    n, left = n + 1, 3
+                uc.mem_write(divider, left.to_bytes(2, 'little'))
+            return n
+        uc = self.machine(make_amiga_music.tune_module('intro', (0, 1, 0, 1, 72, 1, 1, 11, 36)))
+        uc.mem_write(divider, (3).to_bytes(2, 'little'))
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [1] * 3)     # not playing
+        self.int60(uc, 0)
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [1] * 3)     # the first pace: none
+        self.assertEqual(ticks(uc, 71), 23)                             # every third tick, as the game
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [1] * 3)
+        self.assertEqual(ticks(uc, 1), 1)                               # the 72nd: the second pace takes over
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [2] * 3)
+        self.assertEqual((ticks(uc, 108), ticks(uc, 108)), (25, 25))    # 11 of every 36 held back
+        self.int60(uc, 0)                                               # a start while playing: no change
+        self.assertEqual([self.wait(uc)[0] for _ in range(2)], [2] * 2)
+        self.int60(uc, 2)
+        self.int60(uc, 0)                                               # started again: the first pace again
+        self.assertEqual([self.wait(uc)[0] for _ in range(2)], [1] * 2)
+        self.assertEqual(make_amiga_music.paces((2, 5, 41, 91)), ((2, 5, 41, 91), 0, (2, 5, 41, 91)))
+        for bad in ((1, 2, 0, 1, 70000, 1, 1, 0, 1), (1, 2, 0, 1, 5, 3, 2, 0, 1), (1, 2, 0, 1, 5)):
+            with self.assertRaises(ValueError):
+                make_amiga_music.tune_module('intro', bad)
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_a_second_start_while_the_tune_plays_does_nothing(self):
+        import make_amiga_music, patches
+        uc = self.machine(make_amiga_music.tune_module('intro', (1, 2, 0, 1)))
+        first, regs = self.int60(uc, 0)
+        self.assertEqual(len(first), 1 + 22 + 6)                       # UART mode, the setup and the notes
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [1, 2, 1])
+        again, regs2 = self.int60(uc, 0)                                # the game's own start at 0000:008B
+        self.assertEqual((again, regs2), ([], regs))
+        self.assertEqual([self.wait(uc)[0] for _ in range(3)], [2, 1, 2])  # the pace goes on where it was
+        self.int60(uc, 2)
+        self.assertEqual(self.int60(uc, 0)[0], first)                   # stopped: a start starts again
+
+    def key(self, uc, scan, down=True, mode=0):
+        """INTR.EXE's keyboard handler (0000:4774) gets `scan` (pressed or released) and stores it through the cave."""
+        import patches
+        uc.mem_write(self.S * 16 + patches.INTR_MODE, mode.to_bytes(2, 'little'))
+        back = self.S * 16 + patches.INTR_KEY_STORE + 5
+        at, regs = self.run_code(uc, self.MOD, patches.INTR_CAVE_OFF + patches._intr_cave()[2]['key'],
+                                 [patches.INTR_KEY_STORE + 5, self.S], {back},
+                                 AX=(0x00 if down else 0xff) << 8 | scan, BX=scan)
+        self.assertEqual(regs, dict(self.REGS, AX=regs['AX'], BX=scan, SP=0xff00))     # ds kept
+        return uc.mem_read(self.S * 16 + patches.KEY_STATE_TABLE + scan, 1)[0]
+
+    def noted(self, uc):
+        import patches
+        return uc.mem_read(self.MOD * 16 + patches.INTR_CAVE_OFF + patches._intr_cave()[2]['latch'], 1)[0]
+
+    def frame(self, uc):
+        """The start of a frame of the scenes' frame loops (0000:021F, its tick set at 0228) -> where it went."""
+        import patches
+        back = self.S * 16 + patches.INTR_FRAME_SET + 5
+        at, regs = self.run_code(uc, self.MOD, patches.INTR_CAVE_OFF + patches._intr_cave()[2]['frame'],
+                                 [patches.INTR_FRAME_SET + 5, self.S], {back, self.S * 16 + 0x00d1}, AX=500)
+        return at - self.S * 16, regs
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_keyboard_handler_notes_a_fresh_press(self):
+        """The intro skips with any key but Ctrl, Alt, Shift and the lock keys, the ending with Enter, Space or Esc; a key's repeat
+        (a press while it is held) and a release are not a press; the key state table is kept as the game keeps it."""
+        import make_amiga_music
+        for mode, keys in ((0, {0x1c: 1, 0x39: 1, 0x01: 1, 0x1e: 1, 0x3b: 1, 0x4d: 1, 0x1d: 0, 0x38: 0, 0x2a: 0, 0x36: 0, 0x3a: 0, 0x45: 0, 0x46: 0}),
+                           (0x0101, {0x1c: 1, 0x39: 1, 0x01: 1, 0x1e: 0, 0x3b: 0, 0x4d: 0, 0x1d: 0, 0x38: 0})):
+            for scan, skips in keys.items():
+                with self.subTest(mode=mode, scan=hex(scan)):
+                    uc = self.machine(make_amiga_music.tune_module('intro'))
+                    self.assertEqual(self.key(uc, scan, down=False, mode=mode), 0xff)   # a release: nothing noted
+                    self.assertEqual(self.noted(uc), 0)
+                    self.assertEqual(self.key(uc, scan, mode=mode), 0x00)              # pressed: held in the table
+                    self.assertEqual(self.noted(uc), skips)
+        uc = self.machine(make_amiga_music.tune_module('intro'))
+        uc.mem_write(self.S * 16 + 0x46f3 + 0x1c, b'\x00')                         # Enter held already
+        self.assertEqual((self.key(uc, 0x1c), self.noted(uc)), (0x00, 0))          # its repeat is not a press
+        self.assertEqual((self.key(uc, 0x1c, down=False), self.key(uc, 0x1c), self.noted(uc)), (0xff, 0x00, 1))
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_a_press_skips_from_frame_loops_and_the_first_sequence(self):
+        import make_amiga_music, patches
+        dos_tune = bytes.fromhex('1e538ccb8edb80fc') + bytes(64)
+        stage = patches.INTR_CAVE_OFF + patches._intr_cave()[2]['stage']
+        shutdown = (0x00d1, self.S + patches.INTR_DATA_SEG, patches.INTR_STACK_TOP)
+        for module in (make_amiga_music.tune_module('intro'), dos_tune):
+            with self.subTest(module=module[:3].hex()):
+                uc = self.machine(module)
+                at, regs = self.frame(uc)                                   # no press: the tick as the game sets it
+                self.assertEqual((at, regs), (patches.INTR_FRAME_SET + 5, dict(self.REGS, AX=502, SP=0xff00)))
+                self.assertEqual(uc.mem_read(self.REGS['DS'] * 16 + 0x4103, 2), (502).to_bytes(2, 'little'))
+                self.key(uc, 0x1e)                                          # A, in the intro
+                at, regs = self.frame(uc)
+                self.assertEqual((at, regs['DS'], regs['SP']), shutdown)
+                self.assertEqual([self.wait(uc)[1] for _ in range(2)], [0x50] * 2)   # skipping: not again
+                uc = self.machine(module)
+                self.key(uc, 0x39)
+                at, regs = self.run_code(uc, self.MOD, stage, [patches.INTR_STAGE_TEST + 5, self.S],
+                                         {self.S * 16 + patches.INTR_STAGE_TEST + 5, self.S * 16 + 0x00d1})
+                self.assertEqual((at - self.S * 16, regs['DS'], regs['SP']), shutdown)
+                uc = self.machine(module)
+                self.key(uc, 0x1c)
+                n, at, regs = self.wait(uc)
+                self.assertEqual((n, at, regs['DS'], regs['SP']), (0,) + shutdown)
+        uc = self.machine(bytes(64))                                        # no module loaded yet: the press waits
+        self.key(uc, 0x1c)
+        self.assertEqual((self.frame(uc)[0], self.wait(uc)[:2]), (patches.INTR_FRAME_SET + 5, (1, 0x50)))
+        uc.mem_write(self.MOD * 16, dos_tune)                               # loaded: the next frame skips
+        self.assertEqual(self.frame(uc)[0], 0x00d1)
+
+    @unittest.skipUnless(has_unicorn(), 'the package unicorn')
+    def test_k9_puts_the_stage_test_on_the_cave(self):
+        import patches, unexepack
+        image = bytearray(0x4920 + 0x2500)
+        image[0x0f9e:0x0fae] = bytes.fromhex('bada0390eca80875fb90eca80874fbc3')
+        image[0x0d76:0x0d80] = bytes.fromhex('833e620104' '7503' 'e86bfb')
+        image[0x0228:0x022f] = bytes.fromhex('4040a3034107c3')
+        image[0x477f:0x4786] = bytes.fromhex('8ac42e8887f346')
+        image[0x4920 + 0x2402:0x4920 + 0x2406] = b'\x01\x02\x03\x04'    # the image's bytes after the cave
+        exe = unexepack.build_mz(bytes(image), [(0x10, 0)], 0, 0, 0x6d2, 0x800, 0x100)
+        out = patches.patch_intr_skip(exe)
+        h = struct.unpack('<14H', out[:28])
+        new = out[h[4] * 16:]
+        relocs = {struct.unpack('<HH', out[h[12] + 4 * i:h[12] + 4 * i + 4]) for i in range(h[3])}
+        code, code_relocs, entries = patches._intr_cave()
+        at = patches.INTR_CAVE_OFF + entries['stage']
+        self.assertEqual(new[0x0d76:0x0d80], bytes([0x9a, at & 0xff, at >> 8, 0x92, 0x04]) + b'\x90' * 5)   # call far 0492:
+        at = patches.INTR_CAVE_OFF + entries['key']
+        self.assertEqual(new[0x477f:0x4786], bytes([0x9a, at & 0xff, at >> 8, 0x92, 0x04]) + b'\x90' * 2)
+        at = patches.INTR_CAVE_OFF + entries['frame']
+        self.assertEqual(new[0x0228:0x022f], bytes([0x9a, at & 0xff, at >> 8, 0x92, 0x04, 0x07, 0xc3]))
+        for word in (0x0d79, 0x4782, 0x022b, 0x0fa1):
+            self.assertIn((word & 0xf, word >> 4), relocs)
+        self.assertEqual(new[0x0f9e:0x0fa4], bytes.fromhex('ea00239204c3'))
+        self.assertEqual(new[0x4920 + 0x2300:0x4920 + 0x2300 + len(code)], code)
+        self.assertEqual(new[0x4920 + 0x2402:0x4920 + 0x2406], b'\x01\x02\x03\x04')
+        self.assertLessEqual(len(code), 0x102)
+        self.assertEqual(len(relocs), 1 + 4 + len(code_relocs))
+        image[0x0d7d] = 0xe9                                            # not the GOG INTR.EXE
+        with self.assertRaises(ValueError):
+            patches.patch_intr_skip(unexepack.build_mz(bytes(image), [], 0, 0, 0x6d2, 0x800, 0x100))
+
+    # --- the sound ----------------------------------------------------------------------------------------------------
+    @unittest.skipUnless(has_numpy(), 'the package numpy')
+    def test_paula_plays_a_modules_sample_once_and_then_its_loop(self):
+        import numpy as np
+        import make_amiga_audio as audio
+        class Channel:
+            stop, cur_vol, rate = False, 64, float(audio.RATE)          # one sample of the instrument a sample
+        pcm = np.arange(1, 41, dtype=np.float32) / 64
+        def played(frames, **instrument):
+            ch, paula, out = Channel(), audio.Paula(), []
+            ch.ins = dict(pcm=pcm, **instrument)
+            for k, n in enumerate(frames):
+                ch.trigger = k == 0
+                out.append(paula.frame(ch, n))
+            return [int(round(v * 64)) for v in np.concatenate(out)]
+        # an effect's instrument: to its end, then 30-39 again and again
+        self.assertEqual(played((25, 35), looped=True, loop=30), list(range(1, 41)) + [31 + k % 10 for k in range(20)])
+        # a module's: 0-19 once, then 8-11
+        self.assertEqual(played((7, 17, 12), looped=True, loop=8, first=20, end=12),
+                         list(range(1, 21)) + [9 + k % 4 for k in range(16)])
+        self.assertEqual(played((50,), looped=False, loop=0), list(range(1, 41)) + [0] * 10)     # a one-shot stops
+
+    @unittest.skipUnless(has_numpy(), 'the package numpy')
+    def test_tune_becomes_a_left_and_a_right_looped_sample(self):
+        import numpy as np
+        import amiga_module, make_amiga_audio as audio, soundfont
+        left, right, loop, seconds = audio.tune_sides(tune_test_module(), amiga_module.equal_periods())
+        per_tick = audio.RATE // amiga_module.TICK_HZ
+        self.assertEqual(seconds, 24 / 50)
+        self.assertEqual(loop, (6 * per_tick, 24 * per_tick))           # the test tune comes round to its tick 6
+        self.assertEqual((len(left), len(right)), (24 * per_tick + audio.LOOP_TAIL,) * 2)
+        self.assertTrue(np.array_equal(left[loop[1]:], left[loop[0]:loop[0] + audio.LOOP_TAIL]))
+        # channels 0 and 3 are the left, 1 and 2 the right: channel 2 starts at tick 15, channel 1 at tick 0
+        self.assertGreater(np.abs(left[:per_tick]).max(), 0.3)
+        self.assertGreater(np.abs(right[:per_tick]).max(), 0.1)
+        self.assertLessEqual(max(np.abs(left).max(), np.abs(right).max()), 2 * amiga_module.TUNE_LEVEL)
+        with tempfile.TemporaryDirectory() as folder:
+            font = Path(folder) / 'f.sf2'
+            sounds = [(0, 20, 'effect', left[:1000], audio.RATE, None), (2, 21, 'part', left, audio.RATE, loop),
+                      (amiga_module.TUNE_PRESET, 40, 'tune', left, audio.RATE, loop, audio.TUNE_RELEASE)]
+            soundfont.write(str(font), sounds, 'Moonstone', cut=True)
+            data = font.read_bytes()
+            at = data.index(b'igen')
+            gens = data[at + 8:at + 8 + int.from_bytes(data[at + 4:at + 8], 'little')]
+            releases = [struct.unpack('<h', gens[k + 2:k + 4])[0] for k in range(0, len(gens), 4)
+                        if struct.unpack('<H', gens[k:k + 2])[0] == soundfont.RELEASE]
+            self.assertEqual(releases, [8000, -7000, -2084])            # one-shot, loop (17 ms), the tune (0.3 s)
+
+    @unittest.skipUnless(has_numpy(), 'the package numpy')
+    def test_font_without_disk_1_has_no_tunes(self):
+        import make_amiga_audio as audio
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(audio.tune_sounds(folder), ([], ''))
+            font = Path(folder) / 'amiga.sf2'
+            (Path(folder) / 'amiga.tunes').write_text('x')
+            audio.write_marker(str(font), audio.TUNES_MARKER, False, 'intro and ending tunes')
+            self.assertFalse((Path(folder) / 'amiga.tunes').exists())
+            audio.write_marker(str(font), audio.TUNES_MARKER, True, 'intro and ending tunes')
+            self.assertIn('amiga.sf2 has the Amiga intro and ending tunes', (Path(folder) / 'amiga.tunes').read_text())
+        # a module the player cannot play costs the tunes, not the effects' SoundFont
+        import amiga_module
+        broken = ('disk.adf', {'intro': b'short', 'ending': b'short'}, amiga_module.equal_periods())
+        with patch.object(amiga_module, 'read_disk', return_value=broken):
+            sounds, note = audio.tune_sounds('anywhere')
+        self.assertEqual((sounds, note), ([], '; no intro and ending tunes: not a module (too short)'))
+        with patch.object(amiga_module, 'read_disk', return_value=('disk.adf', {}, None)):
+            self.assertEqual(audio.tune_sounds('anywhere')[0], [])      # `program` is not the known file
+
+
+@unittest.skipUnless(os.name == 'nt', 'Windows batch files')
+class AmigaTuneSwitches(unittest.TestCase):
+    """D87: which intro and ending tune files Start.bat puts in DISKA, for each combination of the switches."""
+    SETS = SoundSwitches.SETS
+    run_bat = Launchers.run_bat
+    switch = SoundSwitches.switch
+
+    def game(self, flag=True, tunes=('amiga', 'amiga_gm')):
+        game = SoundSwitches.game(self)
+        for name in ('AmigaMusic_On.bat', 'AmigaMusic_Off.bat'):
+            shutil.copyfile(ROOT / name, game / name)
+        amiga = game / '_music' / 'amiga'
+        for music_set in SoundSwitches.SETS:
+            (game / '_music' / music_set / 'DISKA' / 'ATUNE6.BIN').write_text(music_set)
+            (amiga / music_set).mkdir()
+            for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'):
+                (amiga / music_set / tune).write_text('muted ' + music_set)
+        (amiga / 'font').mkdir()
+        for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'):
+            (amiga / 'font' / tune).write_text('font')
+        (amiga / 'intro.wav').write_bytes(b'W')
+        for name in tunes:
+            (amiga / f'{name}.tunes').write_text('x')
+        if flag:
+            (game / 'AMIGA.FLG').write_text('amiga')
+        return game
+
+    def start(self, game):
+        code, out = self.run_bat(game, 'Start.bat')
+        self.assertEqual(code, 0, out)
+        return tuple((game / 'DISKA' / tune).read_text() for tune in ('ATUNE1.BIN', 'ATUNE6.BIN'))
+
+    def test_font_tunes_with_the_amiga_effects(self):
+        game = self.game()
+        self.switch(game, 'Music_AdLib.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        self.assertEqual(self.start(game), ('font', 'font'))
+        self.switch(game, 'Music_GM.bat')                    # GM music with the effects: the merged font's marker
+        self.assertEqual(self.start(game), ('font', 'font'))
+        (game / '_music' / 'amiga' / 'amiga_gm.tunes').unlink()     # a merged font without the tunes: the older way
+        self.assertEqual(self.start(game), ('muted gm_amiga',) * 2)
+        self.switch(game, 'Music_AdLib.bat')                 # AdLib music plays from amiga.sf2, which has them
+        self.assertEqual(self.start(game), ('font', 'font'))
+        (game / '_music' / 'amiga' / 'amiga.tunes').unlink()
+        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+
+    def test_older_player_in_every_other_case(self):
+        game = self.game()
+        for music, tunes in (('Music_AdLib.bat', 'adlib'), ('Music_GM.bat', 'gm'), ('Music_MT32.bat', 'mt32')):
+            with self.subTest(music=music):
+                self.switch(game, music)                     # the DOS effects (MT-32 music turns the Amiga ones off)
+                self.assertEqual(self.start(game), ('muted ' + tunes,) * 2)
+        self.switch(game, 'Music_AdLib.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        (game / 'ORIGINAL.FLG').write_text('original')       # original mode: INTR.EXE does not pace the pictures
+        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+        (game / 'ORIGINAL.FLG').unlink()
+        self.assertEqual(self.start(game), ('font', 'font'))
+        self.switch(game, 'AmigaSound_Off.bat')              # the effects off again: the font modules must not stay
+        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+
+    def test_font_modules_never_stay_without_the_switch(self):
+        game = self.game()
+        self.switch(game, 'Music_AdLib.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        self.assertEqual(self.start(game), ('font', 'font'))
+        (game / 'AMIGA.FLG').unlink()                        # deleted by hand: the DOS tunes of the set come back
+        self.assertEqual(self.start(game), ('adlib', 'adlib'))
+        (game / 'AMIGA.FLG').write_text('amiga')
+        self.assertEqual(self.start(game), ('font', 'font'))
+        self.switch(game, 'AmigaMusic_Off.bat')
+        self.assertFalse((game / 'AMIGA.FLG').exists())
+        self.assertEqual(self.start(game), ('adlib', 'adlib'))
+        (game / '_music' / 'amiga' / 'intro.wav').unlink()   # no WAV files (no VLC): the switch still turns on
+        self.switch(game, 'AmigaMusic_On.bat')
+        self.assertEqual(self.start(game), ('font', 'font'))
+
+    def test_no_font_modules_is_as_before(self):
+        game = self.game()
+        shutil.rmtree(game / '_music' / 'amiga' / 'font')
+        self.switch(game, 'Music_AdLib.bat')
+        self.switch(game, 'AmigaSound_On.bat')
+        self.assertEqual(self.start(game), ('muted adlib',) * 2)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

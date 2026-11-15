@@ -5,10 +5,11 @@ velocity 127. A one-shot plays to its end whatever happens to the key; a looping
 points until the note-off.
 
 sounds: [(preset number, key, name, samples as numpy floats -1..1, rate in Hz, loop)], loop = None for a one-shot or
-(first sample of the loop, sample after its end). write(path, sounds, name) makes one preset per preset number
+(first sample of the loop, sample after its end). A seventh item, if there, is the release in seconds after the
+note-off (the intro and ending tunes: a soft stop). write(path, sounds, name) makes one preset per preset number
 (in bank `bank`, AMIGA_BANK unless told otherwise) and returns nothing. With cut=True every sound is in one exclusive class: a new note on a MIDI channel
 stops the sound that channel was playing, as a new sound does on an Amiga channel."""
-import struct
+import math, struct
 import numpy as np
 
 # D82: the bank of the Amiga presets, in the plain amiga.sf2 and in the font merged with a GM one
@@ -40,7 +41,9 @@ def write(path, sounds, name='Moonstone', cut=False, bank=AMIGA_BANK):
         pbag += struct.pack('<HH', len(pgen) // 4, 0)
         pgen += struct.pack('<HH', INSTRUMENT, inst_no)
         inst += _name(f'{name} {preset}') + struct.pack('<H', len(ibag) // 4)
-        for _, key, sname, x, rate, loop in (s for s in sounds if s[0] == preset):
+        for sound in (s for s in sounds if s[0] == preset):
+            _, key, sname, x, rate, loop = sound[:6]
+            release = int(round(1200 * math.log2(sound[6]))) if len(sound) > 6 else 8000 if not loop else -7000
             pcm = np.clip(np.asarray(x, dtype=np.float64) * 32767, -32768, 32767).astype('<i2')
             start = len(smpl) // 2
             smpl += pcm.tobytes() + bytes(2 * 46)                  # 46 zero samples after each, as the format asks
@@ -50,7 +53,7 @@ def write(path, sounds, name='Moonstone', cut=False, bank=AMIGA_BANK):
             igen += struct.pack('<HBB', KEY_RANGE, key, key)
             igen += struct.pack('<Hh', FILTER_FC, 13500)           # the filter fully open, whatever the velocity
             igen += struct.pack('<Hh', ROOT_KEY, key)
-            igen += struct.pack('<Hh', RELEASE, 8000 if not loop else -7000)   # one-shot: let it finish; loop: 17 ms
+            igen += struct.pack('<Hh', RELEASE, release)           # one-shot: let it finish; loop: 17 ms
             igen += struct.pack('<Hh', SAMPLE_MODES, 1 if loop else 0)
             if cut: igen += struct.pack('<Hh', EXCLUSIVE_CLASS, 1)
             igen += struct.pack('<HH', SAMPLE_ID, sample_no)

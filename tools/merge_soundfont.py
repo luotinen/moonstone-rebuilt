@@ -228,6 +228,13 @@ def update_install(install):
         return 'not made: ' + ('no GM SoundFont in soundfonts' if not gm else 'the Amiga effects are not built')
     out = os.path.join(install, MERGED)
     made = update(gm, amiga, out)
+    # D87: amiga_gm.tunes says the merged font has the intro and ending tunes, as amiga.tunes says of amiga.sf2
+    marker, has = os.path.splitext(out)[0] + '.tunes', os.path.exists(os.path.splitext(amiga)[0] + '.tunes')
+    if has:
+        with open(marker, 'w', newline='\r\n') as f:
+            f.write('amiga_gm.sf2 has the Amiga intro and ending tunes (built from your own Amiga disk images)\n')
+    elif os.path.exists(marker):
+        os.remove(marker)
     return (f'{"made" if made else "up to date"} from {os.path.basename(gm)} and amiga.sf2, '
             f'{os.path.getsize(out) / 1e6:.1f} MB')
 

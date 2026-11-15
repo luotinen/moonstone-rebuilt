@@ -16,7 +16,8 @@ Only files from the user's installation are used; nothing of the original game i
    custom_rules.ini (tools/rules.py) again if CUSTOM_RULES.FLG exists (Custom_rules_on.bat). custom_rules.ini is
    checked right after the GOG files, so a bad value stops the setup before anything here changes; if the rules
    still cannot be applied, custom rules are turned off (the default set stays installed) and the setup fails.
-6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music (needs VLC once).
+6. If amiga/Moonstone_Disk1.adf exists, sets up the Amiga intro and ending music: the tune modules that play it
+   from the SoundFont of step 7 (D87), and for the older player (D8) WAV files, if VLC is installed.
 7. Builds the Amiga version's sound effects (_music/amiga/amiga.sf2; needs the Python package numpy): from the
    images of all three Amiga disks if the amiga folder holds them, else from the DOS game's own samples and the
    substitute sounds in sounds/ (tools/sound_programs.json). AmigaSound_On.bat turns them on. Then merges the GM
