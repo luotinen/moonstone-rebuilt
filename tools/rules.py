@@ -19,6 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from patches import PATCHES, image_offset
 
+DEBUG = 'Debug'                                     # the debug aids' section, the ini's last
+DEBUG_SETTINGS = {'dragon_debug_mode', 'input_log', 'pointer_coordinates'}
 SECTIONS = ['Knight1_blue', 'Knight2_orange', 'Knight3_green', 'Knight4_red', 'Black']
 WEAPONS = {'long_sword': 0x16, 'broadsword': 0x17, 'claymore': 0x18, 'sword_of_sharpness': 0x19}
 ARMOUR_MOVE_DEFAULT = (0, -1, -2, -4)                  # D37: each armour's movement with horses on (a knight's movement: endurance * 2 + 4 + this)
@@ -359,6 +361,7 @@ HOOKS = [
     (0x0d59, 'e89d82', 'horse_town_w'), (0x0e14, 'e8cb81', 'horse_town_h'),   # D40: slot 4 is rolled as a town is entered
     (0xc3be, 'e8beb9', 'gold5'), (0xb32b, 'e851ca', 'gold5'), (0xbdcb, 'e8b1bf', 'gold5'), (0x0bbe, '014432', 'gold_add'),   # D41
     (0xb316, 'e8c2e5', 'tavern_loop'), (0xb423, 'e8b0fd', 'dice_roll'), (0x0de7, 'e8d04d', 'tavern_left'), (0x0e96, 'e8214d', 'tavern_left'),   # D80: LOADEDDICE
+    (0xb3a4, 'e8da22', 'tavern_click'),                 # D86: the tavern's spots (cheat_codes = yes): gold, the scream
     (0x0e0e, 'e88698', 'town_exit'),                    # D79: max_gold as the town is left (gold noted by horse_town_w/_h)
     (0xb4c7, '014432', 'gold_add'),                     # D43, D79: the dice's wins, up to 32767 until the town is left
     (0xb491, '8b4432', 'gold999'), (0xb4e3, '8b4432', 'gold999'),   # D41: the dice result's three-character field
@@ -577,13 +580,14 @@ def read_ini(path):
     r['moon_days'] = _get(cp, g, 'moon_days', int, *rb['moon_days'])
     r['deaths'] = _get(cp, g, 'death_animations', _choice(DEATHS)) if cp.has_option(g, 'death_animations') else 0
     r['gore'] = _get(cp, g, 'gore', _choice(GORE_LEVELS)) if cp.has_option(g, 'gore') else GORE_LEVELS['on']   # D76
-    r['dragon_debug'] = _get(cp, g, 'dragon_debug_mode', int, 0, 1) if cp.has_option(g, 'dragon_debug_mode') else 0
+    dbg = lambda key: DEBUG if cp.has_option(DEBUG, key) else g   # debug aids: [Debug], in an older ini [Rules]
+    r['dragon_debug'] = _get(cp, dbg('dragon_debug_mode'), 'dragon_debug_mode', int, 0, 1) if cp.has_option(dbg('dragon_debug_mode'), 'dragon_debug_mode') else 0
     r['input_buffer'] = _get(cp, g, 'input_buffer', _onoff) if cp.has_option(g, 'input_buffer') else 1
     r['input_chord'] = (_get(cp, g, 'input_chord', int, 0, 6) if cp.has_option(g, 'input_chord')
                         else INPUT_CHORD_DEFAULT)
     r['input_recent'] = (_get(cp, g, 'input_recent_direction', int, 0, 6) if cp.has_option(g, 'input_recent_direction')
                          else INPUT_RECENT_DEFAULT)
-    r['input_log'] = _get(cp, g, 'input_log', _onoff) if cp.has_option(g, 'input_log') else 0
+    r['input_log'] = _get(cp, dbg('input_log'), 'input_log', _onoff) if cp.has_option(dbg('input_log'), 'input_log') else 0
     r['coop_lairs'] = (_get(cp, g, 'coop_lairs', _choice(dict(COOP_MODES, on=1))) if cp.has_option(g, 'coop_lairs')
                        else COOP_DEFAULT)
     r['coop_extra'] = (_get(cp, g, 'extra_loot_per_knight', int, 0, 100) if cp.has_option(g, 'extra_loot_per_knight')
@@ -605,7 +609,8 @@ def read_ini(path):
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
     r['hardcore'] = _get(cp, g, 'hardcore_autosave_mode', _onoff) if cp.has_option(g, 'hardcore_autosave_mode') else 1   # D78
-    r['pointer_xy'] = _get(cp, g, 'pointer_coordinates', _onoff) if cp.has_option(g, 'pointer_coordinates') else 0   # D84
+    r['pointer_xy'] = (_get(cp, dbg('pointer_coordinates'), 'pointer_coordinates', _onoff)   # D84
+                       if cp.has_option(dbg('pointer_coordinates'), 'pointer_coordinates') else 0)
     r['selling'] = _get(cp, g, 'merchant_selling', _onoff)
     r['xp_per_stat'] = [_get(cp, g, f'xp_per_stat_{n}_player{"s" if n > 1 else ""}', int, *rb['xp_per_stat'])
                         for n in (1, 2, 3, 4)]
@@ -722,6 +727,7 @@ def read_ini(path):
                 | {f'band{n}_chance' for n in range(1, MYTHRAL_BANDS + 1)},
              mo: monster_keys,
              'Parental': {'age_rating'},
+             DEBUG: DEBUG_SETTINGS,
              'Practice': {f'key{k}' for k in PRACTICE_KEYS} | {'team_knight_hits', 'coop_knight_hits', 'coop_dagger_hits', 'monster_target',
                             'target_switch_margin'},
              **{sec: knight_keys | {'home_village'} for sec in SECTIONS[:-1]},

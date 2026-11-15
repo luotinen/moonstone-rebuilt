@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+* The tavern's buttons react where they are drawn (D85): the bets and Exit were partly beside their pictures. **Run Setup.bat again.**
+* Three secret spots in the tavern's picture (D86; custom rules with `cheat_codes = yes`): gold up to 999, +10 gold, and a scream. See CHEATS.md.
+* SOUNDS.html, for modders: Setup now makes a page in the game folder where every sound effect can be heard, named as the game names it: the sound ids (the numbers the code asks for) with their sample, rate and part, the sample files, and Rebuilt's substitute sounds. It is made from your own copy of the game, so keep it to yourself; `tools/make_sound_page.py` makes it again.
+* The debug aids `dragon_debug_mode`, `input_log` and `pointer_coordinates` are now in a section of their own, `[Debug]`, at the end of the custom rules file. An older file with them in `[Rules]` still works.
+
 ## 0.9.1 – Amiga location music, GM music with Amiga effects and first-menu options
 
 * Pointer coordinates (D84; custom rules, `pointer_coordinates = on`, off by default): a debug aid. On the screens with a mouse pointer (the towns, the tavern, the shops) the pointer's x and y are shown next to it, and the point where a click counts is marked with one pixel. For reporting a button that reacts in the wrong place.

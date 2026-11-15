@@ -433,6 +433,18 @@ PATCHES = {
                   ((0x1000, 0x00df), bytes.fromhex('e9cea3'), bytes.fromhex('cd6390')),
                   ((0x1000, 0xa410), bytes.fromhex('3bfe742a'), bytes.fromhex('cd639090'))],
     },
+    'D85': {
+        'title': 'The tavern\'s buttons where they are drawn (user\'s measurements with D84, 14 Nov 2026): the five bets '
+                 'reacted at x 268-310 and y 38/66/94/121/147 + 24 rows, Exit at x 268-312, y 181-196, partly off the '
+                 'drawn buttons (x 272-304). The gadgets the tavern makes (1000:B232-B2C0) are written again: x 272, '
+                 'width 33 for all, each bet its own y and height (TAVERN_BETS), Exit y 185, height 9. The four later '
+                 'bets and Exit change only the template\'s bytes that differ (byte moves, inc of the value), so the '
+                 'code fits in the same place',
+        'bytes': [((0x1000, 0xb232), bytes.fromhex(
+            'c7440a0c01c7440c2600c744042b00c744061800c744080000c7440e0100c744100100c744123200e8c223be30f4c7440c4200'
+            'c744100200e8b223be30f4c7440c5e00c744100300e8a223be30f4c7440c7900c744100400e89223be30f4c7440c9300c74410'
+            '0500e88223be30f4c7440a0c01c7440cb500c744042d00c744061000c7440e0200c744123200e85e23'), None)],
+    },
     'D83': {
         'title': 'One press, one gold in the donation screen of the healer and Mythral the Mystic (user report 14 Nov '
                  '2026): DonateLoop acted on fire held, a pass is about 3 frames, so a short press moved 2-4 gold. '
@@ -842,6 +854,34 @@ def _sound_patches():
     }
 
 PATCHES.update(_sound_patches())
+
+# D85: the tavern's gadgets (TavernSETUP fills the template DS:F430 and adds it with 1000:D61F), as measured with D84
+TAVERN_X, TAVERN_W = 272, 33                         # all six: x 272-304
+TAVERN_BETS = [(37, 26), (66, 25), (94, 23), (122, 24), (147, 25)]   # (y, height) of the bets 1-5
+TAVERN_EXIT = (185, 9)                               # y 185-193
+TAVERN_GADGETS_AT, TAVERN_GADGETS_END, GADGET_ADD = 0xb232, 0xb2c1, 0xd61f
+def _tavern_gadgets():
+    """D85: the code at 1000:B232-B2C0. The first bet as the game writes it (x, y, w, h, no handler, id 1, value 1, +12h
+    32h); then each entry changes only y and h (byte moves: both stay below 256) and the value (inc), Exit its id."""
+    code = bytearray()
+    def call_add():
+        code.extend(b'\xe8' + ((GADGET_ADD - (TAVERN_GADGETS_AT + len(code) + 3)) & 0xffff).to_bytes(2, 'little'))
+    y, h = TAVERN_BETS[0]
+    for off, v in ((0x0a, TAVERN_X), (0x0c, y), (0x04, TAVERN_W), (0x06, h), (0x08, 0), (0x0e, 1), (0x10, 1), (0x12, 0x32)):
+        code.extend(bytes((0xc7, 0x44, off)) + v.to_bytes(2, 'little'))     # mov word [si+off], v
+    call_add()
+    for y, h in TAVERN_BETS[1:] + [TAVERN_EXIT]:
+        code.extend(bytes((0xc6, 0x06, 0x3c, 0xf4, y, 0xc6, 0x06, 0x36, 0xf4, h)))   # mov byte [F43Ch], y / [F436h], h
+        if (y, h) == TAVERN_EXIT:
+            code.extend(bytes((0xc6, 0x06, 0x3e, 0xf4, 2)))                  # mov byte [F43Eh], 2   Exit's id
+        else:
+            code.extend(bytes((0xff, 0x06, 0x40, 0xf4)))                     # inc word [F440h]   the bet's value
+        call_add()
+    size = TAVERN_GADGETS_END - TAVERN_GADGETS_AT
+    if len(code) > size:
+        raise ValueError('D85: the tavern\'s gadgets do not fit')
+    return bytes(code) + b'\x90' * (size - len(code))
+PATCHES['D85']['bytes'] = [(w, old, _tavern_gadgets()) for w, old, new in PATCHES['D85']['bytes']]
 
 # --- INTR.EXE (intro and ending) -----------------------------------------------------------------------------------
 # K9: skip the intro (and ending) with Enter, Space or Esc. Every intro scene waits for vertical retrace in the routine

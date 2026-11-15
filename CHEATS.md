@@ -94,6 +94,16 @@ With one human knight in the fight:
 | SIRPICKSALOT | The Valley of the Gods opens with any number of keys, also none, on until typed again |
 | LOADEDDICE (or LOADEDDIE) | Loaded dice: every throw in the tavern's dice game wins, until the knight leaves the tavern. Also typed in the tavern itself, where it holds from the throw being made on. Which win comes is still random, at the game's own odds (a triple is rarer than a pair); the bet and the payout are the game's |
 
+## In the tavern (clicks on the picture)
+
+With `cheat_codes = yes`, a click on three spots of the tavern's picture (x, y as `pointer_coordinates` shows them, D86):
+
+| Spot | Effect |
+|---|---|
+| x 9-37, y 32-56 (top left) | Gold up to 999 (more is kept) |
+| x 189-229, y 50-69 | +10 gold (at most 32 767) |
+| x 139-161, y 31-41 | A scream (the Guardian's FEMSCR) |
+
 ## In the first menu
 
 | Code | Effect |
