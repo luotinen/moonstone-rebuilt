@@ -465,8 +465,8 @@ PLAYER_KEYS = ((0x1c, ((0x48, 8), (0x50, 4), (0x4b, 2), (0x4d, 1))), (0x0f, ((0x
 KEYS3_CONTROL, KEYS3_SECONDARY = 7, 0x31              # knight +9 for the third key set; its secondary button N
 KB3_OWN = (2, 1, KEYS3_CONTROL)                       # D70: players 1-3's own +9 (arrows, W A S D, I J K L)
 TURN_SITE, TURN_SOUND = 0xa63f, 0x0f                 # D7's int 65h; the game's menu sound (1000:D6E1)
-TC_999, TC_10, TC_SCREAM = (9, 32, 37, 56), (189, 50, 229, 69), (139, 31, 161, 41)   # D86: the tavern's spots, x0 y0 x1 y1
-TC_HELD, TC_SOUND = 3, 73                            # D86: ticks a held press repeats in; 73 = FEMSCR (the Guardian's scream)
+TC_999, TC_10 = (9, 32, 37, 56), (189, 50, 229, 69)   # D86: the tavern's spots, x0 y0 x1 y1
+TC_HELD = 3                                          # D86: ticks a held press repeats in
 SOUND, CHEAT_SOUND = 0x5970, 17                       # 1000:5970 plays a sound id; 17 = SWORDCL (a sword clash)
 HOLD_WAIT = 12                                        # first menu: these keys wait 12 ticks (2/3 s) for a code's next letter
 HOLD_KEYS = (0x20, 0x24, 0x22, 0x30, 0x19)                  # D (the dragon), J (joystick set-up), G (the Guardian), B (Black Knights), P (the practice Purple Knight, D46)
@@ -4823,14 +4823,8 @@ def rules_code(a):
     a.b(0x33, 0xc0, 0xc3)
     # tavern_click (D86; 1000:B3A4, the tavern's call D681, the click's hit test, ax = x, bx = y): with cheat_codes = yes,
     # a new press (the last one more than TC_HELD ticks before) on a spot of the picture: TC_999 makes gold at least 999,
-    # TC_10 adds 10 (up to 32767), TC_SCREAM plays the scream (the sound, then this site again: tc_again). None is on a
-    # button, so the hit test follows as before
+    # TC_10 adds 10 (up to 32767). Neither is on a button, so the hit test follows as before
     a.label('rules_tavern_click')
-    a.b(0x2e, 0x80, 0x3e); a.word('tc_again'); a.b(0x00); a.short(0x74, 'x86_new')
-    a.b(0x2e, 0xc6, 0x06); a.word('tc_again'); a.b(0x00)
-    a.b(0xa1, 0x92, 0xe4, 0x8b, 0x1e, 0x94, 0xe4, 0x89, 0x5e, 0xfe)   # mov ax, [E492h] / mov bx, [E494h] / the game's bx
-    a.near(0xe9, 'x86_call')
-    a.label('x86_new')
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_CHEATS); a.b(0x00); a.short(0x75, 'x86_on')
     a.near(0xe9, 'x86_call')
     a.label('x86_on')
@@ -4840,7 +4834,7 @@ def rules_code(a):
     a.short(0x77, 'x86_go'); a.near(0xe9, 'x86_pop')         # ja: a new press
     a.label('x86_go')
     a.b(0xa1, 0x92, 0xe4, 0x8b, 0x36, 0x94, 0xe4)            # mov ax, [E492h] / mov si, [E494h]
-    for n, (x0, y0, x1, y1) in enumerate((TC_999, TC_10, TC_SCREAM)):
+    for n, (x0, y0, x1, y1) in enumerate((TC_999, TC_10)):
         for reg, v, jcc in ((0xf8, x0, 0x72), (0xf8, x1, 0x77), (0xfe, y0, 0x72), (0xfe, y1, 0x77)):
             a.b(0x81, reg); a.b(*v.to_bytes(2, 'little')); a.short(jcc, f'x86_n{n}')   # cmp ax/si, v / jb, ja
         if n == 0:
@@ -4848,16 +4842,11 @@ def rules_code(a):
             a.b(0xc7, 0x44, 0x32, 0xe7, 0x03)                # mov word [si+32h], 999
             a.label('x86_999')
             a.b(0x5e); a.near(0xe9, 'x86_pop')
-        elif n == 1:
+        else:
             a.b(0x56, 0x8b, 0x36, 0x11, 0xd1, 0x83, 0x44, 0x32, 0x0a); a.short(0x71, 'x86_10')   # add word [si+32h], 10 / jno
             a.b(0xc7, 0x44, 0x32, 0xff, 0x7f)                # mov word [si+32h], 32767
             a.label('x86_10')
             a.b(0x5e); a.near(0xe9, 'x86_pop')
-        else:
-            a.b(0x5e, 0x58, 0x2e, 0xc6, 0x06); a.word('tc_again'); a.b(0x01)   # pop si ax / tc_again = 1
-            a.b(0x8b, 0x46, 0x02, 0x2d, 0x02, 0x00, 0x2e, 0xa3); a.word('call_ret')   # back to this site's int 63h
-            a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(SOUND & 0xff, SOUND >> 8)
-            a.b(0xb8, TC_SOUND, 0x00); a.near(0xe9, 'call_game')   # mov ax, the scream / 1000:5970
         a.label(f'x86_n{n}')                                 # not this spot: the next
     a.label('x86_pop')
     a.b(0x5e, 0x58)                                          # pop si / pop ax
@@ -11533,7 +11522,6 @@ def rules_data(a, table):
     a.label('snd_req'); a.b(0)                               # a code typed whole: its sound to play
     a.label('snd_wait'); a.b(0)                              # the sound is playing (back to the hook's site)
     a.label('snd_ax'); a.b(0, 0)
-    a.label('tc_again'); a.b(0)                              # D86: the scream played, the hit test next
     a.label('tc_tick'); a.b(0, 0)                            # D86: the BIOS tick of the last click in the tavern
     a.label('multi_x'); a.b(0)                                 # D12: 0, or 3-4 knights in this practice
     a.label('teams'); a.b(0)                                 # D14: 1 = the 3-4 player practice in teams
