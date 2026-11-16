@@ -381,6 +381,7 @@ HOOKS = [
     (0xb497, 'e8e5c8', 'gold5'), (0xb4e9, 'e893c8', 'gold5'),   # D91: the dice result's gold, five digits
     (0xbde2, 'e89abf', 'gold5'), (0xc95d, 'e81fb4', 'gold5'),   # D91: the donation, a chest's or the hoard's gold
     (0xba1e, 'e85ec3', 'gold5'),                        # D91: Math's gift (gold_max up to 1000)
+    (0xcb76, 'e80b00', 'icon_gadget'),                   # D96: no gadget for an icon past the screen's right edge
     (0xc55c, '8b3690e4', 'horse_panel'),                # D40: the knight's own horse on its panel
     (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
     (0xa918, 'be2ac4', 'horse_terrain'),
@@ -1099,12 +1100,16 @@ def _install(game, setup=False):
     old_lock = age_limit(game)
     new_lock = min(old_lock, r['age_lock'] or 18)
     exe, hook = build(game, r)
-    from make_savehook import make_savehook
+    from make_savehook import make_savehook, overlay_of
     # The save mode is in SAVEHOOK.COM's table, so Custom_rules_off.bat puts the normal SAVEHOOK.COM back from here.
-    # _fixes/rules holds the matching pair: Fixes_On.bat installs it and Start.bat compares against it
-    writes = [(os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), make_savehook()),
+    # _fixes/rules holds the matching pair: Fixes_On.bat installs it and Start.bat compares against it. SR4: each
+    # SAVEHOOK.COM has its own SAVEHOOK.OVL (its overlays), written beside it
+    normal = make_savehook()
+    writes = [(os.path.join('_fixes', 'fixed', 'SAVEHOOK.COM'), normal),
+              (os.path.join('_fixes', 'fixed', 'SAVEHOOK.OVL'), overlay_of(normal)),
               (os.path.join('_fixes', 'rules', 'MAIN.EXE'), exe), (os.path.join('_fixes', 'rules', 'SAVEHOOK.COM'), hook),
-              ('SAVEHOOK.COM', hook)]
+              (os.path.join('_fixes', 'rules', 'SAVEHOOK.OVL'), overlay_of(hook)),
+              ('SAVEHOOK.COM', hook), ('SAVEHOOK.OVL', overlay_of(hook))]
     on = not os.path.exists(os.path.join(game, 'ORIGINAL.FLG'))
     if on:
         writes.append(('MAIN.EXE', exe))
@@ -1264,7 +1269,7 @@ def write_stamp(game):
         mode += ' (a change did not finish)'
     lines = [f'Moonstone Rebuilt {version}', f'source revision: {revision}', f'tools: {tools.hexdigest()[:16]}',
              f'mode: {mode}', f'age limit: K{age_limit(game)}']
-    for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', os.path.join('DISKB', 'KN3.OB'), os.path.join('DISKB', 'HE3.OB'),
+    for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', 'SAVEHOOK.OVL', os.path.join('DISKB', 'KN3.OB'), os.path.join('DISKB', 'HE3.OB'),
                  os.path.join('DISKB', 'KH.CEL'), os.path.join('DISKB', 'MH.C'), 'custom_rules.ini'):
         lines.append(f'{name.replace(os.sep, "/")}: {_sha(os.path.join(game, name))}')
     try:

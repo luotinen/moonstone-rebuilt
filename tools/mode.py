@@ -17,6 +17,15 @@ AGE_REFUSALS = {
     'default': 'the custom rules stay on.',
 }
 
+def hook_pair(read, src):
+    """SR4: SAVEHOOK.COM and its SAVEHOOK.OVL from _fixes/src (an older install without the OVL: none; SAVEHOOK then
+    turns the cheat codes off and says so)."""
+    try:
+        ovl = read('_fixes', src, 'SAVEHOOK.OVL')
+    except OSError:
+        ovl = None
+    return [('SAVEHOOK.COM', read('_fixes', src, 'SAVEHOOK.COM')), ('SAVEHOOK.OVL', ovl)]
+
 def plan(game, mode):
     """The (name, data or None) list for the mode; raises Refused."""
     here = lambda *parts: os.path.join(game, *parts)
@@ -30,7 +39,7 @@ def plan(game, mode):
             raise Refused('The fixed files are missing (_fixes\\fixed). Run Setup.bat first. Nothing was changed.')
         files = [] if os.path.exists(here('ORIGINAL.FLG')) else [('MAIN.EXE', read('_fixes', 'fixed', 'MAIN.EXE'))]
         # the save mode lives in SAVEHOOK.COM: the normal one back (rules.install keeps a copy in _fixes/fixed)
-        return files + [('SAVEHOOK.COM', read('_fixes', 'fixed', 'SAVEHOOK.COM')), ('CUSTOM_RULES.FLG', None)]
+        return files + hook_pair(read, 'fixed') + [('CUSTOM_RULES.FLG', None)]
     if mode == 'fixed':
         if os.path.exists(here(rules.SETUP_FLAG)):
             raise Refused('The setup did not finish. Run Setup.bat. Nothing was changed.')
@@ -49,7 +58,7 @@ def plan(game, mode):
             raise Refused('The custom rules are on, but their programs are missing (_fixes\\rules). Run '
                           'Custom_rules_on.bat. Nothing was changed.')
         main = read('_fixes', 'rules', 'MAIN.EXE')
-        files.append(('SAVEHOOK.COM', read('_fixes', 'rules', 'SAVEHOOK.COM')))
+        files += hook_pair(read, 'rules')
     files += [('MAIN.EXE', main), ('INTR.EXE', read('_fixes', src, 'INTR.EXE'))]
     files += [(os.path.join('SAMPLES', os.path.basename(p)), open(p, 'rb').read()) for p in samples]   # K10
     files.append((os.path.join('DISKA', 'CAMEL4'), read('_fixes', src, 'DISKA', 'CAMEL4')))

@@ -12,10 +12,11 @@ if defined AGELOCK (
   if exist ORIGINAL.FLG goto locked
   if not exist CUSTOM_RULES.FLG goto locked
 )
-rem A change of the programs that did not finish, or custom rules whose MAIN.EXE and SAVEHOOK.COM are not their own pair
+rem A change of the programs that did not finish, or custom rules whose MAIN.EXE and SAVEHOOK.COM (SR4: and SAVEHOOK.OVL) are not their own pair
 if exist INSTALLING.FLG goto unfinished
 if not exist CUSTOM_RULES.FLG goto paired
 fc /b SAVEHOOK.COM "_fixes\rules\SAVEHOOK.COM" >nul 2>&1 || goto mismatch
+if exist "_fixes\rules\SAVEHOOK.OVL" fc /b SAVEHOOK.OVL "_fixes\rules\SAVEHOOK.OVL" >nul 2>&1 || goto mismatch
 if exist ORIGINAL.FLG goto paired
 fc /b MAIN.EXE "_fixes\rules\MAIN.EXE" >nul 2>&1 || goto mismatch
 :paired

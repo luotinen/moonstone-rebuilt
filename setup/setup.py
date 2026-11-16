@@ -145,7 +145,8 @@ def _main(arg=None):
     write(unfinished[1], b'the setup has not finished\r\n')
     def default_rules():                                      # the default set is in place: custom rules off, setup over
         for path in [os.path.join(HERE, name) for name in ('CUSTOM_RULES.FLG', os.path.join('_fixes', 'rules', 'MAIN.EXE'),
-                                                           os.path.join('_fixes', 'rules', 'SAVEHOOK.COM'))] + unfinished:
+                                                           os.path.join('_fixes', 'rules', 'SAVEHOOK.COM'),
+                                                           os.path.join('_fixes', 'rules', 'SAVEHOOK.OVL'))] + unfinished:
             if os.path.exists(path):
                 os.remove(path)
     for f in files:                                           # 2. game files
@@ -190,9 +191,11 @@ def _main(arg=None):
     import make_gm_tunes
     make_gm_tunes.main(gog, os.path.join(music, 'gm'), os.path.join(music, 'gm_amiga'))   # D82: and the UART set
     gm_font = check_generaluser()
-    from make_savehook import make_savehook
-    write(os.path.join(HERE, 'SAVEHOOK.COM'), make_savehook())
-    write(os.path.join(fixed, 'SAVEHOOK.COM'), make_savehook())
+    from make_savehook import make_savehook, overlay_of
+    hook = make_savehook()
+    for folder in (HERE, fixed):                              # SR4: SAVEHOOK.OVL, its overlays, beside it
+        write(os.path.join(folder, 'SAVEHOOK.COM'), hook)
+        write(os.path.join(folder, 'SAVEHOOK.OVL'), overlay_of(hook))
     if not os.path.exists(os.path.join(HERE, 'MOON.CFG')):
         write(os.path.join(HERE, 'MOON.CFG'), b'SOUND=SOUNDBLASTER\r\nYGUARD=11234\r\n')
     music_conf = os.path.join(HERE, 'music.conf')

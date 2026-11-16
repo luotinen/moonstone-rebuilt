@@ -14,7 +14,8 @@ They act on the knight whose turn it is.
 
 | Code | Effect |
 |---|---|
-| IDKFA | One more of every magic item, the Sword of Sharpness, the four keys, the four Moonstones, battle armour and 99 daggers |
+| IDKFA | A full set of magic items as the item screen shows them: +4 healing potions, +4 Gems of Seeing, +3 Rings of Protection, +4 Talismans of the Wyrm and +2 of each scroll; also the Sword of Sharpness, the four keys, the four Moonstones, battle armour and 99 daggers (they run off the screen's edge) |
+| WEPL | The four keys (as KEYMASTER; WEPL works on the map too) |
 | ↑ ↑ ↓ ↓ ← → ← → B A | 99 lives |
 | HESOYAM, ROSEBUD, KLAPAUCIUS, MOTHERLODE | +20 000 gold (at most 32 767) |
 | POINTTAKEN | 99 daggers |
@@ -80,10 +81,10 @@ With one human knight in the fight:
 
 | Code | Effect |
 |---|---|
-| WEPL | The four keys for the knight whose turn it is |
+| WEPL | The four keys for the knight whose turn it is (also in the item screen) |
 | MOONWALK | The moon goes on to its next phase |
 | HOMESICK | The knight whose turn it is goes to its home village |
-| ONEMORETURN | No movement is used up this turn; end it with E or by doing something |
+| SIRNEVERTIRED | No movement is used up this turn; end it with E or by doing something |
 | HEREBEDRAGONS | The dragon lives again (if it was killed) and goes for a random knight |
 | DRAGONSLAYER | The dragon lives again (if it was killed) and goes for the knight whose turn it is |
 | FROGPRINCE | The knight becomes a frog (three days), or a frog a knight again |
