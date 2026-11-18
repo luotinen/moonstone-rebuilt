@@ -289,7 +289,24 @@ G_POINTER_XY = G_HARDCORE + 1                 # byte: pointer_coordinates (D84, 
 G_HORSE_HP = G_POINTER_XY + 1                 # HORSE_N bytes: max HP while the horse is active (D92)
 G_HORSE_STOCK = G_HORSE_HP + HORSE_N          # 5 x 4 bytes: the town's stock chances (HORSE_STOCK), percent
 G_HORSE_L4 = G_HORSE_STOCK + 4 * len(HORSE_STOCK)   # HORSE_L4_MAX bytes: the level-4 horses (each as likely)
-TABLE_SIZE = G_HORSE_L4 + HORSE_L4_MAX
+G_POTIONS = G_HORSE_L4 + HORSE_L4_MAX          # byte: rare_potions (D101), 1 = on (the installer turns it off without XMS)
+G_POT_CHANCE = G_POTIONS + 1                  # byte: rare_potion_chance (D101), percent, its own roll
+G_LIFE_HP = G_POT_CHANCE + 1                  # byte: life_potion_hp (D101): a Potion of Life's max HP and HP
+G_CROSS = G_LIFE_HP + 1                       # byte: dead_knights_cross (D106), 1 = on (the loot rules; off in speedrun mode)
+G_RINGS = G_CROSS + 1                         # byte: rare_rings (D108), 1 = on (the installer turns it off without XMS)
+G_RING_CHANCE = G_RINGS + 1                   # byte: rare_ring_chance (D108), percent, its own roll
+POT_CHANCE_DEFAULT, LIFE_HP_DEFAULT, RING_CHANCE_DEFAULT = 10, 20, 10
+G_LUCK_GOLD = G_RING_CHANCE + 1                # byte: luck_chest_gold (D111), the most extra gold a Ring of Luck finds in a chest
+LUCK_GOLD_DEFAULT = 9
+G_CHARISMA = G_LUCK_GOLD + 1                  # byte: charisma_discount (D112), gp off a price for each Ring of Charisma
+G_CHA_MATH = G_CHARISMA + 1                   # byte: charisma_math (D112), percent: each ring's chance to calm an angry Math
+CHARISMA_DEFAULT, CHA_MATH_DEFAULT = 5, 50
+G_GEMS = G_CHA_MATH + 1                       # byte: rare_gems (D113), 1 = on (the installer turns it off without XMS)
+G_GEM_CHANCE = G_GEMS + 1                     # byte: rare_gem_chance (D113), percent, its own roll
+GEM_CHANCE_DEFAULT = 10
+G_SLOW = G_GEM_CHANCE + 1                     # byte: slow_gem_percent (D117), the Gem of Slow's cut of the next turn's movement
+SLOW_DEFAULT = 33
+TABLE_SIZE = G_SLOW + 1
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
@@ -386,6 +403,8 @@ HOOKS = [
     (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
     (0xa918, 'be2ac4', 'horse_terrain'),
     (0xc8d7, 'be266e', 'arm_icon'), (0xc54a, 'a3a4e4', 'arm_name'), (0xce5b, '8b6d42', 'arm_tkar'),   # D37: armour enchantments
+    (0xc8ae, '8b366269', 'arm_lair'),                   # D97: a lair chest's armour enchantment (C8D7 is the hoard's only)
+    (0xbfad, 'a392ed', 'item_palette'),                 # D98: the enchanted look's colours as the item screen opens
     (0xa643, 'c744460000', 'arm_danu'), (0xa5f1, 'e83901', 'arm_dragon'), (0x4405, '8a4f08', 'arm_fire'),
     (0x42a7, 'c7063a78483a', 'arm_venom'), (0xcb04, 'bf7989', 'arm_target'),
     (0xadcc, '837c4600', 'arm_ai_wyrm'), (0xadf6, '837c4600', 'arm_ai_acq'), (0xcd2e, 'e832de', 'arm_hawk'),
@@ -398,6 +417,7 @@ HOOKS = [
     (0x0fff, '806c3102', 'lives_si'),                   # Guardian: two more
     (0x122f, '806c3101', 'lives_si'),                   # ratmen disease
     (0x4d53, 'a33a78', 'ck_shot'), (0x2f46, '294538', 'gun_monster'),   # D64 GUNSHOT: a computer knight's shot, a ball's kill
+    (0x3adb, '836d3803', 'dragon_dagger'),              # D109: a thrown dagger on the dragon: Vampirism for its thrower
     (0x40ca, '894528', 'td_move'),                      # D46: a knight's move starts: the block's or dodge's time, the fast swing
     (0x441f, '833efc7700', 'td_check'), (0x4d6c, '833efc7700', 'td_check'),   # D46: a knight struck by a knight (a human's, a computer's)
     (0x42d8, '833efc7700', 'td_monster'), (0x432a, '833efc7700', 'td_monster'),   # D46: a knight blocking a trogg, a spear trogg
@@ -423,6 +443,41 @@ HOOKS = [
     (0x058b, 'e89e19', 'coop_setup'), (0x0597, 'f70642090100', 'coop_end'), (0x05c6, 'e8e3b9', 'coop_loot'),
     # ... a shared chest: a click on the gold (TKGP, call D6E1) and its loop (dec word [di], a gold piece out)
     (0xced3, 'e80b08', 'gold_click'), (0xcefa, 'ff0d', 'gold_step'),
+    (0xcf04, 'ff06aae4', 'luck_gold'),                  # D111: a Ring of Luck's extra gold from a chest or the hoard
+    (0xa557, 'ff0698cc', 'plain_step'),                 # D111: a human's step on the map (the Ring of Plainswalking)
+    # D112: the Ring of Charisma: the High Temple's price (buying) and half price (selling), Mythral's donation, Math's mood
+    (0xd003, '8b07', 'cha_tbuy'), (0xd056, 'd1e8', 'cha_tsell'), (0xbc1b, '8b1e43e2', 'cha_mythral'),
+    (0xb8ef, '8b36e87702443b', 'cha_math'),
+    # D101: special potions: a panel's potion row (DisplayMagic), heals that leave HP above max (Danu) alone: the
+    # healing potion (CCA9's HP = max), Stonehenge's offering (10BB)
+    (0xc772, '8b3690e4', 'pot_row'), (0xccc3, 'ff743c8f4438', 'heal_full'), (0x10bb, '8b443c894438', 'heal_ax'),
+    # D103: the map potions: the attack prompt (KnightProtection: who gets the screen, a potion drunk there), a lair
+    # entered invisible (the Hawk's path at 0581, the lair not cleared at 05DD)
+    (0x04fc, '807c1200', 'pot_prompt'), (0x0542, '833e78f312', 'pot_cancel'),
+    (0x0581, '833ea0cc00', 'lair_hawk'), (0x05dd, '833ea0cc00', 'lair_hawk'),
+    # D104: Speed: a knight's walk step before its checks, the interpreter's pass (one animation's step and draw)
+    (0x3f99, '8b36e877', 'spd_walk'), (0x99c0, 'e80800', 'spd_step'),
+    # D105: TakeALL (a computer knight or the dragon takes all a beaten knight with no lives left has): the specials too
+    (0x0bc5, 'bbf203', 'take_all'),
+    # D106: the one item a computer knight or the dragon takes from a knight with lives left (can be a special)
+    (0x0b1a, 'bbf203', 'take_one'),
+    # D107: a dead knight's grave on the map (DisplayOtherKnights): gold while its cross holds something
+    (0xa426, 'b82100', 'grave'),
+    # D108: special rings: a panel's ring row (DisplayMagic); the stat rings where the game reads an ability: the item
+    # screen's Strength, Endurance, Constitution, the movement at a redraw, a fight's Endurance, a lair's extra monster
+    (0xc5a7, '8b3690e4', 'ring_row'), (0xc2bd, '8a4c2e', 'ring_cl_str'), (0xc2f3, '8a4c30', 'ring_cl_end'),
+    (0xc329, '8a4c2f', 'ring_cl_con'), (0x02e9, '8a5c30', 'ring_bl_end'), (0x356d, '8a4430', 'ring_al_end'),
+    (0x283d, '807c2e03', 'ring_lair'),
+    # D113: special gems: a panel's gem row (DisplayMagic's first instruction)
+    (0xc567, '8b3690e4', 'gem_row'),
+    # D115: the Gem of Concealment: a computer's knight never takes a concealed knight as its target (KnightMagicLoop)
+    # and drops one it had (BKCollision, before its fight on contact); the Gem of Greed: each lair's gold in the map's
+    # redraw (after DisplayLairs), and the map's own item screen noted (I key)
+    (0xaa8c, '3e837e2004', 'conceal_pick'), (0xaccf, '8b5c46', 'conceal_drop'),
+    (0xa4c0, 'e842ff', 'greed_map'), (0xa57d, 'b80900', 'items_map'),
+    # D116: the aimed gems: the encounter scan (none while a knight gem aims), the map's fire (a knight gem's own), the
+    # put-back after a lair's chest in the seeing mode (a Banish hit: Haste kept)
+    (0x06f9, '833ea0cc00', 'aim_scan'), (0xa5a7, '833e9ecc00', 'aim_fire'), (0x05d6, 'e850a5', 'aim_back'),
 ]                                                       # map places: villages 15h-18h react only to their knight
 # Reward rolls (only patched for prevent_savescumming or the checked save modes): call rel16 -> int 63h / nop. The
 # handler sets the game's random state (DS:E22F) from a stream of its own, one per kind, that advances only at these
@@ -571,7 +626,8 @@ def read_ini(path):
         r = read_ini(default)
         r['age'], r['age_lock'] = age
         r.update(cheats=0, catchup=0, anticheese=0)        # no cheat codes; the game's own loot and AI (its exploits)
-        r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0,
+        r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0, cross=0,   # D106: the game's loot
+                 terrain=0,                             # D110: the game's own map
                  hawk_curse=0, protection_curse=0, haste_curse=0, wyrm_curse=0,   # no curses: luck should not end a run
                  cycles=(CYCLES_DEFAULT[0], 0),         # D17 off: the game's own speed
                  fight_cycles=(CYCLES_DEFAULT[0],) * 4)
@@ -677,6 +733,30 @@ def read_ini(path):
         raise RulesError(f'[{t}] gold_max = {r["gold_max"]}: must be at least gold_min ({r["gold_min"]})')
     r['items'] = [_get(cp, t, name, float, *rb['chance']) for name in TREASURE_ITEMS]
     r['hoard'] = _get(cp, t, 'dragon_hoard', _choice(HOARD_MODES))
+    # D101: special potions (an older ini without the keys: on, 10 %, 20 HP)
+    r['potions'] = _get(cp, t, 'rare_potions', _onoff) if cp.has_option(t, 'rare_potions') else 1
+    r['pot_chance'] = (_get(cp, t, 'rare_potion_chance', int, 0, 100) if cp.has_option(t, 'rare_potion_chance')
+                       else POT_CHANCE_DEFAULT)
+    r['life_hp'] = _get(cp, t, 'life_potion_hp', int, 0, 100) if cp.has_option(t, 'life_potion_hp') else LIFE_HP_DEFAULT
+    # D106: the loot rules and the dead knight's cross (an older ini without the key: on)
+    r['cross'] = _get(cp, t, 'dead_knights_cross', _onoff) if cp.has_option(t, 'dead_knights_cross') else 1
+    # D108: special rings (an older ini without the keys: on, 10 %)
+    r['rings'] = _get(cp, t, 'rare_rings', _onoff) if cp.has_option(t, 'rare_rings') else 1
+    r['ring_chance'] = (_get(cp, t, 'rare_ring_chance', int, 0, 100) if cp.has_option(t, 'rare_ring_chance')
+                        else RING_CHANCE_DEFAULT)
+    r['luck_gold'] = _get(cp, t, 'luck_chest_gold', int, 0, 99) if cp.has_option(t, 'luck_chest_gold') else LUCK_GOLD_DEFAULT   # D111
+    # D112: the Ring of Charisma (an older ini without the keys: 5 gp, 50 %)
+    r['charisma'] = (_get(cp, t, 'charisma_discount', int, 0, 50) if cp.has_option(t, 'charisma_discount')
+                     else CHARISMA_DEFAULT)
+    r['cha_math'] = _get(cp, t, 'charisma_math', int, 0, 100) if cp.has_option(t, 'charisma_math') else CHA_MATH_DEFAULT
+    # D113: special gems (an older ini without the keys: on, 10 %)
+    r['gems'] = _get(cp, t, 'rare_gems', _onoff) if cp.has_option(t, 'rare_gems') else 1
+    r['gem_chance'] = (_get(cp, t, 'rare_gem_chance', int, 0, 100) if cp.has_option(t, 'rare_gem_chance')
+                       else GEM_CHANCE_DEFAULT)
+    r['slow'] = (_get(cp, t, 'slow_gem_percent', int, 0, 100) if cp.has_option(t, 'slow_gem_percent')   # D117 (older ini: 33)
+                 else SLOW_DEFAULT)
+    # D110: the terrain zones of tools/terrain_zones.csv (an older ini without the section: on)
+    r['terrain'] = _get(cp, 'Map', 'custom_terrain', _onoff) if cp.has_option('Map', 'custom_terrain') else 1
     pr = 'Practice'
     def lair_or_knight(raw):
         if raw.lower() == 'black_knight':
@@ -748,7 +828,8 @@ def read_ini(path):
              p: {name for name, *_ in SHOP} | {f'temple_{name}' for name, _ in TEMPLE}
                 | {'healer_full_heal', 'healer_life_point'},
              m: {'frog_days', 'irritation_after_visit', 'irritation_drop_per_day'} | {f'{n}_chance' for n, _ in MATH},
-             t: {f'lair_{name}' for name in LAIR_TYPES} | {'gold_min', 'gold_max', 'dragon_hoard'} | set(TREASURE_ITEMS),
+             t: {f'lair_{name}' for name in LAIR_TYPES} | {'gold_min', 'gold_max', 'dragon_hoard', 'rare_potions', 'rare_potion_chance', 'life_potion_hp', 'dead_knights_cross', 'rare_rings', 'rare_ring_chance', 'luck_chest_gold', 'charisma_discount', 'charisma_math', 'rare_gems', 'rare_gem_chance', 'slow_gem_percent'} | set(TREASURE_ITEMS),
+             'Map': {'custom_terrain'},
              y: {f'band{n}_up_to' for n in range(1, MYTHRAL_BANDS)}
                 | {f'band{n}_chance' for n in range(1, MYTHRAL_BANDS + 1)},
              mo: monster_keys,
@@ -860,6 +941,18 @@ def table(r=None):
     stock = stock or [list(c) for _, c in HORSE_STOCK]
     t[G_HORSE_STOCK:G_HORSE_STOCK + 4 * len(HORSE_STOCK)] = bytes(v for row in stock for v in row)
     t[G_TRADE_IN] = r.get('trade_in', 1) if r else 0      # D40
+    t[G_POTIONS] = r.get('potions', 1) if r else 0        # D101
+    t[G_POT_CHANCE] = r.get('pot_chance', POT_CHANCE_DEFAULT) if r else 0
+    t[G_LIFE_HP] = r.get('life_hp', LIFE_HP_DEFAULT) if r else LIFE_HP_DEFAULT
+    t[G_CROSS] = r.get('cross', 1) if r else 0            # D106
+    t[G_RINGS] = r.get('rings', 1) if r else 0            # D108
+    t[G_RING_CHANCE] = r.get('ring_chance', RING_CHANCE_DEFAULT) if r else 0
+    t[G_LUCK_GOLD] = r.get('luck_gold', LUCK_GOLD_DEFAULT) if r else 0   # D111
+    t[G_CHARISMA] = r.get('charisma', CHARISMA_DEFAULT) if r else 0      # D112
+    t[G_CHA_MATH] = r.get('cha_math', CHA_MATH_DEFAULT) if r else 0
+    t[G_GEMS] = r.get('gems', 1) if r else 0              # D113
+    t[G_GEM_CHANCE] = r.get('gem_chance', GEM_CHANCE_DEFAULT) if r else 0
+    t[G_SLOW] = r.get('slow', SLOW_DEFAULT) if r else SLOW_DEFAULT   # D117
     horses = r.get('horse_list') if r else None
     horses = horses or [(text, price, move, soft, hard) for _, text, price, move, soft, hard in HORSES]
     for i, (text, price, move, soft, hard) in enumerate(horses):
@@ -946,6 +1039,8 @@ def main_patches(r, img):
     imm(0x10b1, 1, m); out.append((0x10b2, b'\x74', b'\x7d'))     # cmp 5 / je -> jge (a start above the cap)
     imm(0xbce4, 1, m); out.append((0xbce5, b'\x74', b'\x7d'))
     imm(0xada6, 1, m)                                    # (the potion's cap: SAVEHOOK, K23)
+    out.append((0xbccf, b'\x74', b'\x7d'))      # D101: the healer's full heal: HP = max -> HP >= max (je -> jge),
+                                                         # so HP above max (Danu) is neither lowered nor paid for
     if r['fate'] or r['save_mode'] in SAVE_CHECKED:     # reward rolls (village_any and homes: the place hook)
         for where, old, _ in FATE_HOOKS:
             new, _ = hook_bytes(where, old, 'fate')
@@ -1044,10 +1139,49 @@ def main_patches(r, img):
         imm(site, 2, hp)
     imm(0x43e0, 2, damage)
     imm(0x440b, 2, r['talisman_min']); imm(0x4410, 2, r['talisman_min'])   # dragon damage >> talismans, at least 5
+    grid = terrain_grid(img, r.get('terrain', 1))          # D110: the terrain zones (the rocks marked with TERRAIN_ROCKS)
+    out.append((TERRAIN_IMG, bytes(img[TERRAIN_IMG:TERRAIN_IMG + TERRAIN_CELLS]), grid))
     if r['ratmen_disease']:                              # undo K17
         for where, old, new in PATCHES['K17']['bytes']:
             out.append((image_offset(where), new, old))
     return out
+
+# D110: the terrain grid (DS:C42A, 40 x 25 cells of 8 x 8 pixels, row 0 first; the game's values 0 open, 1 forest,
+# 2 swamp, water and rocks, 3 mountains and the map's edges: a mask of the frame counter at A918). With custom rules the
+# grid is always written here: the rocks cells get the bit TERRAIN_ROCKS (value 6), which SAVEHOOK's horse_terrain
+# masks off for the game (and 6 is not 3 for the horses: the forest-and-swamp group), so that the walk rings know a
+# rock from a swamp. custom_terrain = on: the kinds of tools/terrain_zones.csv (0-4, 4 rocks); off: the game's grid
+# with its value-2 cells of rows 0-13 as rocks (the rings plan's row split)
+TERRAIN_W, TERRAIN_H = 40, 25
+TERRAIN_CELLS = TERRAIN_W * TERRAIN_H
+TERRAIN_IMG = 0x123b * 16 + 0xc42a                      # the grid in MAIN.EXE's load image (DS = 123Bh from its start)
+TERRAIN_ROCKS = 4
+TERRAIN_SPLIT_ROWS = 14                                  # off: value 2 above this row is rocks
+TERRAIN_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'terrain_zones.csv')
+
+def terrain_kinds(path=TERRAIN_CSV):
+    """The zone kinds of the CSV: 25 rows of 40 numbers 0-4; RulesError if missing or malformed."""
+    try:
+        text = open(path, encoding='ascii').read()
+    except (OSError, UnicodeDecodeError) as e:
+        raise RulesError(f'{path}: cannot be read ({e}); set [Map] custom_terrain = off to use the map of the game')
+    rows = [line for line in text.replace(chr(13), '').split(chr(10)) if line.strip()]
+    if len(rows) != TERRAIN_H:
+        raise RulesError(f'{path}: {len(rows)} rows of cells, must be {TERRAIN_H}')
+    kinds = []
+    for n, line in enumerate(rows, 1):
+        cells = [c.strip() for c in line.split(',')]
+        if len(cells) != TERRAIN_W or not all(c in ('0', '1', '2', '3', '4') for c in cells):
+            raise RulesError(f'{path}: row {n} must be {TERRAIN_W} kinds 0-4 separated by commas')
+        kinds += [int(c) for c in cells]
+    return kinds
+
+def terrain_grid(img, custom):
+    """The grid's 1,000 bytes for MAIN.EXE: the game's values, the rocks with TERRAIN_ROCKS."""
+    if custom:
+        return bytes(2 | TERRAIN_ROCKS if k == 4 else k for k in terrain_kinds())
+    game = img[TERRAIN_IMG:TERRAIN_IMG + TERRAIN_CELLS]
+    return bytes(2 | TERRAIN_ROCKS if v == 2 and i < TERRAIN_SPLIT_ROWS * TERRAIN_W else v for i, v in enumerate(game))
 
 def price_text(text, value):
     """text ('Buy ... for 10 GP') with its price replaced by value, NUL-terminated and NUL-padded to the original

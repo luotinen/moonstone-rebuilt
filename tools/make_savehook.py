@@ -54,7 +54,8 @@ from rules import (G_CHOP_CHEESE, G_MOVE_BAR, G_SECONDARY, G_TD, G_TD_WINDOW, G_
                    G_HASTE_CURSE, G_WYRM_CURSE, G_INPUT_CHORD, G_INPUT_LOG, G_INPUT_RECENT, G_COOP_LAIRS, G_COOP_EXTRA, COOP_MODES,
                    G_ENCHANT, G_ENCH_CHANCE, G_ARMOUR_MOVE, G_ARM_ENCH, G_ARM_CHANCE, G_DISEASE,
                    G_HORSES, G_HORSE_L4N, G_HORSE_HP, G_HORSE_STOCK, G_HORSE_L4, HORSE_N, G_HORSE_PRICE, G_HORSE_MOVE, G_HORSE_SOFT, G_HORSE_HARD, G_HORSE_TEXT, HORSE_TEXT_SIZE,
-                   G_GORE, GORE_LEVELS, table as rules_default_table)
+                   G_GORE, GORE_LEVELS, G_POTIONS, G_POT_CHANCE, G_LIFE_HP, G_CROSS, G_RINGS, G_RING_CHANCE, G_GEMS, G_GEM_CHANCE, G_SLOW, G_LUCK_GOLD, G_CHARISMA, G_CHA_MATH, SHOP, SELL_ITEMS, TEMPLE, TEMPLE_SITES, PRICE_TEXTS, TERRAIN_ROCKS,
+                   table as rules_default_table)
 from patches import (SOUND_RATES, SOUND_LAST_ID, SOUND_SLICES, SOUND_RATE_SITE, OWN_SOUND_IDS, SOUND_PLAY_SITE,
                      AMIGA_FIRST_KEY, AMIGA_PER_PRESET, amiga_program, AMIGA_FIXED, LOOP_RELEASE_SITE,
                      AMIGA_MORE, GUARDIAN_DEATH, DRAGON_LANDS, DRAGON_LANDS_RET, TROLL_GRUNTS, TROLL_IDS,
@@ -236,7 +237,7 @@ MARKER_SCRIPT, MARKER_SIZE, MARKER_TYPE, MARKER_GAP = 0xfe60, 0x40, 0x14, 3
 TURN_MOVES_SITE = 0xa568                             # cheat codes: the map loop's hook (turn_moves), to come back to
 # the hooks that run most often (every piece drawn: draw, recolour; every object: update; every hit test: hit_pair;
 # every palette write: dac_write): first in the table that rules_handler searches
-HOT = ('draw', 'convert', 'recolour', 'update', 'hit_pair', 'key_check', 'dac_write', 'bk_collide', 'dragon_pass')
+HOT = ('draw', 'convert', 'recolour', 'update', 'spd_step', 'hit_pair', 'key_check', 'dac_write', 'bk_collide', 'dragon_pass')
 # D24: a key release this soon after its press (BIOS ticks; a frame is 2) waits, so every press is seen once; a fire
 # press this recent when a knight's move ends is its next attack (input_buffer); the players' keys as 1000:83C0
 # reads them (fire, then up 8, down 4, left 2, right 1): player 1 Enter and the arrows, player 2 Tab and W S A D (D9)
@@ -442,9 +443,146 @@ LAIR_FIRST, LAIR_SIZE, LAIR_COUNT = 0x0002, 0x12, 24
 PTR_STEP, PTR_DELAY, PTR_SLOW, PTR_FAST_AFTER, PTR_FAST = 2, 4, 3, 12, 6
 MUD_TYPE, HAMMER_TROGG = 0x02, 0x0e
 ARM_NAMES = ('Mithril', 'Adamantium', 'Danu', 'Wyrm', 'Fireproof', 'Venomproof', 'Spellproof', 'Rebirth', 'Daggerward')
+MITHRIL_END = 2                                      # D99: Mithril's movement: as this much more endurance
 A_MITHRIL, A_ADAMANT, A_DANU, A_WYRM, A_FIRE, A_VENOM, A_SPELL, A_REBIRTH, A_DAGGER = range(1, 10)
 ARM_ITEM, ARM_X, ARM_Y = 0x07, 0x1d, 0x70            # D37: an armour enchantment's item number and place on the chest's panel
-ARMOUR_NAMES = ((0x1b, b'Padded armour'), (0x1c, b'Chain mail'), (0x1d, b'Plate armour'), (0x1e, b'Battle armour'))
+# D98: enchanted swords and armours on the item screen are drawn in violet: the item screen's palette (DS:ED46, 32
+# Amiga words) gets three new colours in its unused entries 17-19 as it opens, and the icon's pixels go through
+# ENCH_LOOK_MAP (greys and browns to the violets and 12, the dark slate; the reds, the grip's blues, black stay)
+LOOK_ENCH = 1
+ITEM_PALETTE, ENCH_LOOK_FIRST, ENCH_LOOK_RGB = 0xed46, 17, (0x0ecf, 0x0b7e, 0x0749)
+ENCH_LOOK_MAP = {1: 17, 2: 18, 3: 18, 4: 19, 5: 19, 6: 12, 8: 12, 9: 19, 10: 18, 11: 17}
+# D101 special potions (docs/potions-plan-2026-11-10.md): twelve, found in lair chests and the dragon's hoard
+# (rare_potion_chance %, their own roll, decided at the first look by a knight with a free place; none in a practice).
+# A knight carries three in its potion row's places 1-3 (items POT_ITEM, +2, +4), the Potions of Healing after them in
+# the places left (always at least one); a chest's is item POT_CHEST_ITEM after its healing potions. Each is the game's
+# potion frame drawn in its own look (D98's recolour, look LOOK_POT: POT_LOOKS' values for POT_PIXELS, approved 16 Nov
+# 2026). Their gadgets' descriptors (POT_DESC, 3 a panel, 10 bytes: the game's potion descriptor with its own text)
+# and texts (POT_TEXT) are in the unused ends of D20's death script slots (D20_KEEP: the scripts' room before them)
+POT_NAMES = ('Danu', 'Full Restoration', 'Might', 'Recall', 'Fire Resistance', 'Speed', 'Invisibility', 'Levitation',
+             'Strength', 'Endurance', 'Constitution', 'Life')
+P_DANU, P_FULL, P_MIGHT, P_RECALL, P_FIRE, P_SPEED, P_INVIS, P_LEVIT, P_STR, P_END, P_CON, P_LIFE = range(1, 13)
+POT_ROLL = (P_DANU, P_FULL, P_MIGHT, P_RECALL, P_FIRE, P_SPEED, P_INVIS, P_LEVIT, P_STR, P_END, P_CON, P_LIFE)   # all twelve (D101-D104)
+POT_PIXELS = (1, 9, 10, 11, 12, 13, 14, 15)           # KH.CEL 4: the streak, the neck (dark to light), the body (dark to light)
+POT_LOOKS = {P_DANU: (1, 19, 18, 17, 18, 17, 15, 15), P_FULL: (1, 4, 2, 1, 6, 19, 13, 14), P_MIGHT: (6, 16, 6, 5, 27, 26, 7, 7),
+             P_RECALL: (1, 9, 10, 11, 22, 21, 20, 20), P_FIRE: (1, 9, 10, 11, 26, 7, 24, 24), P_SPEED: (1, 9, 10, 11, 24, 10, 11, 1),
+             P_INVIS: (1, 4, 2, 1, 1, 2, 5, 6), P_LEVIT: (1, 4, 2, 1, 6, 5, 2, 1), P_STR: (11, 25, 24, 11, 27, 26, 7, 7),
+             P_END: (11, 25, 24, 11, 6, 19, 13, 14), P_CON: (11, 25, 24, 11, 23, 22, 21, 21), P_LIFE: (7, 26, 7, 24, 22, 21, 20, 20)}
+LOOK_POT = 2                                          # D98's look 2 (look_pot, after look 1's table)
+MODE_PERMADEATH = 0                                   # rules.MODES['permadeath']
+CROSS_GOLD = (20, 18)                                 # D107: the gold cross: the grave's pixels 2, 3 as map palette 20, 18 (look B)
+POT_SLOTS, POT_ITEM, POT_CHEST_ITEM = 3, 0x09, 0x0f   # places per knight; gadget items (odd: no item table byte)
+POT_FRAME, POT_X, POT_Y, POT_STEP = 4, 0x1f, 0xa5, 0x0d   # DisplayMagic's potion row (C784-C796)
+POT_GAME_DESC = 0x12                                  # the potion's descriptor in a panel's table ([0E4A4h] 24h / 2)
+POT_DESC, POT_DESCS = 0xfd00, 6                       # descriptors j = 3 x panel + place (0EF40h and 0F15Ch + 10 k)
+POT_OF, POT_TEXT_SIZE = b'Potion of ', 28
+POT_TEXT = (0xfbea, 0xfbea + POT_TEXT_SIZE, 0xf7a8, 0xf7a8 + POT_TEXT_SIZE, 0xf69a, 0xf69a + POT_TEXT_SIZE)
+POT_OVER = 0x80                                       # pot_fx: HP above max allowed (Danu) until it is down to max
+FX_MIGHT, FX_FIRE, FX_SPEED = 0x01, 0x02, 0x04        # D102, D104: pot_fx: Might, Fire Resistance, Speed for the next campaign fight
+SPD_EVERY = 3                                        # D104: Speed: an attack's extra animation step every 3rd frame
+SPD_X_MIN, SPD_X_MAX, SPD_Z_MIN, SPD_Z_MAX = 10, 320, 12, 155   # ... a walk step's extra half only within the game's limits (40DC)
+FX_FURY, FURY_STR = 0x40, 5                           # D113: pot_fx: the Gem of Fury waits for the next campaign fight; a blow's Strength at least this
+FX_FIGHT = FX_MIGHT | FX_FIRE | FX_SPEED | FX_FURY               # ... cleared at a campaign fight's end for the knights in it
+FX_INVIS, FX_LEV_WAIT, FX_LEV_ON = 0x08, 0x10, 0x20   # D103: pot_fx: Invisibility; Levitation waiting, working (to the turn's end)
+PR_OPEN, PR_CANCEL, PR_LAIR = 0x01, 0x02, 0x04        # D103: pot_pr: the attack prompt open; a potion drunk there; a lair entered invisible
+MIGHT_STR = 7                                         # D102: Might: a blow's strength part at least this
+MIGHT_PUSH, MIGHT_FRAMES = 2, 6                       # D102: Might's push of the one hit: pixels a fight frame, frames
+FIRE_RES_DAMAGE = 1                                   # D102: the dragon's fire on a knight with Fire Resistance
+POT_STAT_MAX = 9                                      # Strength, Endurance, Constitution: up to this (one digit)
+POT_HOLDER_OFF = 2 * (LAIR_COUNT + 1)                 # lair_potion - lair_ench (hoard_ench and arm_lair between)
+# D108: special rings (docs/rings-plan-2026-11-16.md, R1-R4; look A and the twelfth ring by the user's decisions of
+# 16 Nov 2026, Forestwalk's look approved and the thirteenth ring, Plainswalking, on 17 Nov 2026). A knight carries two in its ring row's places 1-2 (items RING_ITEM, +2), the Rings of Protection after
+# them in the places left; a chest's (RING_CHEST_ITEM) is shown after its Rings of Protection (then at most 2). Each is
+# the game's ring frame (KH.CEL 3) in its own look (look 2: RING_LOOKS' values for RING_PIXELS; look A: the stone 7, 8
+# in a setting of the band's dark 9). Descriptors (2 a panel) and texts in D20's slot ends, as the potions'
+RING_NAMES = ('Strength', 'Constitution', 'Endurance', 'Regeneration', 'Luck', 'Undying', 'Charisma', 'Mountainwalk',
+              'Waterwalk', 'Vampirism', 'Absorb Soul', 'Forestwalk', 'Plainswalking')
+(R_STR, R_CON, R_END, R_REGEN, R_LUCK, R_UNDYING, R_CHARISMA, R_MOUNTAIN, R_WATER, R_VAMPIRE, R_SOUL,
+ R_FOREST, R_PLAIN) = range(1, 14)
+RING_ROLL = (R_STR, R_CON, R_END, R_REGEN, R_LUCK, R_UNDYING, R_MOUNTAIN, R_WATER, R_VAMPIRE, R_SOUL, R_FOREST, R_PLAIN, R_CHARISMA)   # all thirteen (R1-R4), each as likely
+RING_PIXELS = (1, 2, 3, 7, 8, 9, 10, 11)              # KH.CEL 3: shine, band shine, shine, stone light, stone dark, band dark, band mid, band light
+_BANDS = {'silver': (1, 2, 4, 1), 'iron': (4, 5, 6, 3), 'green': (20, 21, 22, 20), 'violet': (17, 18, 19, 17)}   # light, mid, dark, shine
+_STONES = {'red': (7, 26), 'green': (20, 21), 'blue': (14, 13), 'ice': (15, 14), 'rock': (2, 4), 'lilac': (17, 18),
+           'gold': (24, 25), 'forest': (20, 23), 'wheat': (11, 24)}
+def _ring_look(band, stone):
+    light, mid, dark, shine = _BANDS[band]
+    return (1, shine, 3) + _STONES[stone] + (dark, mid, light)
+RING_LOOKS = {R_STR: _ring_look('silver', 'red'), R_CON: _ring_look('silver', 'green'), R_END: _ring_look('silver', 'blue'),
+              R_REGEN: _ring_look('violet', 'green'), R_LUCK: _ring_look('violet', 'gold'), R_UNDYING: _ring_look('iron', 'gold'),
+              R_CHARISMA: _ring_look('violet', 'ice'), R_MOUNTAIN: _ring_look('green', 'rock'), R_WATER: _ring_look('green', 'ice'),
+              R_VAMPIRE: _ring_look('iron', 'red'), R_SOUL: _ring_look('iron', 'lilac'),
+              R_FOREST: _ring_look('green', 'forest'),   # Forestwalk: approved 17 Nov 2026
+              R_PLAIN: _ring_look('green', 'wheat')}     # Plainswalking: approved 17 Nov 2026 (a pale yellow stone)
+RING_SLOTS, RING_ITEM, RING_CHEST_ITEM = 2, 0x11, 0x15   # places per knight; gadget items (odd: no item table byte)
+RING_FRAME, RING_X, RING_Y, RING_STEP, RING_ICONS = 3, 0x21, 0x95, 0x0c, 3   # DisplayMagic's ring row (C5B2-C5DE)
+RING_GAME_DESC, RING_COUNT = 0x14, 6                  # the ring's descriptor in a panel's table ([0E4A4h] 28h / 2); its count
+RING_DESC, RING_DESCS = 0xfaee, 4                     # descriptors j = 2 x panel + place (0EF40h and 0F15Ch + 10 k)
+RING_OF, RING_TEXT_SIZE = b'Ring of ', 22   # "Ring of Plainswalking" and its NUL (17 Nov 2026)
+RING_TEXT = (0xf5ba, 0xf8de, 0xf9ee, 0xfe35)           # D20 slot ends: split, thrust_front, thrust_back, up_forward (after D40's horse)
+RING_HOLDER_OFF = 3 * (LAIR_COUNT + 1)                # lair_ring - lair_ench (after lair_potion)
+STAT_STR, STAT_CON, STAT_END = 0x2e, 0x2f, 0x30       # a record's abilities; the stat rings are 1-3 = offset - 2Dh
+for _base in (0xef40, 0xf15c):
+    if (RING_DESC - _base) % 10 or (POT_DESC - _base) % 10:
+        raise ValueError('D108: a special descriptor not on a panel table entry')
+if HORSE_PANEL_TEXT + HORSE_TEXT_SIZE > RING_TEXT[3] or max(len(RING_OF) + len(n) + 1 for n in RING_NAMES) > RING_TEXT_SIZE:
+    raise ValueError('D108: a ring name too long for its text')
+D20_KEEP = {}                                         # D101: a death script's room before the potions' data in its slot
+for _at, _n in ([(t, POT_TEXT_SIZE) for t in POT_TEXT] + [(POT_DESC, 10 * POT_DESCS)] +
+                [(t, RING_TEXT_SIZE) for t in RING_TEXT] + [(RING_DESC, 10 * RING_DESCS)]):
+    _s = next(k for k in D20_NAMES if D20[k] <= _at < D20[k] + D20_SIZE[k])
+    if _at + _n > D20[_s] + D20_SIZE[_s]:
+        raise ValueError(f'D101: DS:{_at:04X} + {_n} is past D20 slot {_s}')
+    D20_KEEP[_s] = min(D20_KEEP.get(_s, D20_SIZE[_s]), _at - D20[_s])
+# D113: special gems (docs/gems-plan-2026-11-18.md, G1-G5; look A and the rules by the user's decisions of 18 Nov
+# 2026). A knight carries three in its gem row's places 1-3 (items GEM_ITEM, +2, +4), its Gems of Seeing after them in
+# the places left (4 icons in all); a chest's (GEM_CHEST_ITEM) is shown after its Gems of Seeing (then at most 3). Each
+# is the game's gem frame (KH.CEL 9) in its own look (look 2: GEM_LOOKS' values for GEM_PIXELS; look A: the stand
+# tells the group, the ball the gem). Descriptors and texts in the item screen's descriptor entries 27-53, which the
+# game never fills (D492 fills 27 a panel: GEM_D492_ENTRIES)
+GEM_NAMES = ('Spying', 'Duplication', 'Fury', 'Concealment', 'Greed', 'Keyfinding', 'Banish Monsters', 'Change Places',
+             'Frog', 'Slow')
+(GM_SPY, GM_DUP, GM_FURY, GM_CONCEAL, GM_GREED, GM_KEYS, GM_BANISH, GM_PLACES, GM_FROG, GM_SLOW) = range(1, 11)
+GEM_ROLL = (GM_SPY, GM_DUP, GM_FURY, GM_CONCEAL, GM_GREED, GM_KEYS, GM_BANISH, GM_PLACES, GM_FROG, GM_SLOW)   # D117: all ten, each as likely
+AIM_START = (GM_BANISH, GM_PLACES, GM_FROG, GM_SLOW)   # D116, D117: the aimed gems whose use starts the aim (a range of numbers)
+SLOW_MIN = 16                                          # D117: the Gem of Slow's least budget: one movement point ([0CCACh] is 16 a point)
+AIM_KNIGHT = (GM_PLACES, GM_SLOW)                     # D116: gem_aim in this range: a knight gem (no lair scan, its own fire)
+AIM_REACH = 8                                         # D116: the aim hits a knight within 8 map pixels (x and y) of the ball
+AIM_BACK = 0xff                                       # D116: gem_aim after a Banish hit: the put-back (05D6) still to come
+KEY_TABLE, KEY_SPACE, KEY_E = 0x81e3, 0x39, 0x12      # MAIN's key table (1000:81E3 + scan code: 0 held, FFh let go)
+GREED_DIGITS = ((7, 5, 5, 5, 7), (2, 6, 2, 2, 7), (7, 1, 7, 4, 7), (7, 1, 3, 1, 7), (5, 5, 7, 1, 1),   # D115: the Gem of
+                (7, 4, 7, 1, 7), (7, 4, 7, 5, 7), (7, 1, 1, 2, 2), (7, 5, 7, 5, 7), (7, 5, 7, 1, 7))  # Greed's 3x5 digits (rows, left = 4; the mockup's)
+GREED_FONT = tuple(sum(r << (12 - 3 * j) for j, r in enumerate(d)) for d in GREED_DIGITS)   # 15 bits a digit, row 0 at bit 14
+GREED_COLOUR, GREED_SHADOW = 20, 0                    # D115: the map palette's gold (the cross's) and black
+GEM_PIXELS = (3, 4, 5, 6, 12, 13, 14, 15)             # KH.CEL 9: the stand 3-6 (and seven shading pixels in the ball), the ball 12-15
+GEM_LOOKS = {GM_SPY: (11, 24, 25, 26, 22, 21, 20, 20), GM_GREED: (11, 24, 25, 26, 26, 25, 24, 11),   # knowledge: a gold stand
+             GM_KEYS: (11, 24, 25, 26, 4, 3, 2, 1),
+             GM_DUP: (20, 21, 22, 23, 4, 3, 2, 1), GM_FURY: (20, 21, 22, 23, 27, 26, 7, 24),        # oneself: a green stand
+             GM_CONCEAL: (20, 21, 22, 23, 6, 6, 5, 4),
+             GM_BANISH: (1, 2, 3, 4, 26, 25, 24, 11), GM_PLACES: (1, 2, 3, 4, 26, 24, 21, 20),       # aimed: a silver stand
+             GM_FROG: (1, 2, 3, 4, 23, 22, 21, 20), GM_SLOW: (1, 2, 3, 4, 6, 6, 5, 4)}
+GEM_SLOTS, GEM_ITEM, GEM_CHEST_ITEM = 3, 0x17, 0x1d   # places per knight; gadget items (odd: no item table byte)
+GEM_FRAME, GEM_X, GEM_Y, GEM_STEP, GEM_ICONS = 9, 0x57, 0xa4, 0x10, 4   # DisplayMagic's gem row (C567-C5A4)
+GEM_GAME_DESC, GEM_COUNT = 0x13, 2                    # the gem's descriptor in a panel's table ([0E4A4h] 26h / 2); its count
+GEM_D492_ENTRIES, GEM_TABLE_ROOM = 0x1b, 54           # D492 (mov cx,1Bh at D546) fills 27 entries of a panel's 54
+GEM_DESC, GEM_DESCS = 0xf15c + 10 * GEM_D492_ENTRIES, 6   # descriptors j = 3 x panel + place: panel 2's unused entries 27-32 (F26A)
+GEM_OF, GEM_TEXT_SIZE = b'Gem of ', 24                # "Gem of Banish Monsters" and its NUL: 23
+GEM_TEXT = tuple(0xef40 + 10 * GEM_D492_ENTRIES + GEM_TEXT_SIZE * j for j in range(GEM_DESCS))   # panel 1's unused entries (F04E)
+GEM_HOLDER_OFF = 4 * (LAIR_COUNT + 1)                 # lair_gem - lair_ench (after lair_ring)
+BANISH_HOLDER_OFF = 5 * (LAIR_COUNT + 1)              # D116: lair_banish - lair_ench (after lair_gem; 1 = banished)
+# D114 (G2): the Gem of Duplication armed: its hover text (panel 1's unused entries after GEM_TEXT); what it copies
+DUP_TEXT, DUP_NAME = GEM_TEXT[-1] + GEM_TEXT_SIZE, b'Gem of Duplication: pick an item'
+DUP_CAP, DUP_DAGGERS = 9, 0xce19                     # an item's count it copies up to; the game's loot cap of daggers (max_daggers, rules.py)
+if DUP_TEXT + len(DUP_NAME) + 1 > 0xef40 + 10 * GEM_TABLE_ROOM:
+    raise ValueError('D114: the armed text past panel 1 of the descriptor tables')
+for _base, _at, _n in ((0xf15c, GEM_DESC, 10 * GEM_DESCS), (0xef40, GEM_TEXT[0], GEM_TEXT_SIZE * GEM_DESCS)):
+    if _at < _base + 10 * GEM_D492_ENTRIES or _at + _n > _base + 10 * GEM_TABLE_ROOM:   # (the game uses entries 0-26 only)
+        raise ValueError(f'D113: DS:{_at:04X} + {_n} is not in the unused descriptor entries of the table at {_base:04X}')
+for _base in (0xef40, 0xf15c):
+    if (GEM_DESC - _base) % 10 or GEM_DESC < _base:
+        raise ValueError('D113: a gem descriptor not on a panel table entry')
+if max(len(GEM_OF) + len(n) + 1 for n in GEM_NAMES) > GEM_TEXT_SIZE or sorted(GEM_LOOKS) != list(range(1, len(GEM_NAMES) + 1)):
+    raise ValueError('D113: a gem name too long for its text, or a gem without its look')
+ARMOUR_NAMES =((0x1b, b'Padded armour'), (0x1c, b'Chain mail'), (0x1d, b'Plate armour'), (0x1e, b'Battle armour'))
 ARM_WINDOWS, ARM_TEXTS = (0xffa2, 0xffb5), (0xffc8, 0xffe4)   # D37: free in MAIN's data: each panel's descriptor (19 bytes for its alignment), text (28)
 STONEHENGE_X, STONEHENGE_Y = 277, 143                # the map's place of Stonehenge (location 1Ah in DS:0498h's list)
 ENCH_AREA = 0xfe80                                   # = KEY_TEXT: 40h for each panel
@@ -693,6 +831,14 @@ def buffer_image():
 # (SAVEHOOK.OVL, copied up by the installer) and are moved into ovl_window when entered through a resident stub.
 INST_TAIL = 'inst'                                    # not an overlay: the installer's tail, run in the window
 OVL_GROUPS = lambda a: [g for g in a.groups if isinstance(g, int)]
+OVL_POT, OVL_POT_FX = 3, 4                            # D101: the special potions' row, roll and clicks; their drink
+OVL_MAP = 5                                           # D103: the map potions' drink and the attack prompt's choice
+OVL_SPEC = 6                                          # D105: the special items' shared cold code (TakeALL's move, the
+                                                      # High Temple's sale, Stonehenge's offering), by kind (spec_kinds)
+SK_POT, SK_RING, SK_GEM = 0, 1, 2                     # D105: the kinds' numbers, their order in spec_kinds (D108 rings, D113 gems)
+OVL_RING = 7                                          # D108: the special rings' row, roll and clicks (kind_code; the gems' later)
+OVL_GEM, OVL_GEM_FX = 8, 9                            # D113: the special gems' row, roll and clicks (kind_code); their use on the item screen
+OVL_GEM_MAP = 10                                      # D115: the special gems' map effects (the Gem of Greed's amounts)
 OVL_CHEATS, OVL_COLD = 1, 2                        # the groups: the cheat codes' work; IDROPPEDMYKEY's screen and LOADEDDICE's throw
 WINDOW_MAX = 4096                                     # the largest group allowed (the window is the largest one's size)
 OVL_PATH = b'C:\\SAVEHOOK.OVL\0'
@@ -723,6 +869,7 @@ def xms_test(mu, com):
         if dh or len(data) != n:
             raise ValueError('SR4: xms_test serves moves from the overlays only')
         mu.mem_write(lin(do), data)
+        mu.ctl_remove_cache(lin(do), lin(do) + n)            # D103: no translated code of the group moved out runs on
         mu.reg_write(UC_X86_REG_AX, 1)
     mu.hook_add(UC_HOOK_CODE, move, begin=at, end=at)
 
@@ -798,8 +945,8 @@ def ovl_resident(a):
 
 def ovl_install(a):
     """SR4: the installer's part (ds = cs): XMS, one block, SAVEHOOK.OVL read into the window piece by piece and
-    moved up, its length and word sum compared. Any failure: the block freed, ovl_ok = 0, and the cheat codes off
-    (everything overlaid is reached only after a code), with a message if they were on."""
+    moved up, its length and word sum compared. Any failure: the block freed, ovl_ok = 0, and the cheat codes and the
+    special potions off (D101; everything else overlaid is reached only after a code), with a message if they were on."""
     kb = max(1, (a.ovl_size + 1023) // 1024)
     a.b(0xb8, 0x00, 0x43, 0xcd, 0x2f, 0x3c, 0x80, 0x74, 0x03); a.near(0xe9, 'io_none')   # XMS there?
     a.b(0x06, 0xb8, 0x10, 0x43, 0xcd, 0x2f)                  # push es / mov ax, 4310h / int 2Fh
@@ -833,8 +980,11 @@ def ovl_install(a):
     a.b(0xb4, 0x0a, 0x8b, 0x16); a.word('xm_sh'); a.b(0xff, 0x1e); a.word('xms_entry')   # free the block
     a.label('io_none')
     a.b(0xc6, 0x06); a.word('ovl_ok'); a.b(0x00)
-    a.b(0x80, 0x3e); a.word('rules_table', G_CHEATS); a.b(0x00); a.short(0x74, 'io_done')
-    a.b(0xc6, 0x06); a.word('rules_table', G_CHEATS); a.b(0x00)
+    a.b(0xa0); a.word('rules_table', G_CHEATS); a.b(0x0a, 0x06); a.word('rules_table', G_POTIONS)   # D101: and the special potions
+    a.b(0x0a, 0x06); a.word('rules_table', G_RINGS)          # D108: and the special rings
+    a.b(0x0a, 0x06); a.word('rules_table', G_GEMS); a.short(0x74, 'io_done')   # D113: and the special gems
+    a.b(0xc6, 0x06); a.word('rules_table', G_CHEATS); a.b(0x00, 0xc6, 0x06); a.word('rules_table', G_POTIONS); a.b(0x00)
+    a.b(0xc6, 0x06); a.word('rules_table', G_RINGS); a.b(0x00, 0xc6, 0x06); a.word('rules_table', G_GEMS); a.b(0x00)
     a.b(0xba); a.word('msg_no_ovl'); a.b(0xb4, 0x09, 0xcd, 0x21)
     a.label('io_done')
 
@@ -890,7 +1040,7 @@ def install_tail(a):
 
 def ovl_install_data(a):
     a.label('ovl_path'); a.b(OVL_PATH)
-    a.label('msg_no_ovl'); a.b(b'SAVEHOOK: no XMS, or no SAVEHOOK.OVL of this build: the cheat codes are off.\r\n$')
+    a.label('msg_no_ovl'); a.b(b'SAVEHOOK: no XMS, or no SAVEHOOK.OVL of this build: the cheat codes, special potions, special rings and special gems are off.\r\n$')
     a.label('xi_fh'); a.b(0, 0)
     a.label('xi_total'); a.b(0, 0)
     a.label('xi_sum'); a.b(0, 0)
@@ -1147,6 +1297,34 @@ def relax_plan(a, code):
             for k, kind, start, stop, l8 in a.cands if k not in blocked}
 
 
+def gear_swap(a, p, field, of, k, w, item, done):
+    # D100 (inside ench_tkwp / arm_tkar, ax = the loser's (di) item = item, the starting long sword or padded armour,
+    # ax bx dx cx pushed): if it is enchanted and the winner (si, a player's knight) has the same item, the two change
+    # places: the enchantments are swapped (Adamantium newly had: +10 HP at once), then the click sound (D6E1) and the
+    # screen again (CDC4) as the game's take. Otherwise on to done (nothing taken, as the game)
+    a.b(0x39, 0x44, field); a.short(0x75, f'{p}_no')             # cmp [si+field], ax / jne
+    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, f'{p}_no'); a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, f'{p}_no')
+    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, of); a.b(0x5e); a.near(0xe8, of)   # both: a stale one gone
+    a.b(0x57); a.near(0xe8, 'knight_no'); a.short(0x72, f'{p}_pop')   # push di / bx = the loser's number
+    a.b(0x2e, 0x8a, 0x8f); a.word(k); a.b(0x0a, 0xc9); a.short(0x74, f'{p}_pop')   # mov cl, cs:[bx+k] / or cl, cl / jz
+    a.b(0x8b, 0xc3, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, f'{p}_pop')   # mov ax, bx / di = the winner
+    a.b(0x2e, 0x8a, 0xaf); a.word(k); a.b(0x2e, 0x88, 0x8f); a.word(k); a.b(0x2e, 0xc6, 0x87); a.word(w); a.b(item)
+    a.b(0x93, 0x2e, 0x88, 0xaf); a.word(k); a.b(0x2e, 0xc6, 0x87); a.word(w); a.b(item, 0x5f)   # the loser: the winner's / pop di
+    if field == 0x42:
+        a.b(0x80, 0xf9, A_ADAMANT); a.short(0x75, f'{p}_l'); a.b(0x80, 0xfd, A_ADAMANT); a.short(0x74, f'{p}_go')
+        a.b(0x83, 0x44, 0x38, 0x0a); a.short(0xeb, f'{p}_go')
+        a.label(f'{p}_l')
+        a.b(0x80, 0xfd, A_ADAMANT); a.short(0x75, f'{p}_go'); a.b(0x83, 0x45, 0x38, 0x0a)
+    a.label(f'{p}_go')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xe1, 0xd6)   # AddClickSound (D6E1)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xc4, 0xcd)      # then HGTakeDone (CDC4)
+    a.b(0x59, 0x5a, 0x5b, 0x58); a.near(0xe9, 'call_game')
+    a.label(f'{p}_pop')
+    a.b(0x5f)
+    a.label(f'{p}_no')
+    a.near(0xe9, done)
+
+
 def rules_code(a):
     """int 63h: the custom game rules from custom_rules.ini (rules.py). The MAIN.EXE sites are in rules.HOOKS; the
     handler finds the job by the return address. All jobs run with bp = frame ([bp+2] return IP, [bp+4] CS,
@@ -1297,16 +1475,37 @@ def rules_code(a):
     a.b(0x0b, 0xdb); a.short(0x74, 'x92_mh_none'); a.b(0x2e, 0x8a, 0x9f); a.word('rules_table', G_HORSE_HP - 1); a.b(0x03, 0xc3)
     a.label('x92_mh_none')
     a.b(0x01, 0x46, 0xfe, 0x58)                              # add [bp-2], ax (the saved bx) / pop ax
+    a.b(0x50, 0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_mh_pop')   # D101: the Potions of Life
+    a.b(0x2e, 0x8a, 0x87); a.word('life_k'); a.b(0x2e, 0xf6, 0x26); a.word('rules_table', G_LIFE_HP); a.b(0x01, 0x46, 0xfe)   # add [bp-2], life_k x life_potion_hp
+    a.b(0x51, 0xbb, STAT_CON, 0x00); a.near(0xe8, 'ring_stat')   # D108: + 10 for each point the Constitution rings add
+    a.b(0x2a, 0x4c, STAT_CON, 0xb0, 0x0a, 0xf6, 0xe1, 0x01, 0x46, 0xfe, 0x59)   # sub cl, [si+2Fh] / mov al, 10 / mul cl / add [bp-2], ax / pop cx
+    a.label('x101_mh_pop')
+    a.b(0x5f, 0x5a, 0x5b, 0x58)
     a.b(0x81, 0x7e, 0xfe, MAX_HP & 0xff, MAX_HP >> 8)        # cmp word [bp-2], 999
     a.short(0x7e, 'max_hp_done')                             # jle max_hp_done
     a.b(0xc7, 0x46, 0xfe, MAX_HP & 0xff, MAX_HP >> 8)        # mov word [bp-2], 999
     a.label('max_hp_done')
+    # D101: HP above max after Danu (pot_fx POT_OVER) is not lowered to max (02D9-02DE skipped) but kept to 2 x max (999
+    # at most); once it is down to max the flag ends
+    a.b(0x50, 0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_mo_pop')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(POT_OVER); a.short(0x74, 'x101_mo_pop')
+    a.b(0x8b, 0x46, 0xfe, 0x3b, 0x44, 0x38); a.short(0x7c, 'x101_mo_over')   # mov ax, [bp-2] / cmp ax, [si+38h] / jl: above max
+    a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ POT_OVER); a.short(0xeb, 'x101_mo_pop')
+    a.label('x101_mo_over')
+    a.b(0x89, 0x44, 0x3c, 0x03, 0xc0, 0x3d, *u16(MAX_HP)); a.short(0x76, 'x101_mo_cap'); a.b(0xb8, *u16(MAX_HP))   # [si+3Ch] = max / ax = 2 x max
+    a.label('x101_mo_cap')
+    a.b(0x3b, 0x44, 0x38); a.short(0x7d, 'x101_mo_skip'); a.b(0x89, 0x44, 0x38)   # HP at most that
+    a.label('x101_mo_skip')
+    a.b(0xc7, 0x46, 0x02, 0xe1, 0x02)                        # on at 02E1
+    a.label('x101_mo_pop')
+    a.b(0x5f, 0x5a, 0x5b, 0x58)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
     # damage (1000:2D86): replaces mov cl,[si+2Eh] / add ax,cx; si = attacker, ax = base damage
     a.label('rules_damage')
     a.near(0xe8, 'td_fast_dmg')                              # D46: the fast swing and the riposte: a weaker blow's base damage
-    a.b(0x8a, 0x4c, 0x2e, 0x03, 0xc1)                        # mov cl, [si+2Eh] / add ax, cx
+    a.b(0xbb, STAT_STR, 0x00); a.near(0xe8, 'ring_stat')   # cl = [si+2Eh] (D108: with its rings)
+    a.near(0xe8, 'might_str'); a.b(0x03, 0xc1)               # D102: Might / add ax, cx
     a.near(0xe8, 'section')                                  # call section
     a.short(0x72, 'damage_end')                              # jc damage_end    not a knight
     a.b(0x83, 0x7c, 0x40, 0x16)                              # cmp word [si+40h], 16h
@@ -1344,6 +1543,7 @@ def rules_code(a):
     a.short(0x7d, 'lives_end')                               # jge lives_end
     a.b(0xc6, 0x44, 0x31, 0x01)                              # mov byte [si+31h], 1
     a.label('lives_end')
+    a.near(0xe8, 'ring_life')                                # D109: Undying, Absorb Soul (group OVL_POT_FX)
     a.b(0x58, 0x5e)                                          # pop ax / pop si
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
@@ -1367,6 +1567,7 @@ def rules_code(a):
     a.label('turn_reborn')
     a.b(0x51, 0x57, 0x8b, 0x7c, 0x44)                        # push cx / push di / mov di, [si+44h]
     a.near(0xe8, 'start_knight')                             # call start_knight
+    a.near(0xe8, 'knight_clear')                             # D106: its enchantments, horse, specials and their effects too
     a.b(0x5f, 0x59)                                          # pop di / pop cx
     a.label('turn_place')
     a.b(0x53, 0x2e, 0x8b, 0x1e); a.word('rec4')              # push bx / mov bx, cs:[rec4]
@@ -1387,7 +1588,7 @@ def rules_code(a):
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_REST); a.b(REST_HEAL['full'])   # cmp byte cs:[rest_heal], 1
     a.short(0x75, 'rest_end')                                # jne rest_end
     a.b(0x8b, 0x1e, 0xe8, 0x77, 0x50)                        # mov bx, [77E8h] / push ax
-    a.b(0x8b, 0x47, 0x3c, 0x89, 0x47, 0x38, 0x58)            # mov ax, [bx+3Ch] / mov [bx+38h], ax / pop ax
+    a.b(0x8b, 0x47, 0x3c, 0x3b, 0x47, 0x38, 0x7c, 0x03, 0x89, 0x47, 0x38, 0x58)   # mov ax, [bx+3Ch] / cmp ax, [bx+38h] / jl (D101: above max kept) / mov [bx+38h], ax / pop ax
     a.label('rest_end')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
@@ -1414,6 +1615,9 @@ def rules_code(a):
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(TURN_MOVES_SITE & 0xff, TURN_MOVES_SITE >> 8)
     a.near(0xe9, 'call_game')
     a.label('tm_go')
+    a.near(0xe8, 'aim_keys'); a.short(0x73, 'x116_tm_go')    # D116: Space or E cancels an aim: not for the game now
+    a.b(0xc7, 0x46, 0x02, 0x94, 0xa5, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe9, 'rules_done')   # on at A594 (past both) / mov di, [77E8h]
+    a.label('x116_tm_go')
     a.near(0xe8, 'hawk_guard')                               # call hawk_guard    the Hawk stays out of the Valley
     a.b(0x2e, 0xf6, 0x06); a.word('map_flags'); a.b(MAP_WALK); a.short(0x74, 'tm_walk')   # SIRWALKSALOT: a human's walk costs nothing
     a.b(0x56, 0x8b, 0x36, 0xe8, 0x77, 0x83, 0x7c, 0x20, COMPUTER, 0x5e); a.short(0x74, 'tm_walk')
@@ -1430,8 +1634,18 @@ def rules_code(a):
     # (turn_moves) and the turn's budget ([0CCACh]), for its healing at the day's end (daily_heal)
     a.label('rules_turn_end')
     a.b(0xc7, 0x06, 0xaa, 0xcc, 0x00, 0x00)                  # mov word [0CCAAh], 0   (replaced)
-    a.b(0x2e, 0xc6, 0x06); a.word('keys_shown'); a.b(0x00)   # IDROPPEDMYKEY: until the turn's end
+    a.near(0xe8, 'aim_any'); a.short(0x73, 'x116_te_aim'); a.near(0xe8, 'aim_end')   # D116: an aim left: back in place, the gem kept
+    a.label('x116_te_aim')
+    a.b(0x2e, 0xc7, 0x06); a.word('keys_shown'); a.b(0x00, 0x00)   # IDROPPEDMYKEY: until the turn's end; D115: greed_shown too
+    a.b(0x2e, 0x80, 0x3e); a.word('key_show'); a.b(0x01); a.short(0x75, 'x113_te_keys')   # D113: a key screen not begun
+    a.b(0x2e, 0xc6, 0x06); a.word('key_show'); a.b(0x00)     # (the Gem of Keyfinding's) never shows in another turn
+    a.label('x113_te_keys')
     a.b(0x50, 0x53, 0x52)                                    # push ax bx dx
+    a.b(0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_te_lev')   # D103: Levitation's working ends
+    a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ FX_LEV_ON)
+    a.b(0x2e, 0xc6, 0x87); a.word('slow_k'); a.b(0x00)       # D117: a Gem of Slow's cut was this turn's
+    a.label('x103_te_lev')
+    a.b(0x5f)
     a.b(0xa1, 0xe8, 0x77, 0x2d, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)   # mov ax, [77E8h] / sub ax, 6C9Eh
     a.short(0x72, 'te_pop')                                  # jb te_pop
     a.b(0x33, 0xd2, 0xbb, SLOT_SIZE, 0x00, 0xf7, 0xf3)       # xor dx, dx / mov bx, 62h / div bx   the knight 0-3
@@ -1451,11 +1665,17 @@ def rules_code(a):
     # endurance % times the share of its last turn's movement left (turn_end), at least 1:
     # missing * (fixed * budget + endurance * left) / (100 * budget)
     a.label('rules_daily_heal')
+    a.b(0x50, 0x8b, 0x44, 0x38, 0x3b, 0x44, 0x3c, 0x58); a.short(0x7e, 'x101_dh_go')   # push ax / mov ax, [si+38h] / cmp ax, [si+3Ch] / pop ax / jle
+    a.b(0xc7, 0x46, 0x02, 0xe1, 0x11); a.near(0xe9, 'rules_done')   # D101: HP above max (Danu): not lowered to max (on at 11E1)
+    a.label('x101_dh_go')
     a.b(0x50, 0x51, 0x52, 0x56)                              # push ax cx dx si
     a.b(0x8b, 0x4c, 0x3c, 0x2b, 0x4c, 0x38)                  # mov cx, [si+3Ch] / sub cx, [si+38h]   missing
     a.short(0x7f, 'dh_missing'); a.b(0x33, 0xc9)             # jg dh_missing / xor cx, cx
     a.near(0xe9, 'dh_set')
     a.label('dh_missing')
+    a.b(0x57, 0x8b, 0xfe, 0xb0, R_REGEN); a.near(0xe8, 'ring_cnt'); a.b(0x5f, 0x0a, 0xc0); a.short(0x74, 'x111_dh_no')   # D111: Regeneration
+    a.near(0xe9, 'dh_set')                                   # the missing HP: full
+    a.label('x111_dh_no')
     a.b(0x2e, 0xa0); a.word('rules_table', G_REST)           # mov al, cs:[rest_heal]
     a.b(0x3c, REST_HEAL['fixed_and_endurance']); a.short(0x74, 'dh_ours')
     a.b(0x3c, REST_HEAL['fixed_only']); a.short(0x74, 'dh_ours')
@@ -1509,6 +1729,10 @@ def rules_code(a):
     a.b(0x8b, 0x5d, 0x20)                                    # mov bx, [di+20h]
     a.short(0xeb, 'colour')                                  # jmp colour
     a.label('rules_colour_si')
+    a.b(0x81, 0x7e, 0x02, 0x19, 0xa4); a.short(0x75, 'x103_cs_go')   # D103: the others' icons (A405, from A417):
+    a.near(0xe8, 'map_hidden'); a.short(0x73, 'x103_cs_go')  # one hidden is not drawn (on at A43B)
+    a.b(0xc7, 0x46, 0x02, 0x3b, 0xa4); a.near(0xe9, 'rules_done')
+    a.label('x103_cs_go')
     a.b(0x8b, 0x5c, 0x20)                                    # mov bx, [si+20h]
     a.label('colour')
     a.b(0x83, 0xfb, 0x04)                                    # cmp bx, 4
@@ -1696,6 +1920,24 @@ def rules_code(a):
     a.b(0x56, 0x8b, 0x76, 0x00)                              # push si / mov si, [bp]     the game's bp
     a.b(0x26, 0x8b, 0x5c, 0x12, 0x26, 0x8b, 0x4c, 0x10)      # mov bx, es:[si+12h] / mov cx, es:[si+10h]
     a.b(0x5e, 0x89, 0x5e, 0xfe)                              # pop si / mov [bp-2], bx   (returned as bx)
+    a.b(0x2e, 0x80, 0x3e); a.word('dup_armed'); a.b(0x00); a.short(0x74, 'x114_sl_go')   # D114: a Gem of Duplication armed:
+    a.near(0xe9, 'dup_click')                                # this click is its copy, before anything else (group OVL_GEM_FX)
+    a.label('x114_sl_go')
+    a.b(0xf6, 0xc3, 0x01); a.short(0x74, 'x101_sl_no'); a.b(0x83, 0xfb, POT_ITEM); a.short(0x72, 'x101_sl_no')   # D101: odd items 9, 0Bh, 0Dh, 0Fh
+    a.b(0x83, 0xfb, POT_CHEST_ITEM); a.short(0x77, 'x108_sl_ring')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_POTIONS); a.b(0x00); a.short(0x74, 'x101_sl_no')   # a special potion's
+    a.near(0xe9, 'pot_click')                                # SR4: group OVL_POT
+    a.label('x108_sl_ring')                                  # D108: 11h, 13h, 15h a special ring's
+    a.b(0x83, 0xfb, RING_CHEST_ITEM); a.short(0x77, 'x113_sl_gem')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_RINGS); a.b(0x00); a.short(0x74, 'x101_sl_no')
+    a.near(0xe9, 'ring_click')                               # SR4: group OVL_RING
+    a.label('x113_sl_gem')                                   # D113: 17h, 19h, 1Bh, 1Dh a special gem's
+    a.b(0x83, 0xfb, GEM_CHEST_ITEM); a.short(0x77, 'x101_sl_no')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_GEMS); a.b(0x00); a.short(0x74, 'x101_sl_no')
+    a.near(0xe9, 'gem_click')                                # SR4: group OVL_GEM
+    a.label('x101_sl_none')                                  # nothing: at CC4D (ret)
+    a.b(0xc7, 0x46, 0x02, 0x4d, 0xcc); a.near(0xe9, 'rules_done')
+    a.label('x101_sl_no')
     a.b(0x50, 0x56)                                          # push ax / push si
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_SELLING); a.b(0x00)   # cmp byte cs:[selling], 0
     a.short(0x74, 'x92_toggle')                              # je x92_toggle
@@ -1703,7 +1945,7 @@ def rules_code(a):
     a.short(0x74, 'x92_selling')                             # je x92_selling
     a.label('x92_toggle')                                    # D92: elsewhere the own horse's icon switches it off and on
     a.b(0x83, 0xfb, HORSE_FIELD); a.short(0x75, 'x92_tg_no'); a.b(0x8a, 0xc1, 0x24, 0x0f, 0x3c, 0x02); a.short(0x75, 'x92_tg_no')
-    a.b(0x57, 0x52, 0x8b, 0x3e, 0x90, 0xe4); a.near(0xe8, 'horse_own'); a.b(0x0a, 0xc0); a.short(0x74, 'x92_tg_none')
+    a.b(0x57, 0x52, 0x8b, 0x3e, 0x88, 0xed); a.near(0xe8, 'horse_own'); a.b(0x0a, 0xc0); a.short(0x74, 'x92_tg_none')   # D114: the viewer ([0ED88h]), not the panel drawn last
     a.near(0xe8, 'knight_no'); a.b(0x2e, 0x80, 0xb7); a.word('horse_off'); a.b(0x01)
     a.b(0x8b, 0xf7, 0x5a, 0x5f, 0x5b, 0x58)                  # si = the knight / pop dx, di / pop (the saved si) / pop ax
     a.label('x92_tg_end')
@@ -1721,9 +1963,8 @@ def rules_code(a):
     a.short(0x75, 'sell_no')                                 # jne sell_no
     a.b(0x80, 0x7c, 0x34, 0x00)                              # cmp byte [si+34h], 0
     a.short(0x7e, 'sell_no')                                 # jle sell_no
-    a.b(0xfe, 0x4c, 0x34)                                    # dec byte [si+34h]
-    a.b(0x2e, 0xa1); a.word('rules_table', G_SELL)           # mov ax, cs:[dagger price]
-    a.short(0xeb, 'sell_gold')                               # jmp sell_gold
+    a.b(0xfe, 0x4c, 0x34, 0x33, 0xdb)                        # dec byte [si+34h] / xor bx, bx   the dagger's price
+    a.short(0xeb, 'sell_val')
     a.label('sell_no')
     a.b(0x5e, 0x58, 0x0b, 0xe4)                              # pop si / pop ax / or sp, sp     ZF = 0
     a.near(0xe9, 'rules_flags')                              # jmp rules_flags
@@ -1749,15 +1990,17 @@ def rules_code(a):
     a.b(0xc7, 0x44, 0x38, 0x01, 0x00)                        # mov word [si+38h], 1
     a.label('sell_armour')
     a.b(0xc7, 0x44, 0x42, 0x1b, 0x00)                        # mov word [si+42h], 1Bh   padded
-    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SELL + 6)   # mov ax, cs:[bx+armour prices]
-    a.short(0xeb, 'sell_gold')                               # jmp sell_gold
+    a.b(0x83, 0xc3, 0x06); a.short(0xeb, 'sell_val')         # add bx, 6   the armour's prices
     a.label('sell_weapon')
     a.b(0x8b, 0x5c, 0x40, 0x83, 0xeb, 0x17)                  # mov bx, [si+40h] / sub bx, 17h   broadsword, claymore
     a.b(0x83, 0xfb, 0x01)                                    # cmp bx, 1
     a.short(0x77, 'sell_no')                                 # ja sell_no     long sword, Sword of Sharpness: no
     a.b(0xd1, 0xe3)                                          # shl bx, 1
     a.b(0xc7, 0x44, 0x40, 0x16, 0x00)                        # mov word [si+40h], 16h   long sword
-    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SELL + 2)   # mov ax, cs:[bx+weapon prices]
+    a.b(0x83, 0xc3, 0x02)                                    # add bx, 2   the weapon's prices
+    a.label('sell_val')                                      # D112: what it pays, below the knight's own buying price
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SELL); a.b(0x52, 0x2e, 0x8b, 0x97); a.word('rules_table', G_BUY)
+    a.near(0xe8, 'cha_cap'); a.b(0x5a)                       # mov ax, cs:[bx+sell] / push dx / mov dx, cs:[bx+buy] / pop dx
     a.label('sell_gold')
     a.b(0x01, 0x44, 0x32)                                    # add [si+32h], ax
     a.short(0x71, 'sell_yes')                                # jno sell_yes     D79: max_gold is checked as the town is left
@@ -1771,6 +2014,7 @@ def rules_code(a):
     a.label('sell_h_on')
     a.near(0xe8, 'knight_no'); a.b(0x2e, 0xc6, 0x87); a.word('horse_k'); a.b(0x00); a.b(0x2e, 0xc6, 0x87); a.word('horse_off'); a.b(0x00, 0x5f)
     a.b(0x32, 0xe4, 0x8b, 0xd8, 0xd1, 0xe3, 0x2e, 0x8b, 0x87); a.word('rules_table', G_HORSE_PRICE - 2); a.b(0xd1, 0xe8)
+    a.b(0x52, 0x2e, 0x8b, 0x97); a.word('rules_table', G_HORSE_PRICE - 2); a.near(0xe8, 'cha_cap'); a.b(0x5a)   # D112: capped
     a.b(0x01, 0x44, 0x32); a.short(0x71, 'x92_sh_gold'); a.b(0xc7, 0x44, 0x32, 0xff, 0x7f)
     a.label('x92_sh_gold')
     a.b(0x5b, 0x58); a.near(0xe9, 'x92_tg_end')             # D92: si = the knight: CF3C works out its max HP again
@@ -2793,6 +3037,11 @@ def rules_code(a):
     a.label('hint_draw')
     a.b(0x2e, 0x80, 0x3e); a.word('rsm_on'); a.b(0x00); a.short(0x75, 'hd_go'); a.b(0xc3)   # cmp byte cs:[rsm_on], 0 / jne / ret
     a.label('hd_go')
+    a.b(0x2e, 0xc7, 0x06); a.word('vga_fn'); a.word('hint_both')   # D115: the drawing between the VGA set-up and its restore
+    # vga_run (D115; ds = MAIN's data, cs:[vga_fn] = a routine: called with es = the page [80B9h] in write mode 0, the
+    # bit mask FFh, set/reset off; keeps all registers but bp, which the routine keeps itself): the VGA registers it
+    # uses are kept and set back. For the hint and the Gem of Greed's amounts (group OVL_GEM_MAP, from the window)
+    a.label('vga_run')
     a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x06)            # push ax bx cx dx si di es
     a.b(0x8e, 0x06, 0xb9, 0x80)                              # mov es, [80B9h]   the page being drawn
     a.b(0xba, 0xc4, 0x03, 0xec, 0x50)                        # mov dx, 3C4h / in al, dx / push ax   sequencer index
@@ -2802,16 +3051,19 @@ def rules_code(a):
         a.b(0xb0, idx, 0xee, 0x42, 0xec, 0x50, 0x4a)         # mov al, idx / out dx, al / inc dx / in al, dx / push ax / dec dx
     a.b(0xb8, 0x01, 0x00, 0xef, 0xb8, 0x08, 0xff, 0xef)      # set/reset off / bit mask FFh
     a.b(0xb0, 0x05, 0xee, 0x42, 0xec, 0x24, 0xf4, 0xee, 0x4a)   # mode: write mode 0 (the latches' copy left mode 1)
-    a.b(0x2e, 0xc7, 0x06); a.word('hint_d'); a.b(0x01, 0x00, 0xb4, HINT_SHADOW)   # the shadow: one pixel down, right
-    a.near(0xe8, 'hint_pass')
-    a.b(0x2e, 0xc7, 0x06); a.word('hint_d'); a.b(0x00, 0x00, 0xb4, HINT_COLOUR)   # the text
-    a.near(0xe8, 'hint_pass')
+    a.b(0x2e, 0xff, 0x16); a.word('vga_fn')                  # call cs:[vga_fn]
     a.b(0xba, 0xce, 0x03)                                    # mov dx, 3CEh
     for idx in (8, 5, 4, 1):
         a.b(0x58, 0x8a, 0xe0, 0xb0, idx, 0xef)               # pop ax / mov ah, al / mov al, idx / out dx, ax
     a.b(0x58, 0xee, 0xb2, 0xc4)                              # pop ax / out dx, al / mov dl, 0C4h
     a.b(0x58, 0x8a, 0xe0, 0xb0, 0x02, 0xef, 0x58, 0xee)      # map mask back / sequencer index back
     a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)      # pop es di si dx cx bx ax / ret
+    # hint_both (vga_run's routine for the hint): its shadow first, then the text
+    a.label('hint_both')
+    a.b(0x2e, 0xc7, 0x06); a.word('hint_d'); a.b(0x01, 0x00, 0xb4, HINT_SHADOW)   # the shadow: one pixel down, right
+    a.near(0xe8, 'hint_pass')
+    a.b(0x2e, 0xc7, 0x06); a.word('hint_d'); a.b(0x00, 0x00, 0xb4, HINT_COLOUR)   # the text
+    # (falls into hint_pass)
     # hint_pass (ah = the colour, cs:[hint_d] = 0 or 1 the offset, es = the page): hint_bits' pixels
     a.label('hint_pass')
     a.b(0xbe); a.word('hint_bits'); a.b(0xbf, HINT_Y & 0xff, HINT_Y >> 8)   # mov si, hint_bits / mov di, y
@@ -2840,6 +3092,9 @@ def rules_code(a):
     # draw (1000:9AFD, 9B09; replaces call 5DD4): di = the animation slot, its object at +16h. Notes which colour
     # range of this frame moves (0 = none), then makes the call
     a.label('rules_draw')
+    a.b(0x2e, 0x80, 0x3e); a.word('spd_skip'); a.b(0x00); a.short(0x74, 'draw_go')   # D104: Speed's extra step draws nothing
+    a.near(0xe9, 'rules_done')
+    a.label('draw_go')
     a.b(0x2e, 0xc6, 0x06); a.word('recolour'); a.b(0x00)     # mov byte cs:[recolour], 0
     a.b(0x2e, 0xc6, 0x06); a.word('sw_shift'); a.b(0x00)     # mov byte cs:[sw_shift], 0   D31
     a.b(0x2e, 0xc6, 0x06); a.word('saber_piece'); a.b(0x00)  # D51
@@ -3098,6 +3353,7 @@ def rules_code(a):
     a.b(0x2e, 0x8a, 0x1e); a.word('recolour')                # mov bl, cs:[recolour]
     a.b(0x2e, 0x0a, 0x1e); a.word('sw_shift')                # or bl, cs:[sw_shift]   D31
     a.b(0x2e, 0x0a, 0x1e); a.word('saber_piece')             # or bl, cs:[saber_piece]   D51
+    a.b(0x2e, 0x0a, 0x1e); a.word('icon_look')               # or bl, cs:[icon_look]   D98
     a.short(0x75, 'rc_go'); a.near(0xe9, 'rc_pop')           # jz rc_pop
     a.label('rc_go')
     a.b(0x2e, 0x8a, 0x1e); a.word('recolour')                # mov bl, cs:[recolour]
@@ -3118,6 +3374,12 @@ def rules_code(a):
     a.b(0x8b, 0x0e, BLIT_COUNT & 0xff, BLIT_COUNT >> 8)      # mov cx, [637Bh]    bytes the converter wrote
     a.b(0x06, 0x1f, 0x33, 0xf6, 0x33, 0xff, 0xfc)            # push es / pop ds / xor si, si / xor di, di / cld
     a.b(0xbb); a.word('rc_xlat')                             # mov bx, rc_xlat
+    # D98: an item-screen icon in a look (icon_look n, set just before its PlaceIcons): its pixels (0-31, at most five
+    # planes) through the look's 32-byte table instead, this frame only
+    a.b(0x2e, 0xa0); a.word('icon_look'); a.b(0x0a, 0xc0); a.short(0x74, 'x98_rc_plain')   # mov al, cs:[icon_look] / or al, al / jz
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(0x00)   # mov byte cs:[icon_look], 0
+    a.b(0xb4, 0x20, 0xf6, 0xe4, 0x05); a.word('look_xlat', -32); a.b(0x93)   # mov ah, 32 / mul ah / add ax, look_xlat - 32 / xchg ax, bx
+    a.label('x98_rc_plain')
     # K42: a charred knight's piece: its pixels 1-5 become 8 (the xlat then moves 6-8 to the Black Knight's 41-43)
     a.b(0x2e, 0x80, 0x3e); a.word('char_piece'); a.b(0x00); a.short(0x74, 'rc_no_char')
     a.b(0x2e, 0xc6, 0x06); a.word('char_piece'); a.b(0x00)   # mov byte cs:[char_piece], 0
@@ -4726,6 +4988,25 @@ def rules_code(a):
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xe1, 0xd6)   # call D6E1   (replaced)
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xd6, 0xce)
     a.near(0xe9, 'call_game')
+    # luck_gold (D111; 1000:CF04, inc word [0E4AAh] as a click on the gold ends: the cap reached, the chest emptied or
+    # a shared chest's share taken, si = the knight): in a lair chest (mode 2) or the hoard (0Ah) a knight with a Ring
+    # of Luck gets 0 to luck_chest_gold more gold, up to max_gold (at the cap: nothing); x111_lg in group 7
+    a.label('rules_luck_gold')
+    a.b(0xff, 0x06, 0xaa, 0xe4); a.near(0xe8, 'x111_lg'); a.near(0xe9, 'rules_done')   # inc word [0E4AAh]   (replaced)
+    a.ovl_begin(OVL_RING); a.ovl_entry('x111_lg', 'call')
+    a.b(0x50, 0x51, 0x52, 0x57, 0xa1, 0x92, 0xed, 0x3d, 0x02, 0x00); a.short(0x74, 'x111_lg_mode')   # push ax cx dx di / mov ax, [0ED92h] / cmp ax, 2
+    a.b(0x3d, 0x0a, 0x00); a.short(0x75, 'x111_lg_end')
+    a.label('x111_lg_mode')
+    a.b(0x8b, 0xfe, 0xb0, R_LUCK); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x74, 'x111_lg_end')
+    a.b(0x2e, 0x8a, 0x0e); a.word('rules_table', G_LUCK_GOLD); a.b(0x32, 0xed, 0x41)   # mov cl, cs:[luck_chest_gold] / xor ch, ch / inc cx
+    a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xf7, 0xf1)   # ax = random / xor dx, dx / div cx: dx = 0 to luck_chest_gold
+    a.b(0x8b, 0x44, 0x32, 0x2e, 0x8b, 0x0e); a.word('rules_table', G_MAX_GOLD)   # mov ax, [si+32h] / mov cx, cs:[max_gold]
+    a.b(0x3b, 0xc1); a.short(0x7d, 'x111_lg_end'); a.b(0x03, 0xc2, 0x3b, 0xc1); a.short(0x7e, 'x111_lg_put'); a.b(0x8b, 0xc1)   # cmp ax, cx / jge / add ax, dx / cmp ax, cx / jle / mov ax, cx
+    a.label('x111_lg_put')
+    a.b(0x89, 0x44, 0x32)                                    # mov [si+32h], ax
+    a.label('x111_lg_end')
+    a.b(0x5f, 0x5a, 0x59, 0x58, 0xc3)
+    a.ovl_end()
     # gold_step (1000:CEFA, dec word [di] as a gold piece leaves the chest, di = the chest's gold): a shared chest's
     # click stops at its share: on at the loop's end (CF04) instead
     a.label('rules_gold_step')
@@ -4860,12 +5141,15 @@ def rules_code(a):
 
     # --- D35: sword enchantments ---
     # ench_of (si = a knight): al = its sword's enchantment (0: none, a computer's knight, the rule off, another
-    # sword than the one enchanted: then it is gone; Gore with gore off: none for now); keeps the rest
+    # sword than the one enchanted: then it is gone; Gore with gore off: none for now); keeps the rest. ench_raw: the
+    # same for a computer's knight too (D106: it carries one taken at the last life, with no effect for it: its name
+    # on the panels, taken with the sword)
     a.label('ench_of')
+    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x75, 'ench_raw'); a.b(0x32, 0xc0, 0xc3)   # cmp word [si+20h], 4 / jne / xor al, al / ret
+    a.label('ench_raw')
     a.b(0x53, 0x52, 0x57, 0x8b, 0xfe, 0x32, 0xc0)            # push bx dx di / mov di, si / xor al, al
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_ENCHANT); a.b(0x00); a.short(0x74, 'eo_end')
     a.near(0xe8, 'knight_no'); a.short(0x72, 'eo_end')
-    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'eo_end')
     a.b(0x2e, 0x8a, 0x87); a.word('ench_k'); a.b(0x0a, 0xc0); a.short(0x74, 'eo_end')
     a.b(0x50, 0x2e, 0x8a, 0x87); a.word('ench_w'); a.b(0x3a, 0x44, 0x40, 0x58); a.short(0x74, 'eo_same')   # the sword enchanted?
     a.b(0x2e, 0xc6, 0x87); a.word('ench_k'); a.b(0x00, 0x32, 0xc0); a.short(0xeb, 'eo_end')   # gone with it
@@ -4877,7 +5161,11 @@ def rules_code(a):
     # holder_slot (the item screen: [0ED92h] 2 a lair's chest, 0Ah the dragon's hoard): bx = its byte in
     # lair_ench / hoard_ench (0 not decided, 1 none, 1 + an enchantment); CF = 1 for anything else
     a.label('holder_slot')
-    a.b(0x50, 0x52, 0x83, 0x3e, 0x92, 0xed, 0x02); a.short(0x75, 'xhs_dragon')
+    a.b(0x50, 0x52, 0x83, 0x3e, 0x92, 0xed, 0x02); a.short(0x75, 'xhs_dragon'); a.short(0xeb, 'x116_hs_lair')
+    # lair_slot (D116): the same for the lair [6962h] whatever the screen (bx = its byte in lair_ench; CF = 1 not a lair)
+    a.label('lair_slot')
+    a.b(0x50, 0x52)
+    a.label('x116_hs_lair')
     a.b(0xa1, 0x62, 0x69, 0x2d, LAIR_FIRST, 0x00); a.short(0x72, 'xhs_no')   # mov ax, [6962h] / sub ax, 2 / jb
     a.b(0x33, 0xd2, 0xbb, LAIR_SIZE, 0x00, 0xf7, 0xf3, 0x0b, 0xd2); a.short(0x75, 'xhs_no')
     a.b(0x3d, LAIR_COUNT, 0x00); a.short(0x73, 'xhs_no')
@@ -4961,13 +5249,14 @@ def rules_code(a):
     a.b(0x83, 0xfe, SHARPNESS); a.short(0x73, 'ei_icon'); a.b(0x89, 0x36, 0x9a, 0xe4)   # 16h-18h: its picture
     a.label('ei_icon')
     a.b(0x5e)
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(LOOK_ENCH)   # D98: drawn in the enchanted look
     a.b(0xb9, 0x01, 0x00, 0xc7, 0x46, 0x02, 0x18, 0xc9)      # mov cx, 1 / on at C918 (PlaceIcons)
     a.near(0xe9, 'rules_done')
     # ench_name (1000:C51D, mov [0E4A4h],ax as the item screen's knight panel shows the sword): an enchanted sword's
     # text "<sword> of <enchantment>", its gadget's flags as the game's
     a.label('rules_ench_name')
     a.b(0xa3, 0xa4, 0xe4)                                    # (replaced)
-    a.b(0x50, 0x56, 0x8b, 0x36, 0x90, 0xe4); a.near(0xe8, 'ench_of'); a.b(0x0a, 0xc0); a.short(0x75, 'en_on')
+    a.b(0x50, 0x56, 0x8b, 0x36, 0x90, 0xe4); a.near(0xe8, 'ench_raw'); a.b(0x0a, 0xc0); a.short(0x75, 'en_on')   # D106: a computer's too
     a.b(0x5e, 0x58); a.near(0xe9, 'rules_done')
     a.label('en_on')
     a.b(0x53, 0x52, 0x57, 0x06, 0x1e, 0x07, 0x50)            # push bx dx di es / push ds / pop es / push ax
@@ -4982,6 +5271,7 @@ def rules_code(a):
     a.b(0x58); a.near(0xe8, 'ench_name_put'); a.b(0xc6, 0x05, 0x00)   # pop ax / its name / the end
     a.b(0xa1, 0xa4, 0xe4, 0xd1, 0xe8, 0xbb, 0x0a, 0x00, 0x52, 0xf7, 0xe3, 0x5a, 0x03, 0x06, 0xa8, 0xe4, 0x8b, 0xd8)   # bx = the game's descriptor
     a.b(0x8a, 0x47, 0x06); a.near(0xe8, 'ench_desc')         # its flags / ours
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(LOOK_ENCH)   # D98: PlaceIcons (C520) draws it in the enchanted look
     a.b(0x07, 0x5f, 0x5a, 0x5b, 0x5e, 0x58); a.near(0xe9, 'rules_done')
     # ench_take (1000:CD9F, cmp bx,4 / jne CDA7 in HGTakeMagic: a click that takes an item, bx = it): the
     # enchantment (ENCH_ITEM) onto the clicking knight's sword ([0ED88h]), replacing one it had; not a computer's
@@ -5014,8 +5304,8 @@ def rules_code(a):
     a.label('rules_ench_tkwp')
     a.b(0x50, 0x53, 0x52, 0x51)
     a.b(0x8b, 0x45, 0x40, 0x89, 0x46, 0x00)                  # mov ax, [di+40h] / mov [bp], ax   (replaced: the game's bp)
-    a.b(0x3d, 0x16, 0x00); a.short(0x74, 'ek_pop')           # the other's a long sword: nothing taken
-    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'ench_of'); a.b(0x8a, 0xc8); a.near(0xe8, 'ench_clear'); a.b(0x5e)   # cl = its enchantment / the other's: none
+    a.b(0x3d, 0x16, 0x00); a.short(0x74, 'x100_ek')           # the other's a long sword: nothing taken (D100: but a swap)
+    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'ench_raw'); a.b(0x8a, 0xc8); a.near(0xe8, 'ench_clear'); a.b(0x5e)   # cl = its enchantment (D106: a computer's too) / the other's: none
     a.b(0x8b, 0x45, 0x40, 0x3b, 0x44, 0x40); a.short(0x7c, 'ek_pop')   # cmp [di+40h], [si+40h] / jl   not taken
     a.near(0xe8, 'ench_clear')                               # the taker's own sword goes
     a.b(0x0a, 0xc9); a.short(0x74, 'ek_pop'); a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'ek_pop')
@@ -5023,6 +5313,8 @@ def rules_code(a):
     a.b(0x2e, 0x88, 0x8f); a.word('ench_k'); a.b(0x8b, 0x45, 0x40, 0x2e, 0x88, 0x87); a.word('ench_w')   # its enchantment, the sword
     a.label('ek_pop')
     a.b(0x59, 0x5a, 0x5b, 0x58); a.near(0xe9, 'rules_done')
+    a.label('x100_ek')
+    gear_swap(a, 'x100_ek', 0x40, 'ench_of', 'ench_k', 'ench_w', 0x16, 'ek_pop')
     # ench_clear (si = a knight): its enchantment gone (keeps everything)
     a.label('ench_clear')
     a.b(0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'ec_end')
@@ -5040,8 +5332,9 @@ def rules_code(a):
     a.b(0x8b, 0x4e, 0x0e, 0x81, 0xf9, 0xd2, 0x28); a.short(0x75, 'eh_on')   # mov cx, the return / cmp cx, 28D2h
     a.b(0x83, 0xfa, CHOP); a.short(0x75, 'eh_pop0'); a.b(0xd1, 0xe0)   # as the game
     a.label('eh_pop0')
-    a.near(0xe9, 'eh_pop')
+    a.near(0xe9, 'eh_end')
     a.label('eh_on')
+    a.near(0xe8, 'might_hit')                                # D102: Might's push
     a.b(0x50); a.near(0xe8, 'ench_of'); a.b(0x8a, 0xd8, 0x58)   # bl = the enchantment
     a.b(0x83, 0xfa, CHOP); a.short(0x75, 'eh_bane')
     a.b(0x80, 0xfb, E_SMITE); a.short(0x75, 'eh_two'); a.b(0x8b, 0xd0, 0xd1, 0xe0, 0x03, 0xc2); a.short(0xeb, 'eh_bane')   # three times (dx: 2DAB sets it again)
@@ -5051,12 +5344,7 @@ def rules_code(a):
     a.near(0xe8, 'saber_mon')                                # D51: a lightsaber kills a monster at once
     a.b(0x0a, 0xdb); a.short(0x75, 'eh_target'); a.near(0xe9, 'eh_pop')
     a.label('eh_target')
-    a.b(0x57, 0x8b, 0x7e, 0x0c)                              # push di / mov di, [bp+0Ch]   the struck: the caller's di as a rule
-    for ret in (0x3776, 0x5215, 0x55bf):
-        a.b(0x81, 0xf9, ret & 0xff, ret >> 8); a.short(0x75, f'eh_r{ret:x}'); a.b(0x8b, 0x7e, 0x10); a.short(0xeb, 'eh_who')
-        a.label(f'eh_r{ret:x}')
-    a.b(0x81, 0xf9, 0xd2, 0x56); a.short(0x75, 'eh_who'); a.b(0x8b, 0x3e, 0xe8, 0x77)
-    a.label('eh_who')
+    a.b(0x57); a.near(0xe8, 'eh_victim')                     # push di / di = the struck
     a.b(0x81, 0xff, DRAGON_RECORD & 0xff, DRAGON_RECORD >> 8); a.short(0x75, 'eh_mon')
     a.b(0x80, 0xfb, E_DRAGON); a.short(0x75, 'eh_none'); a.short(0xeb, 'eh_double')
     a.label('eh_mon')
@@ -5076,7 +5364,20 @@ def rules_code(a):
     a.label('eh_none')
     a.b(0x5f)
     a.label('eh_pop')
+    # D109: Vampirism (vamp): the blow's damage ax on the struck (eh_victim), a dagger's too (its thrower's)
+    a.b(0x57, 0x8b, 0x4e, 0x0e); a.near(0xe8, 'eh_victim')   # push di / mov cx, the return / di = the struck
+    a.near(0xe8, 'vamp'); a.b(0x5f)                          # call vamp / pop di
+    a.label('eh_end')
     a.b(0x59, 0x5b); a.near(0xe9, 'rules_done')
+    # eh_victim (in ench_hit's frame, cx = the return of 2D73's call): di = the struck: the caller's di as a rule
+    a.label('eh_victim')
+    a.b(0x8b, 0x7e, 0x0c)                                    # mov di, [bp+0Ch]
+    for ret in (0x3776, 0x5215, 0x55bf):
+        a.b(0x81, 0xf9, ret & 0xff, ret >> 8); a.short(0x75, f'eh_r{ret:x}'); a.b(0x8b, 0x7e, 0x10, 0xc3)
+        a.label(f'eh_r{ret:x}')
+    a.b(0x81, 0xf9, 0xd2, 0x56); a.short(0x75, 'eh_v_end'); a.b(0x8b, 0x3e, 0xe8, 0x77)
+    a.label('eh_v_end')
+    a.b(0xc3)
     # fireblock (1000:43D1, mov word [si+28h],10h after mov ax,1Eh (custom rules: the dragon's damage): the dragon's
     # fire on the knight di): with Fireblock, while it blocks, no harm (on at 2D5E, the struck call's end, its
     # script as it was)
@@ -5087,18 +5388,45 @@ def rules_code(a):
     a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d)
     a.label('fb_end')
     a.near(0xe9, 'rules_done')
+    # vamp (D109, the Ring of Vampirism; si = the striker or a thrown dagger (DAGGER: its thrower at +5Ch), di = the
+    # struck, ax = the damage; keeps all): damage above 0 on a struck still standing (a dagger: not on a knight with
+    # Daggerward, which takes it all): the striker's HP + 1 a ring, up to its max HP (at or above max: nothing).
+    # ring_cnt: none for a computer's knight, a practice, the setting off
+    a.label('vamp')
+    a.b(0x85, 0xc0); a.short(0x7e, 'x109_vp_ret')            # test ax, ax / jle
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'x109_vp_ret')   # cmp word [di+38h], 0 / jle
+    a.b(0x50, 0x51, 0x56, 0x57)                              # push ax cx si di
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'x109_vp_str')
+    a.b(0x8b, 0x4c, DAGGER_OWNER, 0x8b, 0xf7); a.near(0xe8, 'arm_of'); a.b(0x8b, 0xf1)   # mov cx, its thrower / mov si, di / arm_of / mov si, cx
+    a.b(0x3c, A_DAGGER); a.short(0x74, 'x109_vp_pop')
+    a.label('x109_vp_str')
+    a.b(0x8b, 0xfe, 0xb0, R_VAMPIRE); a.near(0xe8, 'ring_cnt'); a.b(0x98, 0x85, 0xc0); a.short(0x74, 'x109_vp_pop')   # al = its rings / cbw
+    a.b(0x8b, 0x4c, 0x3c, 0x39, 0x4c, 0x38); a.short(0x7d, 'x109_vp_pop')   # mov cx, [si+3Ch] / cmp [si+38h], cx / jge
+    a.b(0x03, 0x44, 0x38, 0x3b, 0xc1); a.short(0x7e, 'x109_vp_set'); a.b(0x8b, 0xc1)   # add ax, [si+38h] / cmp ax, cx / jle / mov ax, cx
+    a.label('x109_vp_set')
+    a.b(0x89, 0x44, 0x38)                                    # mov [si+38h], ax
+    a.label('x109_vp_pop')
+    a.b(0x5f, 0x5e, 0x59, 0x58)                              # pop di si cx ax
+    a.label('x109_vp_ret')
+    a.b(0xc3)
+    # dragon_dagger (1000:3ADB, sub word [di+38h],3 in DragonStruck: a thrown dagger ([di+0Eh]) on the dragon di):
+    # D109: Vampirism for its thrower
+    a.label('rules_dragon_dagger')
+    a.b(0x50, 0x56, 0xb8, 0x03, 0x00, 0x8b, 0x75, 0x0e); a.near(0xe8, 'vamp'); a.b(0x5e, 0x58)   # push ax si / ax = 3 / si = the dagger
+    a.b(0x83, 0x6d, 0x38, 0x03); a.near(0xe9, 'rules_flags')   # sub word [di+38h], 3   (replaced)
     # gore_hitter ([bp] = the hitting animation (hit_pair)): ZF = 1 if its object is a knight with Gore
     a.label('gore_hitter')
     a.b(0x50, 0x56, 0x8b, 0x76, 0x00, 0x8b, 0x74, 0x16); a.near(0xe8, 'ench_of'); a.b(0x3c, E_GORE, 0x5e, 0x58, 0xc3)
 
     # --- D37: armour enchantments (as D35's for the swords) ---
     # arm_of (si = a knight): al = its armour's enchantment (0: none, a computer's knight, the rule off, another armour
-    # than the one enchanted: then it is gone); keeps the rest
+    # than the one enchanted: then it is gone); keeps the rest. arm_raw: a computer's knight's too (D106, as ench_raw)
     a.label('arm_of')
+    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x75, 'arm_raw'); a.b(0x32, 0xc0, 0xc3)
+    a.label('arm_raw')
     a.b(0x53, 0x52, 0x57, 0x8b, 0xfe, 0x32, 0xc0)
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_ARM_ENCH); a.b(0x00); a.short(0x74, 'x37_ao_end')
     a.near(0xe8, 'knight_no'); a.short(0x72, 'x37_ao_end')
-    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'x37_ao_end')
     a.b(0x2e, 0x8a, 0x87); a.word('arm_k'); a.b(0x0a, 0xc0); a.short(0x74, 'x37_ao_end')
     a.b(0x50, 0x2e, 0x8a, 0x87); a.word('arm_w'); a.b(0x3a, 0x44, 0x42, 0x58); a.short(0x74, 'x37_ao_end')   # the armour enchanted?
     a.b(0x2e, 0xc6, 0x87); a.word('arm_k'); a.b(0x00, 0x32, 0xc0)   # gone with it
@@ -5162,6 +5490,10 @@ def rules_code(a):
     a.label('x37_ai_end')
     a.b(0xbe, 0x26, 0x6e); a.near(0xe9, 'rules_done')
     a.label('x37_ai_on')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xd7, 0xc8)   # back at this site
+    # D97: arm_lair (1000:C8AE, mov si,[6962h] in DisplayLair before DisplayMSword): the same for a lair's chest (the
+    # hoard's hook C8D7 is not on the lair's path), back at C8AE
+    a.label('x97_ai_lair')
     a.b(0x52, 0x57, 0x06, 0x1e, 0x07)
     a.b(0xba, ARM_WINDOWS[1] & 0xff, ARM_WINDOWS[1] >> 8, 0xbf, ARM_TEXTS[1] & 0xff, ARM_TEXTS[1] >> 8)
     a.b(0x2e, 0x89, 0x3e); a.word('arm_tp')
@@ -5172,12 +5504,32 @@ def rules_code(a):
         a.b(0xc7, 0x06, addr & 0xff, addr >> 8, value & 0xff, value >> 8)
     a.b(0x8b, 0x36, 0x88, 0xed, 0x8b, 0x74, 0x42, 0x89, 0x36, 0x9a, 0xe4)   # the picture: the knight's armour
     a.b(0x2e, 0xc6, 0x06); a.word('ai_back'); a.b(0x01)
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(LOOK_ENCH)   # D98: drawn in the enchanted look
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x5d, 0xcb)   # PlaceIcons (CB5D)
-    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xd7, 0xc8)
     a.b(0xb9, 0x01, 0x00, 0x5e, 0x58); a.near(0xe9, 'call_game')
+    a.label('rules_arm_lair')
+    a.b(0x2e, 0x80, 0x3e); a.word('ai_back'); a.b(0x00); a.short(0x74, 'x97_al_first')
+    a.b(0x2e, 0xc6, 0x06); a.word('ai_back'); a.b(0x00); a.short(0xeb, 'x97_al_end')
+    a.label('x97_al_first')
+    a.b(0x50, 0x56); a.near(0xe8, 'arm_get'); a.b(0x0a, 0xc0); a.short(0x75, 'x97_al_on')
+    a.b(0x5e, 0x58)
+    a.label('x97_al_end')
+    a.b(0x8b, 0x36, 0x62, 0x69); a.near(0xe9, 'rules_done')   # mov si, [6962h]   (replaced)
+    a.label('x97_al_on')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xae, 0xc8); a.near(0xe9, 'x97_ai_lair')
+    # item_palette (1000:BFAD, mov [0ED92h],ax as the item screen opens, before its palette is faded in from DS:ED46):
+    # D98: the enchanted look's three colours into the palette's free entries 17-19 (each time: saves hold the table)
+    a.label('rules_item_palette')
+    a.b(0xa3, 0x92, 0xed)                                    # (replaced)
+    for k, rgb in enumerate(ENCH_LOOK_RGB):
+        at = ITEM_PALETTE + 2 * (ENCH_LOOK_FIRST + k)
+        a.b(0xc7, 0x06, at & 0xff, at >> 8, rgb & 0xff, rgb >> 8)
+    a.near(0xe8, 'cha_texts')                                # D112: the price texts with the visitor's prices
+    a.b(0x2e, 0xc6, 0x06); a.word('dup_armed'); a.b(0x00)    # D114: no Gem of Duplication armed as a screen opens
+    a.near(0xe9, 'rules_done')
     # arm_name (1000:C54A, mov [0E4A4h],ax as the panel shows the armour): "<armour> of <enchantment>"
     a.label('rules_arm_name')
-    a.b(0xa3, 0xa4, 0xe4, 0x50, 0x56, 0x8b, 0x36, 0x90, 0xe4); a.near(0xe8, 'arm_of'); a.b(0x0a, 0xc0); a.short(0x75, 'x37_an_on')
+    a.b(0xa3, 0xa4, 0xe4, 0x50, 0x56, 0x8b, 0x36, 0x90, 0xe4); a.near(0xe8, 'arm_raw'); a.b(0x0a, 0xc0); a.short(0x75, 'x37_an_on')   # D106: a computer's too
     a.b(0x5e, 0x58); a.near(0xe9, 'rules_done')
     a.label('x37_an_on')
     a.b(0x53, 0x52, 0x57, 0x06, 0x1e, 0x07, 0x50)
@@ -5191,6 +5543,7 @@ def rules_code(a):
     a.b(0x58); a.near(0xe8, 'arm_name_put'); a.b(0xc6, 0x05, 0x00)
     a.b(0xa1, 0xa4, 0xe4, 0xd1, 0xe8, 0xbb, 0x0a, 0x00, 0x52, 0xf7, 0xe3, 0x5a, 0x03, 0x06, 0xa8, 0xe4, 0x8b, 0xd8)
     a.b(0x8a, 0x47, 0x06); a.near(0xe8, 'arm_desc')
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(LOOK_ENCH)   # D98: PlaceIcons (C559) draws it in the enchanted look
     a.b(0x07, 0x5f, 0x5a, 0x5b, 0x5e, 0x58); a.near(0xe9, 'rules_done')
     # arm_take (from ench_take, bx = ARM_ITEM): onto the clicking knight's armour, replacing one it had
     a.label('arm_take')
@@ -5211,8 +5564,8 @@ def rules_code(a):
     a.b(0x5f, 0x5e, 0x5a, 0x58); a.near(0xe9, 'rules_done')
     # arm_tkar (1000:CE5B, mov bp,[di+42h] in TKAR): as ench_tkwp: the enchantment goes with the armour taken
     a.label('rules_arm_tkar')
-    a.b(0x50, 0x53, 0x52, 0x51, 0x8b, 0x45, 0x42, 0x89, 0x46, 0x00, 0x3d, 0x1b, 0x00); a.short(0x74, 'x37_ak_pop')
-    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'arm_of'); a.b(0x8a, 0xc8); a.near(0xe8, 'arm_clear'); a.b(0x5e)
+    a.b(0x50, 0x53, 0x52, 0x51, 0x8b, 0x45, 0x42, 0x89, 0x46, 0x00, 0x3d, 0x1b, 0x00); a.short(0x74, 'x100_ak')
+    a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'arm_raw'); a.b(0x8a, 0xc8); a.near(0xe8, 'arm_clear'); a.b(0x5e)   # D106: a computer's too
     a.b(0x8b, 0x45, 0x42, 0x3b, 0x44, 0x42); a.short(0x7c, 'x37_ak_pop')
     a.near(0xe8, 'arm_clear')
     a.b(0x0a, 0xc9); a.short(0x74, 'x37_ak_pop'); a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'x37_ak_pop')
@@ -5221,6 +5574,8 @@ def rules_code(a):
     a.b(0x80, 0xf9, A_ADAMANT); a.short(0x75, 'x37_ak_pop'); a.b(0x83, 0x44, 0x38, 0x0a)
     a.label('x37_ak_pop')
     a.b(0x59, 0x5a, 0x5b, 0x58); a.near(0xe9, 'rules_done')
+    a.label('x100_ak')
+    gear_swap(a, 'x100_ak', 0x42, 'arm_of', 'arm_k', 'arm_w', 0x1b, 'x37_ak_pop')
     a.label('arm_clear')                                     # si = a knight: its enchantment gone
     a.b(0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x37_ac_end')
     a.b(0x2e, 0xc6, 0x87); a.word('arm_k'); a.b(0x00)
@@ -5236,11 +5591,15 @@ def rules_code(a):
     # below 0), at least 1. Worked out here so that it is right after any change of armour or enchantment
     a.label('rules_turn_move')
     a.near(0xe8, 'horse_turn')                               # D38: a new turn starts on foot
-    a.b(0x53, 0x33, 0xc0, 0x8a, 0x45, 0x30, 0xd1, 0xe0, 0x05, 0x04, 0x00)
+    a.b(0x53, 0x56, 0x51, 0x8b, 0xf7, 0xbb, STAT_END, 0x00); a.near(0xe8, 'ring_stat')   # D108: Endurance with its rings
+    a.b(0x33, 0xc0, 0x8a, 0xc1, 0x59, 0x5e, 0xd1, 0xe0, 0x05, 0x04, 0x00)   # xor ax, ax / mov al, cl / pop cx si
     a.b(0x8b, 0x5d, 0x42, 0x83, 0xeb, 0x1b, 0x83, 0xfb, 0x03); a.short(0x77, 'x37_tv_min')
     a.b(0x2e, 0x8a, 0x9f); a.word('rules_table', G_ARMOUR_MOVE)
-    a.b(0x56, 0x8b, 0xf7, 0x50); a.near(0xe8, 'arm_of'); a.b(0x3c, A_MITHRIL, 0x58, 0x5e); a.short(0x74, 'x37_tv_neg')
+    a.b(0x56, 0x8b, 0xf7, 0x50); a.near(0xe8, 'arm_of'); a.b(0x3c, A_MITHRIL, 0x58, 0x5e); a.short(0x74, 'x99_tv_mithril')
     a.b(0x50); a.near(0xe8, 'horse_of'); a.b(0x0a, 0xc0, 0x58); a.short(0x74, 'x37_tv_add')   # D38: mounted, as Mithril
+    a.short(0xeb, 'x37_tv_neg')
+    a.label('x99_tv_mithril')                                # D99: Mithril also moves as with MITHRIL_END more endurance
+    a.b(0x05, 2 * MITHRIL_END, 0x00)                         # add ax, 2 * MITHRIL_END   (the game's endurance * 2 + 4)
     a.label('x37_tv_neg')
     a.b(0x0a, 0xdb); a.short(0x79, 'x37_tv_add'); a.b(0x32, 0xdb)
     a.label('x37_tv_add')
@@ -5273,6 +5632,15 @@ def rules_code(a):
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xf4, 0xa5); a.near(0xe9, 'call_game')
     # arm_fire (1000:4405, mov cl,[bx+8], the talismans halving the dragon's damage on di): Fireproof counts as one more
     a.label('rules_arm_fire')
+    # D102: the dragon's fire (4400 called from 43D6, not the bite: move 2) on a knight with Fire Resistance in a
+    # campaign fight: FIRE_RES_DAMAGE, past the talismans, Fireproof and their least (on at 4412, the ret)
+    a.b(0x81, 0x7e, 0x08, 0xd9, 0x43); a.short(0x75, 'x37_af_go')   # cmp word [bp+8], 43D9h / jne
+    a.b(0x83, 0x7c, 0x28, 0x02); a.short(0x74, 'x37_af_go')  # cmp word [si+28h], 2 / je   the bite
+    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION); a.short(0x74, 'x37_af_go')
+    a.b(0x52); a.near(0xe8, 'knight_no'); a.b(0x5a); a.short(0x72, 'x37_af_go')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_FIRE); a.short(0x74, 'x37_af_go')
+    a.b(0xb8, FIRE_RES_DAMAGE, 0x00, 0xc7, 0x46, 0x02, 0x12, 0x44); a.near(0xe9, 'rules_done')
+    a.label('x37_af_go')
     a.b(0x8b, 0x5e, 0xfe, 0x8a, 0x4f, 0x08, 0x50, 0x56, 0x8b, 0xf7); a.near(0xe8, 'arm_of'); a.b(0x3c, A_FIRE, 0x5e, 0x58); a.short(0x75, 'x37_af_end')
     a.b(0xfe, 0xc1)
     a.label('x37_af_end')
@@ -5284,9 +5652,23 @@ def rules_code(a):
     a.label('x37_av_end')
     a.near(0xe9, 'rules_done')
     # arm_target (1000:CB04, mov di,8979h as the item screen takes the next knight [bx+si] for a scroll): past a
-    # Spellproof knight (unless every other one is)
+    # Spellproof knight (unless every other one is). D115: also past a knight D81 left out of the campaign (no
+    # computer knights: a computer's record, no lives) for the scrolls (Wyrm, mode 0Bh with [0F37Ah]; the one in mode
+    # 8); the Gem of Spying (mode 0Bh without [0F37Ah]) past every knight with no lives left (dead, or left out), but
+    # not past a Spellproof one (a gem, not a scroll). sp_tries ends the search after the other three
     a.label('rules_arm_target')
-    a.b(0x8b, 0x5e, 0xfe, 0x56, 0x8b, 0x30); a.near(0xe8, 'arm_of'); a.b(0x3c, A_SPELL, 0x5e); a.short(0x75, 'x37_atg_take')
+    a.b(0x8b, 0x5e, 0xfe, 0x56, 0x8b, 0x30)                  # mov bx, [bp-2] / push si / mov si, [bx+si]
+    a.b(0x83, 0x3e, 0x92, 0xed, 0x0b); a.short(0x75, 'x115_atg_scroll')   # cmp word [0ED92h], 0Bh / jne
+    a.b(0x83, 0x3e, 0x7a, 0xf3, 0x00); a.short(0x75, 'x115_atg_scroll')   # cmp word [0F37Ah], 0 / jne: the Wyrm
+    a.b(0x80, 0x7c, 0x31, 0x00, 0x5e); a.short(0x7e, 'x115_atg_skip'); a.short(0xeb, 'x37_atg_take')   # Spying: lives > 0
+    a.label('x115_atg_scroll')
+    a.near(0xe8, 'cpu_none'); a.short(0x75, 'x115_atg_spell')
+    a.b(0x83, 0x7c, 0x20, COMPUTER); a.short(0x74, 'x115_atg_pop')   # left out of the campaign (ZF = 1)
+    a.label('x115_atg_spell')
+    a.near(0xe8, 'arm_of'); a.b(0x3c, A_SPELL)
+    a.label('x115_atg_pop')
+    a.b(0x5e); a.short(0x75, 'x37_atg_take')
+    a.label('x115_atg_skip')
     a.b(0x2e, 0xfe, 0x06); a.word('sp_tries'); a.b(0x2e, 0x80, 0x3e); a.word('sp_tries'); a.b(0x04); a.short(0x73, 'x37_atg_take')
     a.b(0xc7, 0x46, 0x02, 0xec, 0xca); a.near(0xe9, 'rules_done')
     a.label('x37_atg_take')
@@ -5408,9 +5790,20 @@ def rules_code(a):
     # matches after DiceSort), picked at the game's own odds (a triple 1, a pair 3, three faces 6), in a random order
     a.label('rules_dice_roll')
     a.near(0xe8, 'dice_pending')
-    a.b(0x2e, 0x80, 0x3e); a.word('dice_loaded'); a.b(0x00); a.short(0x74, 'x80_dr_call')
+    a.b(0x2e, 0x80, 0x3e); a.word('dice_loaded'); a.b(0x00); a.short(0x75, 'x111_dr_load')
+    a.b(0x2e, 0x80, 0x3e); a.word('luck_used'); a.b(0x00); a.short(0x75, 'x80_dr_call')   # D111: Luck's throw used in this town visit
+    a.near(0xe9, 'x111_dr_luck')
+    a.label('x111_dr_load')
     a.near(0xe9, 'x80_dr_load')                              # SR4: the throw in group 2
-    a.ovl_begin(OVL_COLD); a.ovl_entry('x80_dr_load', 'jump', 'x80_dr_call')
+    # D111: the first throw of a town visit (luck_used, cleared by gold_note as a town is entered; leaving a town
+    # ends the turn, 0E0E -> 113E) by the knight whose turn it is with a Ring of Luck: LOADEDDICE's throw
+    a.ovl_begin(OVL_COLD); a.ovl_entry('x111_dr_luck', 'jump', 'x80_dr_call')
+    a.b(0x50, 0x57, 0x8b, 0x3e, 0xe8, 0x77, 0xb0, R_LUCK); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0, 0x5f, 0x58)   # push ax di / ring_cnt / pop di ax
+    a.short(0x75, 'x111_dl_win'); a.near(0xe9, 'x80_dr_call')
+    a.label('x111_dl_win')
+    a.b(0x2e, 0xc6, 0x06); a.word('luck_used'); a.b(0x01); a.short(0xeb, 'x80_dr_body')
+    a.ovl_entry('x80_dr_load', 'jump', 'x80_dr_call')
+    a.label('x80_dr_body')
     a.b(0x50, 0x51, 0x52, 0x56)                              # push ax cx dx si
     a.b(0x33, 0xd2, 0xbe, 0x25, 0xd1, 0xb9, 0x0c, 0x00)      # xor dx, dx / mov si, D125h / mov cx, 12
     a.label('x80_dr_sum')
@@ -5509,6 +5902,7 @@ def rules_code(a):
     a.b(0xc3)
     # gold_note (D79): the current knight's gold as a town is entered; keeps the registers
     a.label('gold_note')
+    a.b(0x2e, 0xc6, 0x06); a.word('luck_used'); a.b(0x00)    # D111: a new town visit: Luck's first throw again
     a.b(0x50, 0x56, 0x8b, 0x36, 0xe8, 0x77, 0x8b, 0x44, 0x32, 0x2e, 0xa3); a.word('gv_start'); a.b(0x5e, 0x58, 0xc3)
     # gold_add (D41; 1000:0BBE, add [si+32h],ax: the winner of a duel, the game's only uncapped gain): stops at 32767
     a.label('rules_gold_add')
@@ -5614,7 +6008,8 @@ def rules_code(a):
     for x in HORSE_X: a.b(x & 0xff, x >> 8)
     # horse_buy (1000:CF0C, BuyGoods' mov si,[0ED88h]): the horses' field: dx = the horse. Not the one it has; no money back
     a.label('rules_horse_buy')
-    a.b(0x8b, 0x36, 0x88, 0xed, 0x83, 0x7e, 0xfe, HORSE_FIELD); a.short(0x75, 'x42_goods'); a.near(0xe9, 'x38_hb_horse')
+    a.b(0x8b, 0x36, 0x88, 0xed); a.near(0xe8, 'cha_shop')   # D112: the game's shop prices = the buyer's (Charisma)
+    a.b(0x83, 0x7e, 0xfe, HORSE_FIELD); a.short(0x75, 'x42_goods'); a.near(0xe9, 'x38_hb_horse')
     a.label('x42_goods')
     # D40: a worse sword or armour than the knight's own is free in exchange (the Sword of Sharpness stays); else as before
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TRADE_IN); a.b(0x00); a.short(0x75, 'x40_tr_on')
@@ -5652,6 +6047,7 @@ def rules_code(a):
     a.b(0x8b, 0xf8, 0x2e, 0x8b, 0x87); a.word('rules_table', G_SELL); a.b(0x2e, 0x8b, 0x95); a.word('rules_table', G_BUY)
     a.b(0x2b, 0xd0); a.short(0x73, 'x42_p_net'); a.b(0x33, 0xd2)
     a.label('x42_p_net')
+    a.near(0xe8, 'cha_credit')                               # D112: the buyer's price less the old one's capped value
     a.b(0x39, 0x54, 0x32); a.short(0x7c, 'x42_p_no'); a.b(0x29, 0x54, 0x32, 0xf8, 0xc3)
     a.label('x42_p_no')
     a.b(0xf9, 0xc3)
@@ -5672,6 +6068,7 @@ def rules_code(a):
     a.b(0x8b, 0xd9, 0x2e, 0x8a, 0x9f); a.word('horse_k'); a.b(0x32, 0xff, 0x0a, 0xdb); a.short(0x74, 'x42_h_check')
     a.b(0xd1, 0xe3, 0x2e, 0x8b, 0x9f); a.word('rules_table', G_HORSE_PRICE - 2); a.b(0xd1, 0xeb, 0x2b, 0xd3); a.short(0x73, 'x42_h_check'); a.b(0x33, 0xd2)
     a.label('x42_h_check')
+    a.near(0xe8, 'cha_horse')                                # D112: the same for horses (al = the horse, cx = the knight's number)
     a.b(0x39, 0x54, 0x32); a.short(0x7c, 'x38_hb_no'); a.b(0x29, 0x54, 0x32, 0x8b, 0xd9)
     a.label('x40_hb_free')
     a.b(0x2e, 0x88, 0x87); a.word('horse_k'); a.b(0x2e, 0xc6, 0x87); a.word('horse_off'); a.b(0x00)   # D92: on again
@@ -5682,8 +6079,13 @@ def rules_code(a):
     a.near(0xe9, 'rules_done')
     # horse_terrain (1000:A918, mov si,0C42Ah): with a horse the cell lets through the horse's share of the steps, in eighths
     a.label('rules_horse_terrain')
+    a.near(0xe8, 'terrain_free'); a.short(0x73, 'x103_ht_go')   # D103: Levitation, D111: the walk rings: no slowing (CD4C stays 0)
+    a.b(0xc7, 0x46, 0x02, 0x34, 0xa9); a.near(0xe9, 'rules_done')   # on at A934 (the ret)
+    a.label('x103_ht_go')
     a.b(0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'horse_of'); a.b(0x5f, 0x0a, 0xc0); a.short(0x75, 'x38_ht_on')
-    a.b(0xbe, 0x2a, 0xc4); a.near(0xe9, 'rules_done')
+    # D110: on foot the game's mask is the cell without TERRAIN_ROCKS (rocks 6 -> 2): al for A91D, si as the game's
+    a.b(0x8b, 0x5e, 0xfe, 0x8a, 0x87, 0x2a, 0xc4, 0x24, 0x03, 0xbe, 0x2a, 0xc4)   # mov bx, [bp-2] / mov al, [bx+0C42Ah] / and al, 3 / mov si, 0C42Ah
+    a.b(0xc7, 0x46, 0x02, 0x1d, 0xa9); a.near(0xe9, 'rules_done')   # on at A91D (or al, al)
     a.label('x38_ht_on')
     a.b(0x8b, 0x5e, 0xfe, 0x32, 0xe4, 0x8b, 0xf0, 0x8a, 0x87, 0x2a, 0xc4, 0x0a, 0xc0); a.short(0x74, 'x38_ht_ret')
     a.b(0xff, 0x06, 0x4a, 0xcd, 0x8a, 0x1e, 0x4a, 0xcd, 0x80, 0xe3, 0x07, 0x3c, 0x03); a.short(0x74, 'x38_ht_hard')
@@ -5722,16 +6124,26 @@ def rules_code(a):
     a.b(0x50, 0x8b, 0x46, 0x02, 0x40, 0x2e, 0xa3); a.word('call_ret'); a.b(0x58)   # back past the int 63h's nop
     a.near(0xe9, 'call_game')
 
-    # knight_reset (si = a knight being set up for a new game): its sword's and armour's enchantments and its
-    # horse cleared; for knight 1 the chests' enchantments too
+    # knight_reset (si = a knight being set up for a new game): knight_clear; for knight 1 the chests' enchantments
+    # too. knight_clear (D106: also a reincarnated knight's, from turn_reborn): its sword's and armour's enchantments,
+    # its horse, its special potions, their effects and its Potions of Life cleared; ZF = 1 (CF = 0) for knight 1
     a.label('knight_reset')
+    a.near(0xe8, 'knight_clear'); a.short(0x72, 'x106_kr_end'); a.short(0x75, 'x106_kr_end')
+    a.b(0x50, 0x51, 0x57, 0x06, 0x0e, 0x07, 0xbf); a.word('lair_ench'); a.b(0xb9, 5 * (LAIR_COUNT + 1) + LAIR_COUNT + 6, 0x00, 0x32, 0xc0, 0xfc, 0xf3, 0xaa, 0x07, 0x5f, 0x59, 0x58)
+    a.label('x106_kr_end')
+    a.b(0xc3)
+    a.label('knight_clear')
     a.b(0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'ddr_end')   # push bx dx di / mov di, si / call knight_no / jc
     a.b(0x2e, 0xc6, 0x87); a.word('ench_k'); a.b(0x00)    # D35: its sword's enchantment
     a.b(0x2e, 0xc6, 0x87); a.word('arm_k'); a.b(0x00)     # D37: its armour's
     a.b(0x2e, 0xc6, 0x87); a.word('horse_k'); a.b(0x00)   # D38: its horse
     a.b(0x2e, 0xc6, 0x87); a.word('horse_off'); a.b(0x00) # D92: on
-    a.b(0x0b, 0xdb); a.short(0x75, 'ddr_end')                # knight 1: the chests' too
-    a.b(0x50, 0x51, 0x57, 0x06, 0x0e, 0x07, 0xbf); a.word('lair_ench'); a.b(0xb9, 2 * (LAIR_COUNT + 1), 0x00, 0x32, 0xc0, 0xfc, 0xf3, 0xaa, 0x07, 0x5f, 0x59, 0x58)
+    a.b(0x2e, 0xc6, 0x87); a.word('pot_fx'); a.b(0x00)    # D101: its special potions, their effects, its Potions of Life
+    a.b(0x2e, 0xc6, 0x87); a.word('life_k'); a.b(0x00)
+    a.b(0x53, 0x8b, 0xd3, 0xd1, 0xe3, 0x03, 0xda, 0x2e, 0xc7, 0x87); a.word('pot_k'); a.b(0x00, 0x00, 0x2e, 0xc6, 0x87); a.word('pot_k', 2); a.b(0x00, 0x5b)
+    a.b(0x53, 0xd1, 0xe3, 0x2e, 0xc7, 0x87); a.word('ring_k'); a.b(0x00, 0x00, 0x5b)   # D108: its special rings (2 places)
+    a.b(0x53, 0x8b, 0xd3, 0xd1, 0xe3, 0x03, 0xda, 0x2e, 0xc7, 0x87); a.word('gem_k'); a.b(0x00, 0x00, 0x2e, 0xc6, 0x87); a.word('gem_k', 2); a.b(0x00, 0x5b)   # D113: its special gems (3 places)
+    a.b(0x0b, 0xdb)                                          # or bx, bx: knight 1 (knight_reset: the chests too, D101: lair_potion after arm_lair, D108: lair_ring, D113: lair_gem)
     a.label('ddr_end')
     a.b(0x5f, 0x5a, 0x5b, 0xc3)
 
@@ -6326,18 +6738,33 @@ def rules_code(a):
 
     # turn_haste (1000:A6D2, replaces cmp word [0CCA2h],0 where the turn's budget is doubled by a Scroll of Haste):
     # also for a knight with KNIGHTRIDER (ZF = 0: double)
+    # D117: the doubling (A6D9) is done here, then the Gem of Slow's cut (slow_cut), on at A6DD (call B1B0)
     a.label('rules_turn_haste')
     a.b(0x83, 0x3e, 0xa2, 0xcc, 0x01); a.short(0x75, 'th_not_cursed')   # cmp word [0CCA2h], 1 / jne
-    a.b(0xd1, 0x2e, 0xac, 0xcc, 0xc7, 0x46, 0x02, 0xdd, 0xa6)   # shr word [0CCACh], 1 / mov word [bp+2], 0A6DDh   half
-    a.near(0xe9, 'rules_done')
+    a.b(0xd1, 0x2e, 0xac, 0xcc); a.short(0xeb, 'x117_th_cut')   # shr word [0CCACh], 1   half
     a.label('th_not_cursed')
-    a.b(0x83, 0x3e, 0xa2, 0xcc, 0x00); a.short(0x75, 'th_flags')   # cmp word [0CCA2h], 0 / jne th_flags
+    a.b(0x83, 0x3e, 0xa2, 0xcc, 0x00); a.short(0x75, 'x117_th_double')   # cmp word [0CCA2h], 0 / jne: hasted
     a.b(0x56, 0x50, 0x8b, 0x36, 0xe8, 0x77)                  # push si ax / mov si, [77E8h]
     a.near(0xe8, 'knight_bit')
     a.b(0x2e, 0x84, 0x06); a.word('knight_haste')            # test cs:[knight_haste], al   ZF = 0: hasted
-    a.b(0x58, 0x5e)                                          # pop ax si
-    a.label('th_flags')
-    a.near(0xe9, 'rules_flags')
+    a.b(0x58, 0x5e); a.short(0x74, 'x117_th_cut')            # pop ax si / jz
+    a.label('x117_th_double')
+    a.b(0xd1, 0x26, 0xac, 0xcc)                              # shl word [0CCACh], 1   (the game's A6D9)
+    a.label('x117_th_cut')
+    # slow_cut: the knight [77E8h] with slow_k: the budget [0CCACh] cut to G_SLOW percent, at least SLOW_MIN (one
+    # movement point, the game's least turn) but never above the uncut budget. slow_k stays until the knight's turn ends
+    # (turn_end): the map's redraws (A4CA) work the budget out again with the same cut; a frog's skipped turn (A666)
+    # never reaches turn_end, so its mark waits for a turn with a budget
+    a.b(0x50, 0x53, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'knight_no'); a.short(0x72, 'x117_th_end')
+    a.b(0x2e, 0x80, 0xbf); a.word('slow_k'); a.b(0x00); a.short(0x74, 'x117_th_end')   # cmp byte cs:[bx+slow_k], 0 / je
+    a.b(0xa1, 0xac, 0xcc, 0x8b, 0xf8, 0x2e, 0x8a, 0x1e); a.word('rules_table', G_SLOW)   # mov ax, [0CCACh] / mov di, ax / mov bl, cs:[pct]
+    a.b(0x32, 0xff, 0xf7, 0xe3, 0xbb, 0x64, 0x00, 0xf7, 0xf3)   # xor bh, bh / mul bx / mov bx, 100 / div bx
+    a.b(0x3d, SLOW_MIN, 0x00); a.short(0x73, 'x117_th_set'); a.b(0xb8, SLOW_MIN, 0x00)   # cmp ax, 16 / jae / mov ax, 16
+    a.b(0x3b, 0xc7); a.short(0x76, 'x117_th_set'); a.b(0x8b, 0xc7)   # cmp ax, di / jbe / mov ax, di
+    a.label('x117_th_set')
+    a.b(0xa3, 0xac, 0xcc)
+    a.label('x117_th_end')
+    a.b(0x5f, 0x5a, 0x5b, 0x58, 0xc7, 0x46, 0x02, 0xdd, 0xa6); a.near(0xe9, 'rules_done')   # on at A6DD
 
     # cheat_map (from turn_moves, every pass of the map loop): the map codes for the knight whose turn it is.
     # CF = 1: a game routine to call (call_target), returning to the map loop's site (A568h) again
@@ -9011,6 +9438,7 @@ def rules_code(a):
     a.b(0x83, 0x7c, 0x60, 0x00); a.short(0x74, 'hl_lives')   # cmp word [si+60h], 0 / je
     a.label('hl_hp')
     a.b(0x26, 0x8a, 0x0e, 0xdb, 0xbc, 0x32, 0xed)            # mov cl, es:[0BCDBh] / xor ch, ch   the heal's price
+    a.b(0x91); a.near(0xe8, 'cha_cut'); a.b(0x91)            # D112: the knight's price (xchg ax, cx around)
     a.b(0x3b, 0xd9); a.short(0x7c, 'hl_hp_try')              # cmp bx, cx / jl
     a.b(0x2b, 0xd9); a.short(0xeb, 'hl_heal')                # sub bx, cx / jmp
     a.label('hl_hp_try')
@@ -9021,6 +9449,7 @@ def rules_code(a):
     a.b(0xc7, 0x44, 0x60, 0x00, 0x00, 0x83, 0xcf, 0x01)      # mov word [si+60h], 0 / or di, 1
     a.label('hl_lives')
     a.b(0x26, 0x8a, 0x0e, 0xee, 0xbc, 0x32, 0xed)            # mov cl, es:[0BCEEh] / xor ch, ch   a life's price
+    a.b(0x91); a.near(0xe8, 'cha_cut'); a.b(0x91)            # D112: the knight's price
     a.label('hl_life')
     a.b(0x8a, 0x44, 0x31, 0x2e, 0x3a, 0x06); a.word('rules_table', G_MAX_LIVES); a.short(0x7d, 'hl_change')   # cap: jge
     a.b(0x3b, 0xd9); a.short(0x7c, 'hl_life_try')            # cmp bx, cx / jl
@@ -10372,15 +10801,20 @@ def rules_code(a):
     a.b(0x2e, 0xac, 0x0a, 0xc0); a.short(0x74, 'kxc_e'); a.b(0xaa); a.short(0xeb, 'kx_copy_cs')   # lodsb cs: / or al, al / jz / stosb
     a.label('kxc_e')
     a.b(0xc3)
+    # kx_copy_ds (a knight's name; ah = its lives): D107: a dead knight's key lies at its grave: "<name>'s grave"
     a.label('kx_copy_ds')
     a.b(0xac, 0x0a, 0xc0); a.short(0x74, 'kxd_e'); a.b(0xaa); a.short(0xeb, 'kx_copy_ds')
     a.label('kxd_e')
+    a.b(0x0a, 0xe4); a.short(0x7f, 'kxd_ret')                # or ah, ah / jg: alive
+    a.b(0xbe); a.word('kxt_grave'); a.short(0xeb, 'kx_copy_cs')
+    a.label('kxd_ret')
     a.b(0xc3)
-    # key_holder (al = a key's bit): CF = 1 si = a knight's name in MAIN's data; CF = 0 si = a text here
+    # key_holder (al = a key's bit): CF = 1 si = a knight's name in MAIN's data, ah = its lives; CF = 0 si = a text here
     a.label('key_holder')
     a.b(0x53, 0x51)                                          # push bx cx
     for rec in KNIGHTS:
         a.b(0x8b, 0x1e, (rec + 0x44) & 0xff, (rec + 0x44) >> 8, 0x84, 0x47, 0x14); a.short(0x74, f'kh_n{rec:x}')   # mov bx, [rec+44h] / test [bx+14h], al / jz
+        a.b(0x8a, 0x26, (rec + 0x31) & 0xff, (rec + 0x31) >> 8)   # mov ah, [rec+31h]   D107: its lives (kx_copy_ds)
         a.b(0x8b, 0x36, (rec + 0x4c) & 0xff, (rec + 0x4c) >> 8, 0xf9); a.near(0xe9, 'kh_ret')   # mov si, [rec+4Ch] / stc
         a.label(f'kh_n{rec:x}')
     r = DRAGON_RECORD + 0x44
@@ -10404,6 +10838,7 @@ def rules_code(a):
     for n, (bit, name) in enumerate(KEY_REGIONS):
         a.label(f'kxt_{n}'); a.b(name.encode() + bytes(1))
     a.label('kxt_dragon'); a.b(b'the Dragon' + bytes(1))
+    a.label('kxt_grave'); a.b(b"'s grave" + bytes(1))      # D107
     a.label('kxt_temple'); a.b(b'the High Temple' + bytes(1))
     a.label('kxt_lair'); a.b(b'a glowing lair' + bytes(1))
     a.label('kxt_none'); a.b(b'nowhere' + bytes(1))
@@ -10612,6 +11047,37 @@ def rules_code(a):
     a.b(0xc7, 0x46, 0x02, 0x3e, 0xa4)                        # mov word [bp+2], 0A43Eh
     a.label('mo_end')
     a.near(0xe9, 'rules_done')
+    # grave (1000:A426, mov ax,21h: a dead knight's (si) grave on the map): D107: drawn in the gold look (D98's
+    # recolour via look_put: CROSS_GOLD) while it holds anything but the sword, the armour and the horse (gold,
+    # daggers, any item of the table, keys, Moonstones, a special of any kind in spec_kinds), or the Sword of
+    # Sharpness; only with dead_knights_cross on and the knight in permadeath (respawn, reincarnation: no cross).
+    # Standing on it: the game's glow (08E0), unchanged
+    a.label('rules_grave')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_CROSS); a.b(0x00); a.short(0x74, 'x107_gr_end')
+    a.b(0x51, 0x52, 0x56, 0x57)                              # push cx dx si di
+    a.near(0xe8, 'section'); a.short(0x72, 'x107_gr_pop')
+    a.b(0x2e, 0x80, 0x7f, 0x07, MODE_PERMADEATH); a.short(0x75, 'x107_gr_pop')   # cmp byte cs:[bx+7], 0
+    a.b(0x83, 0x7c, 0x32, 0x00); a.short(0x75, 'x107_gr_gold')   # cmp word [si+32h], 0   gold
+    a.b(0x80, 0x7c, 0x34, 0x00); a.short(0x75, 'x107_gr_gold')   # cmp byte [si+34h], 0   daggers
+    a.b(0x83, 0x7c, 0x40, SHARPNESS); a.short(0x74, 'x107_gr_gold')   # the Sword of Sharpness
+    a.b(0x8b, 0x5c, 0x44, 0xb9, 0x0c, 0x00)                  # mov bx, [si+44h] / mov cx, 12   the item table
+    a.label('x107_gr_item')
+    a.b(0x83, 0x3f, 0x00); a.short(0x75, 'x107_gr_gold')     # cmp word [bx], 0
+    a.b(0x43, 0x43); a.short(0xe2, 'x107_gr_item')           # inc bx / inc bx / loop
+    a.b(0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x107_gr_pop')   # mov di, si / bl = its number
+    a.b(0xbe); a.word('spec_kinds')                          # mov si, spec_kinds
+    a.label('x107_gr_kind')
+    a.b(0x2e, 0x8a, 0x44, 0x02, 0x0a, 0xc0); a.short(0x74, 'x107_gr_pop')   # mov al, cs:[si+2] / or al, al: the end
+    a.b(0xf6, 0xe3, 0x2e, 0x03, 0x04, 0x97)                  # mul bl / add ax, cs:[si] / xchg ax, di
+    a.b(0x2e, 0x80, 0x3d, 0x00); a.short(0x75, 'x107_gr_gold')   # cmp byte cs:[di], 0   its first place (packed)
+    a.b(0x83, 0xc6, 0x05); a.short(0xeb, 'x107_gr_kind')     # add si, 5
+    a.label('x107_gr_gold')
+    a.b(0xbb); a.word('cross_pix'); a.b(0xbe); a.word('cross_gold'); a.b(0xb9, 0x02, 0x00)   # mov bx / si / cx, 2
+    a.near(0xe8, 'look_put')
+    a.label('x107_gr_pop')
+    a.b(0x5f, 0x5e, 0x5a, 0x59)                              # pop di si dx cx
+    a.label('x107_gr_end')
+    a.b(0xb8, 0x21, 0x00); a.near(0xe9, 'rules_done')        # mov ax, 21h (replaced)
     a.label('rules_lair_icon')
     a.b(0xb8, 0x14, 0x00)                                    # (replaced)
     a.b(0x2e, 0x80, 0x3e); a.word('keys_shown'); a.b(0x00); a.short(0x74, 'li_end')
@@ -10918,7 +11384,11 @@ def rules_code(a):
     a.b(0xc3)
     # gun_monster (1000:2F46, sub [di+38h],ax: a monster struck, si = the striker; a dagger did 3): D64 GUNSHOT
     a.label('rules_gun_monster')
-    a.near(0xe8, 'gun_kill'); a.b(0x29, 0x45, 0x38)          # call gun_kill / sub [di+38h], ax   (replaced)
+    a.near(0xe8, 'gun_kill')
+    # D109: a thrown dagger's 3 on a trogg (2F38; a knight's blow came through ench_hit): Vampirism for its thrower
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'x109_gm_sub'); a.near(0xe8, 'vamp')
+    a.label('x109_gm_sub')
+    a.b(0x29, 0x45, 0x38)                                    # sub [di+38h], ax   (replaced)
     a.near(0xe9, 'rules_flags')                              # jmp rules_flags   (as the sub left them)
 
     a.label('rules_dagger_damage')
@@ -11561,6 +12031,7 @@ def rules_code(a):
     a.label('rules_fight_end')
     a.near(0xe8, 'amiga_stop')                               # call amiga_stop   (D67)
     a.near(0xe8, 'cheat_fight_end')                          # call cheat_fight_end
+    a.near(0xe8, 'pot_fight_end')                            # D102: the fight potions used
     a.b(0x2e, 0xc7, 0x06); a.word('demon_held'); a.b(0x00, 0x00)   # mov word cs:[demon_held], 0   (K40)
     for name in ('charred', 'boar_victim', 'boar_obj'):      # K42
         a.b(0x2e, 0xc7, 0x06); a.word(name); a.b(0x00, 0x00)
@@ -11654,6 +12125,7 @@ def rules_code(a):
     a.label('sxpf_go')
     a.near(0xe8, 'cheat_fight')                              # call cheat_fight   cheat codes
     a.near(0xe8, 'knight_flash')                             # call knight_flash  knights 3 and 4 at low HP
+    a.near(0xe8, 'might_frame')                              # D102: Might's pushes
     a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION)   # cmp word [0704h], 2
     a.short(0x75, 'pf_play')                                 # jne pf_play          not a practice
     a.b(0x2e, 0x80, 0x3e); a.word('quitting'); a.b(0x00)     # cmp byte cs:[quitting], 0
@@ -12014,6 +12486,16 @@ def rules_code(a):
 
     # village (1000:1130): the home village druids, si = record
     a.label('rules_village')
+    a.near(0xe8, 'village_lives')                            # D103: also Recall's
+    a.b(0x50)                                                # push ax
+    a.label('village_hp')                                    # full HP whatever the lives (the manual); speedrun: as the game
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_EXPLOIT_FIXES); a.b(0x00); a.short(0x74, 'village_end')
+    a.b(0x8b, 0x44, 0x3c, 0x3b, 0x44, 0x38, 0x7c, 0x03, 0x89, 0x44, 0x38)   # mov ax, [si+3Ch] / cmp ax, [si+38h] / jl (D101: above max kept) / mov [si+38h], ax
+    a.label('village_end')
+    a.b(0x58)                                                # pop ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    # village_lives (si = a knight's record): its lives as its home village gives them (village_heal); keeps all
+    a.label('village_lives')
     a.b(0x50, 0x2e, 0xa0); a.word('rules_table', G_MAX_LIVES)       # push ax / mov al, cs:[max_lives]
     a.b(0x2e, 0x8a, 0x26); a.word('rules_table', G_VILLAGE)         # mov ah, cs:[village]
     a.b(0x80, 0xfc, VILLAGE_FULL)                            # cmp ah, 2
@@ -12023,19 +12505,1933 @@ def rules_code(a):
     a.b(0xb0, 0x03)                                          # mov al, 3       below 3 (the original)
     a.label('village_add')
     a.b(0x38, 0x44, 0x31)                                    # cmp [si+31h], al
-    a.short(0x7d, 'village_hp')                              # jge village_hp
+    a.short(0x7d, 'village_lv_end')                          # jge
     a.b(0xfe, 0x44, 0x31)                                    # inc byte [si+31h]
-    a.short(0xeb, 'village_hp')                              # jmp village_hp
+    a.short(0xeb, 'village_lv_end')
     a.label('village_full')
     a.b(0x38, 0x44, 0x31)                                    # cmp [si+31h], al
-    a.short(0x7d, 'village_hp')                              # jge village_hp
+    a.short(0x7d, 'village_lv_end')                          # jge
     a.b(0x88, 0x44, 0x31)                                    # mov [si+31h], al
-    a.label('village_hp')                                    # full HP whatever the lives (the manual); speedrun: as the game
-    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_EXPLOIT_FIXES); a.b(0x00); a.short(0x74, 'village_end')
-    a.b(0x8b, 0x44, 0x3c, 0x89, 0x44, 0x38)                  # mov ax, [si+3Ch] / mov [si+38h], ax
-    a.label('village_end')
-    a.b(0x58)                                                # pop ax
-    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.label('village_lv_end')
+    a.b(0x58, 0xc3)                                          # pop ax / ret
+    potions_code(a)                                          # D101
+    rings_code(a)                                            # D108
+    gems_code(a)                                             # D113
+
+def potions_code(a):
+    """D101: special potions, the base (docs/potions-plan-2026-11-10.md, session 1). Each knight has three places
+    (pot_k, packed from the first) on its panel's potion row, before its Potions of Healing; a lair chest or the hoard
+    holds at most one (lair_potion, decided at its first look while the looking knight has a free place). The display
+    and the clicks are in group OVL_POT, the drink's effects in OVL_POT_FX; the parts written for the rings and gems
+    too: pot_slots, look_put, pot_free, pot_add, pot_remove, the row and the descriptors."""
+    u = lambda v: (v & 0xff, v >> 8)
+    # --- resident ---
+    # pot_row (1000:C772, mov si,[0E490h] at DisplayMagic's potion row): the specials first (group OVL_POT)
+    a.label('rules_pot_row')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_POTIONS); a.b(0x00); a.short(0x74, 'x101_pr_off')
+    a.near(0xe9, 'pot_row')
+    a.label('x101_pr_off')
+    a.b(0x8b, 0x36, 0x90, 0xe4); a.near(0xe9, 'rules_done')   # mov si, [0E490h]   (replaced)
+    # heal_full (1000:CCC3, the healing potion's push [si+3Ch] / pop [si+38h]) and heal_ax (1000:10BB, Stonehenge's
+    # mov ax,[si+3Ch] / mov [si+38h],ax, ax = max as the game): HP = max, but HP above max (Danu) is kept
+    a.label('rules_heal_ax')
+    a.b(0x8b, 0x44, 0x3c)                                    # mov ax, [si+3Ch]
+    a.label('rules_heal_full')
+    a.b(0x50, 0x8b, 0x44, 0x3c, 0x3b, 0x44, 0x38); a.short(0x7c, 'x101_hf_keep')   # push ax / mov ax, [si+3Ch] / cmp ax, [si+38h] / jl
+    a.b(0x89, 0x44, 0x38)                                    # mov [si+38h], ax
+    a.label('x101_hf_keep')
+    a.b(0x58, 0x83, 0x46, 0x02, 0x04); a.near(0xe9, 'rules_done')   # pop ax / on after the 6 bytes
+    # --- D102: the fight potions (resident: every blow and fight frame) ---
+    # might_on (si = a knight's record): CF = 0 and bx = its number if Might is on it in a campaign fight; keeps the rest
+    a.label('might_on')
+    a.b(0x50, 0xb0, FX_MIGHT); a.near(0xe8, 'fx_on'); a.b(0x58, 0xc3)   # push ax / mov al, FX_MIGHT / call fx_on / pop ax
+    # spd_on (D104): the same for Speed (al lost); fx_on: for the pot_fx bits in al
+    a.label('spd_on')
+    a.b(0xb0, FX_SPEED)
+    a.label('fx_on')
+    a.b(0x57, 0x52, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x102_mo_end')   # push di dx / mov di, si
+    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION); a.short(0x74, 'x102_mo_no')
+    a.b(0x2e, 0x84, 0x87); a.word('pot_fx'); a.short(0x75, 'x102_mo_end')   # test cs:[bx+pot_fx], al   (CF = 0)
+    a.label('x102_mo_no')
+    a.b(0xf9)
+    a.label('x102_mo_end')
+    a.b(0x5a, 0x5f, 0xc3)
+    # might_str (from damage, cl = the striker si's strength): at least MIGHT_STR with Might, else at least FURY_STR
+    # with the Gem of Fury (D113) (not AdjustLevel's 28D2)
+    a.label('might_str')
+    a.b(0x80, 0xf9, MIGHT_STR); a.short(0x7d, 'x102_ms_end')
+    a.b(0x81, 0x7e, 0x0e, 0xd2, 0x28); a.short(0x74, 'x102_ms_end')   # cmp word [bp+0Eh], 28D2h
+    a.b(0x50, 0x53, 0xb0, FX_MIGHT); a.near(0xe8, 'fx_on'); a.b(0xb4, MIGHT_STR); a.short(0x73, 'x102_ms_set')   # push ax bx
+    a.b(0x80, 0xf9, FURY_STR); a.short(0x7d, 'x102_ms_pop')
+    a.b(0xb0, FX_FURY); a.near(0xe8, 'fx_on'); a.b(0xb4, FURY_STR); a.short(0x72, 'x102_ms_pop')
+    a.label('x102_ms_set')
+    a.b(0x8a, 0xcc)                                          # mov cl, ah
+    a.label('x102_ms_pop')
+    a.b(0x5b, 0x58)
+    a.label('x102_ms_end')
+    a.b(0xc3)
+    # might_hit (from ench_hit, si = the striker, cx = 2D73's return): a blow of a knight with Might pushes the one
+    # struck away from it (might_frame): a knight or a monster standing, not the dragon, the Guardian or the Balok,
+    # not a mudman in the mud or holding a knight, not a knight a mudman or a ratman holds
+    a.label('might_hit')
+    a.b(0x50, 0x53, 0x52, 0x57); a.near(0xe8, 'might_on'); a.short(0x72, 'x102_mh_end')
+    a.near(0xe8, 'eh_victim')
+    a.b(0x81, 0xff, *u(KNIGHTS[0])); a.short(0x72, 'x102_mh_end')
+    a.b(0x81, 0xff, *u(MONSTER_SLOTS + MONSTER_COUNT * SLOT_SIZE)); a.short(0x73, 'x102_mh_end')
+    a.b(0x81, 0xff, *u(DRAGON_RECORD)); a.short(0x74, 'x102_mh_end')
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'x102_mh_end')   # cmp word [di+38h], 0 / jle   fallen
+    a.b(0x8a, 0x45, 0x35, 0x3c, GUARDIAN_TYPE); a.short(0x74, 'x102_mh_end')
+    a.b(0x3c, BALOK_TYPE); a.short(0x74, 'x102_mh_end')
+    a.b(0x3c, MUDMAN); a.short(0x75, 'x102_mh_held')
+    a.b(0xf6, 0x45, 0x48, 0x08); a.short(0x74, 'x102_mh_end')   # test byte [di+48h], 8 / jz   in the mud
+    a.b(0xf7, 0x06, 0x8c, 0x7b, 0x47, 0x00); a.short(0x75, 'x102_mh_end')   # test word [7B8Ch], 47h   holding
+    a.label('x102_mh_held')
+    a.b(0x2e, 0x3b, 0x3e); a.word('mud_victim'); a.short(0x75, 'x102_mh_rat')
+    a.b(0xf7, 0x06, 0x8c, 0x7b, 0x47, 0x00); a.short(0x75, 'x102_mh_end')
+    a.label('x102_mh_rat')
+    a.b(0x2e, 0x3b, 0x3e); a.word('rat_victim'); a.short(0x75, 'x102_mh_go')
+    a.b(0xf7, 0x06, 0x9c, 0x77, 0x28, 0x00); a.short(0x75, 'x102_mh_end')
+    a.label('x102_mh_go')
+    a.b(0xb0, MIGHT_PUSH, 0x8b, 0x55, 0x02, 0x3b, 0x54, 0x02); a.short(0x7d, 'x102_mh_dir'); a.b(0xf6, 0xd8)   # away from the striker
+    a.label('x102_mh_dir')
+    a.b(0x2e, 0x88, 0x87); a.word('kb_dir'); a.b(0x2e, 0xc6, 0x87); a.word('kb_n'); a.b(MIGHT_FRAMES)
+    a.b(0xd1, 0xe3, 0x2e, 0x89, 0xbf); a.word('kb_obj')      # shl bx, 1 / mov cs:[bx+kb_obj], di
+    a.label('x102_mh_end')
+    a.b(0x5f, 0x5a, 0x5b, 0x58, 0xc3)
+    # might_frame (from practice_frame, every fight frame): each push on (kb_n frames left) moves its object
+    # MIGHT_PUSH pixels (its animations too, air_addx); it ends early when the object falls or the step would leave
+    # the play area (MON_X_MIN-MON_X_MAX) or go into a border of the ground (kb_wall)
+    a.label('might_frame')
+    a.b(0x50, 0x53, 0x52, 0x56, 0xbb, 0x03, 0x00)            # push ax bx dx si / mov bx, 3
+    a.label('x102_mf_loop')
+    a.b(0x2e, 0x80, 0xbf); a.word('kb_n'); a.b(0x00); a.short(0x74, 'x102_mf_next')
+    a.b(0x2e, 0xfe, 0x8f); a.word('kb_n')                    # dec byte cs:[bx+kb_n]
+    a.b(0x53, 0xd1, 0xe3, 0x2e, 0x8b, 0xb7); a.word('kb_obj'); a.b(0x5b)   # si = the object
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'x102_mf_stop')
+    a.b(0x2e, 0x8a, 0x87); a.word('kb_dir'); a.b(0x98, 0x8b, 0x54, 0x02, 0x03, 0xd0)   # ax = the step / dx = the new x
+    a.b(0x83, 0xfa, MON_X_MIN); a.short(0x7c, 'x102_mf_stop')
+    a.b(0x81, 0xfa, *u(MON_X_MAX)); a.short(0x7f, 'x102_mf_stop')
+    a.near(0xe8, 'kb_wall'); a.short(0x72, 'x102_mf_stop')
+    a.b(0x89, 0x54, 0x02); a.near(0xe8, 'air_addx'); a.short(0xeb, 'x102_mf_next')
+    a.label('x102_mf_stop')
+    a.b(0x2e, 0xc6, 0x87); a.word('kb_n'); a.b(0x00)
+    a.label('x102_mf_next')
+    a.b(0x4b); a.short(0x79, 'x102_mf_loop')
+    a.b(0x5e, 0x5a, 0x5b, 0x58, 0xc3)
+    # kb_wall (si = an object, dx = its new x): CF = 1 inside a border of the fight's ground (SBORD 455E: es = [88FFh],
+    # a big-endian count and 8-byte entries x1, x2, y: inside when x1 <= x <= x2 and depth + 2Fh < y); keeps all
+    a.label('kb_wall')
+    a.b(0x50, 0x53, 0x51, 0x57, 0x06, 0x8e, 0x06, 0xff, 0x88)   # push ax bx cx di es / mov es, [88FFh]
+    a.b(0x26, 0x8b, 0x0e, 0x00, 0x00, 0x86, 0xcd, 0xbf, 0x02, 0x00)   # mov cx, es:[0] / xchg ch, cl / mov di, 2
+    a.short(0xe3, 'x102_kw_ok'); a.b(0x83, 0xf9, 0x20); a.short(0x77, 'x102_kw_ok')   # none, or not a border list
+    a.b(0x8b, 0x5c, 0x06, 0x83, 0xc3, 0x2f)                  # mov bx, [si+6] / add bx, 2Fh
+    a.label('x102_kw_loop')
+    a.b(0x26, 0x8b, 0x05, 0x86, 0xc4, 0x3b, 0xd0); a.short(0x7c, 'x102_kw_next')   # x < x1
+    a.b(0x26, 0x8b, 0x45, 0x02, 0x86, 0xc4, 0x3b, 0xd0); a.short(0x7f, 'x102_kw_next')   # x > x2
+    a.b(0x26, 0x8b, 0x45, 0x04, 0x86, 0xc4, 0x3b, 0xd8); a.short(0x7d, 'x102_kw_next')   # depth + 2Fh >= y
+    a.b(0xf9); a.short(0xeb, 'x102_kw_end')
+    a.label('x102_kw_next')
+    a.b(0x83, 0xc7, 0x08); a.short(0xe2, 'x102_kw_loop')
+    a.label('x102_kw_ok')
+    a.b(0xf8)
+    a.label('x102_kw_end')
+    a.b(0x07, 0x5f, 0x59, 0x5b, 0x58, 0xc3)
+    # pot_fight_end (from fight_end): no push goes on; in a campaign fight Might and Fire Resistance end for the
+    # knights in it: both sides ([8979h], [897Bh]) and a lair's co-op partners (a practice fight leaves them)
+    a.label('pot_fight_end')
+    a.b(0x2e, 0xc7, 0x06); a.word('kb_n'); a.b(0x00, 0x00, 0x2e, 0xc7, 0x06); a.word('kb_n', 2); a.b(0x00, 0x00)
+    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION); a.short(0x74, 'x102_pe_ret')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x8b, 0x3e, 0x79, 0x89); a.near(0xe8, 'x102_pe_one')
+    a.b(0x8b, 0x3e, 0x7b, 0x89); a.near(0xe8, 'x102_pe_one')
+    a.b(0x2e, 0x8a, 0x0e); a.word('coop'); a.b(0xfe, 0xc9); a.short(0x7e, 'x102_pe_end')   # cl = co-op's partners
+    a.b(0xbe); a.word('coop_partners')
+    a.label('x102_pe_loop')
+    a.b(0x2e, 0x8b, 0x3c); a.near(0xe8, 'x102_pe_one'); a.b(0x46, 0x46, 0xfe, 0xc9); a.short(0x75, 'x102_pe_loop')
+    a.label('x102_pe_end')
+    a.b(0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58)
+    a.label('x102_pe_ret')
+    a.b(0xc3)
+    a.label('x102_pe_one')
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x102_po_end')
+    a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ FX_FIGHT)
+    a.label('x102_po_end')
+    a.b(0xc3)
+    # --- D104: Speed (resident: every walk step of a knight and every animation step in a fight) ---
+    # spd_walk (1000:3F99, a knight's walk step, before the checks: mov si,[77E8h]): with Speed in a campaign fight
+    # the step ([783Dh] x, [783Fh] depth, from DS:77FE/7808/7810) is half again as long; 9FDF (the figures), 40DC
+    # (the edges), 455E (the ground's borders) and D25's walk_block then judge the longer step. The extra half is
+    # left out where it would take the knight past the game's own limits (x 10-320, depth 12-155)
+    a.label('rules_spd_walk')
+    a.b(0x8b, 0x36, 0xe8, 0x77, 0x50, 0x52)                  # mov si, [77E8h] (replaced) / push ax dx
+    a.near(0xe8, 'spd_on'); a.short(0x72, 'x104_sw_end')
+    for var, pos, lo, hi in ((0x783d, 2, SPD_X_MIN, SPD_X_MAX), (0x783f, 6, SPD_Z_MIN, SPD_Z_MAX)):
+        a.b(0xa1, *u(var), 0x8b, 0xd0, 0xd1, 0xfa, 0x79, 0x03, 0x83, 0xd2, 0x00)   # mov ax, [var] / dx = ax / 2 (towards 0)
+        a.b(0x03, 0x44, pos, 0x03, 0xc2, 0x3d, *u(lo)); a.short(0x7c, f'x104_sw_{pos}')   # add ax, [si+pos] / add ax, dx / cmp ax, lo / jl
+        a.b(0x3d, *u(hi)); a.short(0x7f, f'x104_sw_{pos}')
+        a.b(0x01, 0x16, *u(var))                             # add [var], dx
+        a.label(f'x104_sw_{pos}')
+    a.label('x104_sw_end')
+    a.b(0x5a, 0x58); a.near(0xe9, 'rules_done')
+    # spd_step (1000:99C0, the interpreter's pass: call 99CB, one animation's step and draw): an attack of a knight
+    # with Speed in a campaign fight (+28h 2, 4, 6, 0Ah, 0Ch, 10h; not a block or dodge, D46's windows; not while
+    # staggered; not falling or dead, D20/D90) takes one extra step every SPD_EVERY frames: 99CB runs first for the
+    # frame due (spd_skip: rules_draw draws nothing), then again for the next, which is drawn. The frame left out must
+    # not end the script (no frame without the knight), draw into the background (10h) or jump (spd_frame). Its weapon
+    # pieces (flag 2: hit points, A0F6) stay in the slot's list before the drawn frame's (at most 3 + 3 of the 7), so
+    # A0F6 tests both frames' blows: no hit is lost. The body (flag 1) and the box (9F95) are the drawn frame's
+    a.label('rules_spd_step')
+    a.b(0x2e, 0x80, 0x3e); a.word('spd_skip'); a.b(0x00); a.short(0x74, 'x104_ss_try')
+    a.b(0x2e, 0xc6, 0x06); a.word('spd_skip'); a.b(0x00)     # back from the extra step:
+    a.b(0x8b, 0x7e, 0x08, 0x8b, 0x45, 0x20, 0xa3, 0x3a, 0x97)   # mov di, [bp+8] (the slot, 9987) / [973Ah] = [di+20h]
+    a.b(0x33, 0xc0)                                          # the box as 99A2-99BA: xor ax, ax / mov [C2F4h..C2F2h], ax
+    for var in (0xc2f4, 0xc2ee, 0xc2ec, 0xc2f0, 0xc2f2):
+        a.b(0xa3, *u(var))
+    a.label('x104_ss_game')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xcb, 0x99)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xc3, 0x99)
+    a.near(0xe9, 'call_game')
+    a.label('x104_ss_try')
+    a.b(0x80, 0x7d, 0x01, 0x00); a.short(0x74, 'x104_ss_game')   # cmp byte [di+1], 0   no script running
+    a.b(0x8b, 0x75, 0x16); a.near(0xe8, 'spd_on'); a.short(0x72, 'x104_ss_game')   # mov si, [di+16h]   bx = its number
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'x104_ss_game')   # cmp word [si+38h], 0 / jle
+    a.b(0x8b, 0x44, 0x28, 0xa8, 0x01); a.short(0x75, 'x104_ss_game')   # mov ax, [si+28h] / test al, 1 / jnz
+    a.b(0x3d, 0x10, 0x00); a.short(0x77, 'x104_ss_game')     # cmp ax, 10h / ja
+    for move in (0, 8, 0x0e):                                # none (walking, standing), the block, the dodge
+        a.b(0x3c, move); a.short(0x74, 'x104_ss_game')
+    a.b(0x57, 0x8b, 0xfe); a.near(0xe8, 'td_held'); a.b(0x5f); a.short(0x72, 'x104_ss_game')   # push di / mov di, si / call td_held / pop di / jc
+    a.b(0x2e, 0x80, 0xbf); a.word('spd_n'); a.b(SPD_EVERY - 1); a.short(0x73, 'x104_ss_due')   # cmp byte cs:[bx+spd_n], N-1 / jae
+    a.b(0x2e, 0xfe, 0x87); a.word('spd_n'); a.short(0xeb, 'x104_ss_game')   # inc byte cs:[bx+spd_n]
+    a.label('x104_ss_due')                                   # due (and held over while the frame may not be left out)
+    a.b(0x8b, 0x75, 0x02); a.near(0xe8, 'spd_frame'); a.short(0x72, 'x104_ss_game')   # mov si, [di+2] / call spd_frame / jc
+    a.b(0x2e, 0xc6, 0x87); a.word('spd_n'); a.b(0x00, 0x2e, 0xc6, 0x06); a.word('spd_skip'); a.b(0x01)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xcb, 0x99)
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xc0, 0x99)   # this site again
+    a.near(0xe9, 'call_game')
+    # spd_frame (si = an animation's next frame in its script): CF = 0 when it may be left out: pieces without flag
+    # 10h, at most 3 with flag 2, commands of a known length that neither jump nor remove (spd_len 0: no), closed by
+    # FF xx but not FF FF; keeps all but flags
+    a.label('spd_frame')
+    a.b(0x50, 0x51, 0x56, 0xb9, 24, 0x00, 0x32, 0xe4, 0x0b, 0xf6); a.short(0x74, 'x104_sf_no')   # push ax cx si / mov cx, 24 / xor ah, ah / or si, si / jz
+    a.label('x104_sf_loop')
+    a.b(0x8a, 0x04, 0x3c, 0xff); a.short(0x75, 'x104_sf_op')   # mov al, [si] / cmp al, 0FFh / jne
+    a.b(0x80, 0x7c, 0x01, 0xff); a.short(0x74, 'x104_sf_no')   # FF FF: the script ends
+    a.b(0xf8); a.short(0xeb, 'x104_sf_end')
+    a.label('x104_sf_op')
+    a.b(0xa8, 0x80); a.short(0x75, 'x104_sf_cmd')
+    a.b(0xf6, 0x44, 0x03, 0x10); a.short(0x75, 'x104_sf_no')   # test byte [si+3], 10h   into the background
+    a.b(0xf6, 0x44, 0x03, 0x02); a.short(0x74, 'x104_sf_piece')
+    a.b(0xfe, 0xc4, 0x80, 0xfc, 0x03); a.short(0x77, 'x104_sf_no')   # inc ah / cmp ah, 3 / ja
+    a.label('x104_sf_piece')
+    a.b(0x83, 0xc6, 0x06); a.short(0xe2, 'x104_sf_loop'); a.short(0xeb, 'x104_sf_no')   # add si, 6 / loop
+    a.label('x104_sf_cmd')
+    a.b(0x3c, 0xa8); a.short(0x77, 'x104_sf_no')             # cmp al, 0A8h / ja
+    a.b(0x3c, 0x82); a.short(0x75, 'x104_sf_len')
+    a.b(0x80, 0x7c, 0x01, 0x03); a.short(0x74, 'x104_sf_no')   # 82h with 3: a jump
+    a.label('x104_sf_len')
+    a.b(0x53, 0x24, 0x7f, 0xd0, 0xe8, 0xbb); a.word('spd_len'); a.b(0x2e, 0xd7, 0x5b)   # push bx / and al, 7Fh / shr al, 1 / mov bx, spd_len / xlat cs: / pop bx
+    a.b(0x0a, 0xc0); a.short(0x74, 'x104_sf_no')
+    a.b(0x50, 0x32, 0xe4, 0x03, 0xf0, 0x58); a.short(0xe2, 'x104_sf_loop')   # push ax / xor ah, ah / add si, ax / pop ax / loop
+    a.label('x104_sf_no')
+    a.b(0xf9)
+    a.label('x104_sf_end')
+    a.b(0x5e, 0x59, 0x58, 0xc3)
+    # the script commands' lengths (80h, 82h, ... A8h, msfmt.ANIM_COMMANDS); 0: jumps (8Ch, 9Ah, A4h, A6h), removes
+    # (9Eh), freezes or has no handler (88h, 8Eh, A2h)
+    a.label('spd_len'); a.b(2, 4, 2, 8, 0, 2, 0, 0, 8, 2, 6, 4, 4, 0, 4, 0, 2, 0, 0, 0, 2)
+    # --- D103: the map potions (resident: every map step and icon; the hooks' small ends) ---
+    # terrain_free (from horse_terrain, the game's bx = the cell): CF = 1 when the knight whose turn it is is not
+    # slowed there: D111: it carries the walk ring of the cell's kind (tf_ring; ring_cnt: a human's knight in a
+    # campaign); D103: Levitation working, or waiting and this the first slowing cell (then working to the turn's
+    # end, turn_end; a walk ring's cell leaves it waiting); keeps all
+    a.label('terrain_free')
+    a.b(0x50, 0x53, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77)     # push ax bx dx di / mov di, [77E8h]
+    a.b(0x8b, 0x5e, 0xfe, 0x8a, 0x87, 0x2a, 0xc4, 0x24, 0x07, 0xbb); a.word('tf_ring'); a.b(0x2e, 0xd7)   # al = the cell / and al, 7 / xlat cs:tf_ring
+    a.b(0x0a, 0xc0); a.short(0x74, 'x111_tf_lev'); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x75, 'x103_tf_yes')
+    a.label('x111_tf_lev')
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_tf_no')
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_fx'); a.b(0xa8, FX_LEV_ON); a.short(0x75, 'x103_tf_yes')
+    a.b(0xa8, FX_LEV_WAIT); a.short(0x74, 'x103_tf_no')
+    a.b(0x8b, 0x7e, 0xfe, 0x80, 0xbd, 0x2a, 0xc4, 0x00); a.short(0x74, 'x103_tf_no')   # mov di, [bp-2] / cmp byte [di+0C42Ah], 0
+    a.b(0x2e, 0x80, 0xb7); a.word('pot_fx'); a.b(FX_LEV_WAIT | FX_LEV_ON)   # waiting -> working
+    a.label('x103_tf_yes')
+    a.b(0xf9); a.short(0xeb, 'x103_tf_end')
+    a.label('x103_tf_no')
+    a.b(0xf8)
+    a.label('x103_tf_end')
+    a.b(0x5f, 0x5a, 0x5b, 0x58, 0xc3)
+    # tf_ring: the walk ring of each grid value (D110: rocks are 2 | TERRAIN_ROCKS): forest Forestwalk, swamp and
+    # water Waterwalk, mountains and the map's edges and the rocks Mountainwalk
+    tf = [0] * 8; tf[1], tf[2], tf[3], tf[2 | TERRAIN_ROCKS] = R_FOREST, R_WATER, R_MOUNTAIN, R_MOUNTAIN
+    a.label('tf_ring'); a.b(*tf)
+    # plain_step (D111; 1000:A557, inc word [0CC98h]: a human's step on the map spends one of the turn's budget): with
+    # a Ring of Plainswalking on open ground (the cell [0CD48h] that A901 has just found, value 0) every third step is
+    # free, so open ground takes two thirds: 50 % farther in a turn, on foot or mounted (the budget is the same)
+    a.label('rules_plain_step')
+    a.b(0x50, 0x57, 0x8b, 0x1e, 0x48, 0xcd, 0x80, 0xbf, 0x2a, 0xc4, 0x00); a.short(0x75, 'x111_ps_inc')   # push ax di / mov bx, [0CD48h] / cmp byte [bx+0C42Ah], 0
+    a.b(0x8b, 0x3e, 0xe8, 0x77, 0xb0, R_PLAIN); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x74, 'x111_ps_inc')
+    a.b(0x2e, 0xfe, 0x0e); a.word('plain_ctr'); a.short(0x79, 'x111_ps_inc')   # dec byte cs:[plain_ctr] / jns: counted
+    a.b(0x2e, 0xc6, 0x06); a.word('plain_ctr'); a.b(0x02); a.short(0xeb, 'x111_ps_end')   # the third: free
+    a.label('x111_ps_inc')
+    a.b(0xff, 0x06, 0x98, 0xcc)                              # inc word [0CC98h]   (replaced)
+    a.label('x111_ps_end')
+    a.b(0x5f, 0x58); a.near(0xe9, 'rules_done')
+    # map_hidden (si = a knight's record): CF = 1 when its map icon is not drawn in the others' turns: invisible or
+    # (D115) concealed (gem_hidden), and alive; keeps all. The gems' aim (G4) asks this too
+    a.label('map_hidden')
+    a.b(0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_mh_no')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_INVIS); a.short(0x75, 'x115_mh_alive')
+    a.near(0xe8, 'gem_hidden'); a.short(0x73, 'x103_mh_no')
+    a.label('x115_mh_alive')
+    a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7e, 'x103_mh_no')
+    a.b(0xf9); a.short(0xeb, 'x103_mh_end')
+    a.label('x103_mh_no')
+    a.b(0xf8)
+    a.label('x103_mh_end')
+    a.b(0x5f, 0x5a, 0x5b, 0xc3)
+    # gem_hidden (D115; di = a knight's record): CF = 1 when it is concealed: a human's knight carrying a Gem of
+    # Concealment (one is enough), the special gems on; alive or not (map_hidden asks that); keeps all
+    a.label('gem_hidden')
+    a.b(0x53, 0x2e, 0x80, 0x3e); a.word('rules_table', G_GEMS); a.b(0x00); a.short(0x74, 'x115_gh_no')   # push bx / gems off: no
+    a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'x115_gh_no')   # a computer's knight: no
+    a.near(0xe8, 'pot_slots'); a.short(0x72, 'x115_gh_no')   # bx = 3 x its number (CF = 1 not a knight)
+    for k in range(GEM_SLOTS):
+        a.b(0x2e, 0x80, 0xbf); a.word('gem_k', k); a.b(GM_CONCEAL); a.short(0x74, 'x115_gh_yes')
+    a.label('x115_gh_no')
+    a.b(0xf8, 0x5b, 0xc3)                                    # clc / pop bx / ret
+    a.label('x115_gh_yes')
+    a.b(0xf9, 0x5b, 0xc3)                                    # stc / pop bx / ret
+    # conceal_pick (D115; 1000:AA8C, cmp word ds:[bp+20h],4 in KnightMagicLoop: the game's bp = a knight a computer's
+    # knight (di) might choose as its target; the flags back, ZF = 1: passed over): a computer's knight as the game,
+    # and also a concealed one, so no computer's knight takes it as its target (no fight, no scroll at it, no Wyrm sent)
+    a.label('rules_conceal_pick')
+    a.b(0x57, 0x8b, 0x7e, 0x00, 0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'x115_cp_end')   # push di / mov di, [bp] / cmp word [di+20h], 4 / je
+    a.near(0xe8, 'gem_hidden'); a.short(0x72, 'x115_cp_hide')
+    a.b(0x0b, 0xe4); a.short(0xeb, 'x115_cp_end')           # or sp, sp: ZF = 0
+    a.label('x115_cp_hide')
+    a.b(0x3a, 0xc0)                                          # cmp al, al: ZF = 1
+    a.label('x115_cp_end')
+    a.b(0x5f); a.near(0xe9, 'rules_flags')
+    # conceal_drop (D115; 1000:ACCF, mov bx,[si+46h] in BKCollision, si = a computer's knight: its target, which it
+    # fights on contact at ACE2 (the only way a computer's knight starts a fight with a knight)): a concealed target
+    # is dropped ([si+46h] = 0, bx = 0: the game goes on as with none, to its lair)
+    a.label('rules_conceal_drop')
+    a.b(0x8b, 0x5c, 0x46, 0x0b, 0xdb); a.short(0x74, 'x115_cd_set')   # mov bx, [si+46h] / or bx, bx / jz
+    a.b(0x57, 0x8b, 0xfb); a.near(0xe8, 'gem_hidden'); a.b(0x5f); a.short(0x73, 'x115_cd_set')   # push di / mov di, bx / ... / pop di / jnc
+    a.b(0x33, 0xdb, 0x89, 0x5c, 0x46)                        # xor bx, bx / mov [si+46h], bx
+    a.label('x115_cd_set')
+    a.b(0x89, 0x5e, 0xfe); a.near(0xe9, 'rules_done')        # the game's bx
+    # knight_move (di = a knight's record, ax = x, dx = y in map pixels): it stands there (the 8-pixel cells too) and
+    # is no longer in the dragon's list of the knights near it (DS:0490h). For the gems' Change Places too; keeps all
+    a.label('knight_move')
+    a.b(0x50, 0x53, 0x89, 0x45, 0x5c, 0xd1, 0xe8, 0xd1, 0xe8, 0xd1, 0xe8, 0x89, 0x45, 0x2a)
+    a.b(0x8b, 0xc2, 0x89, 0x45, 0x5e, 0xd1, 0xe8, 0xd1, 0xe8, 0xd1, 0xe8, 0x89, 0x45, 0x2c, 0xbb, 0x90, 0x04)
+    a.label('x103_km_loop')
+    a.b(0x39, 0x3f, 0x75, 0x04, 0xc7, 0x07, 0x00, 0x00, 0x43, 0x43, 0x81, 0xfb, 0x98, 0x04); a.short(0x72, 'x103_km_loop')
+    a.b(0x5b, 0x58, 0xc3)
+    # pot_prompt (1000:04FC, cmp byte [si+12h],0 in KnightProtection, di = the human attacked by a knight or the
+    # dragon, si = its items; the flags back): see group OVL_MAP; without overlays the game's
+    a.label('rules_pot_prompt')
+    a.near(0xe9, 'pot_prompt')
+    a.label('x103_pp_game')
+    a.b(0x80, 0x7c, 0x12, 0x00); a.near(0xe9, 'rules_flags')
+    # take_one (1000:0B1A, mov bx,3F2h: a computer knight or the dragon (si) takes one item from a beaten knight (di)
+    # with lives left): D106: that one item can be a special (spec_take_one, group OVL_SPEC): then on at 0B82 with
+    # dx = 1 (nothing more, MaxHP at 0B8A); else on at 0B1D with the game's bx, its walk from the entry found (3F2h
+    # with the rule off or no overlays: the game's)
+    # take_all (1000:0BC5, mov bx,3F2h at TakeALL: the same with no lives left): D106: everything that fits
+    # (spec_cross), then on at 0B8A; off: D105: the knights' special items too (spec_take_all), then the game's
+    a.label('rules_take_one')
+    a.b(0xbb, 0xf2, 0x03)   # mov bx, 0x3f2
+    a.near(0xe8, 'spec_take_one')
+    a.b(0x89, 0x5e, 0xfe)   # mov word ptr [bp-2], bx
+    a.short(0x73, 'x106_to_done')
+    a.b(0xc7, 0x46, 0x02, 0x82, 0x0b, 0xba, 0x01, 0x00)   # mov word ptr [bp+2], 0x0b82 / mov dx, 1
+    a.label('x106_to_done')
+    a.near(0xe9, 'rules_done')
+    a.label('rules_take_all')
+    a.near(0xe8, 'spec_cross')
+    a.short(0x73, 'x106_ta_old')
+    a.b(0xc7, 0x46, 0x02, 0x8a, 0x0b)   # mov word ptr [bp+2], 0x0b8a
+    a.near(0xe9, 'rules_done')
+    a.label('x106_ta_old')
+    a.near(0xe8, 'spec_take_all')
+    a.b(0xc7, 0x46, 0xfe, 0xf2, 0x03)   # mov word ptr [bp-2], 0x3f2
+    a.near(0xe9, 'rules_done')
+    # pot_cancel (1000:0542, cmp word [0F378h],12h after the prompt's screen; the flags back): a potion drunk there
+    # that cancels the fight (Invisibility, Recall) counts as the Scroll of Protection used (ZF = 1)
+    a.label('rules_pot_cancel')
+    a.b(0x2e, 0xf6, 0x06); a.word('pot_pr'); a.b(PR_CANCEL)
+    a.b(0x2e, 0xc6, 0x06); a.word('pot_pr'); a.b(0x00); a.short(0x75, 'x103_pc_yes')   # (mov keeps the flags)
+    a.b(0x83, 0x3e, 0x78, 0xf3, 0x12); a.near(0xe9, 'rules_flags')
+    a.label('x103_pc_yes')
+    a.b(0x3b, 0xc0); a.near(0xe9, 'rules_flags')             # cmp ax, ax
+    # lair_hawk (1000:0581 and 05DD, cmp word [0CCA0h],0 in the lair's visit; the flags back, ZF = 0: the Hawk's
+    # path): at 0581 a knight with Invisibility entering alone (no co-op partners) takes it too: no fight, no XP,
+    # the chest (mode 2), and the invisibility ends; at 05DD after such a visit the lair is not cleared (as the Hawk's)
+    # D116: the Gem of Banish Monsters: in the seeing mode with gem_aim = Banish (at 0581) the lair is banished, the gem
+    # used (banish_hit); a banished lair entered (not seeing) takes the same path for every knight, also with co-op
+    # partners (banish_coop: the chest shared as after a won fight): no fight, no first-win XP, the chest; at 05DD it is
+    # cleared as usual when empty (no PR_LAIR)
+    a.label('rules_lair_hawk')
+    a.b(0x83, 0x3e, 0xa0, 0xcc, 0x00); a.short(0x75, 'x116_lh_see')
+    a.b(0x81, 0x7e, 0x02, 0xdf, 0x05); a.short(0x74, 'x103_lh_after')
+    a.b(0x53, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_lh_none')
+    a.near(0xe8, 'banish_here'); a.short(0x73, 'x116_lh_inv')
+    a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x74, 'x116_lh_alone')
+    a.near(0xe8, 'banish_coop')
+    a.label('x116_lh_alone')
+    a.b(0x0b, 0xe4); a.short(0xeb, 'x103_lh_pop')           # or sp, sp: ZF = 0
+    a.label('x116_lh_see')
+    a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(GM_BANISH); a.short(0x75, 'x116_lh_zf')
+    a.near(0xe8, 'banish_hit')
+    a.label('x116_lh_zf')
+    a.b(0x0b, 0xe4); a.short(0xeb, 'x103_lh_flags')         # or sp, sp: ZF = 0 (the seeing mode's path)
+    a.label('x116_lh_inv')
+    a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x75, 'x103_lh_none')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_INVIS); a.short(0x74, 'x103_lh_none')
+    a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ FX_INVIS)
+    a.b(0x2e, 0x80, 0x0e); a.word('pot_pr'); a.b(PR_LAIR); a.short(0xeb, 'x103_lh_pop')   # (ZF = 0)
+    a.label('x103_lh_none')
+    a.b(0x3b, 0xc0)                                          # cmp ax, ax   ZF = 1: the fight
+    a.label('x103_lh_pop')
+    a.b(0x5f, 0x5a, 0x5b)
+    a.label('x103_lh_flags')
+    a.near(0xe9, 'rules_flags')
+    a.label('x103_lh_after')
+    a.b(0x2e, 0xf6, 0x06); a.word('pot_pr'); a.b(PR_LAIR); a.short(0x74, 'x103_lh_flags')
+    a.b(0x2e, 0x80, 0x26); a.word('pot_pr'); a.b(0xff ^ PR_LAIR); a.b(0x0b, 0xe4); a.short(0xeb, 'x103_lh_flags')   # or sp, sp: ZF = 0
+    # pot_slots (di = a knight's record): bx = 3 x its number, its places at cs:[bx+pot_k]; CF = 1 not a knight
+    a.label('pot_slots')
+    a.b(0x52); a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_ps_end')
+    a.b(0x50, 0x8b, 0xc3, 0xd1, 0xe3, 0x03, 0xd8, 0x58, 0xf8)   # push ax / mov ax, bx / shl bx, 1 / add bx, ax / pop ax / clc
+    a.label('x101_ps_end')
+    a.b(0x5a, 0xc3)
+    # look_put (cs:bx = a frame's pixel list, cs:si = an item's values, cx = their number): the next icon drawn in
+    # look LOOK_POT (D98's recolour): its table (look_pot) the identity but for those pixels; keeps all
+    a.label('look_put')
+    a.b(0x50, 0x53, 0x51, 0x56, 0x57, 0x33, 0xff)            # push ax bx cx si di / xor di, di
+    a.label('x101_lp_id')
+    a.b(0x8b, 0xc7, 0x2e, 0x88, 0x85); a.word('look_pot')    # mov ax, di / mov cs:[di+look_pot], al
+    a.b(0x47, 0x83, 0xff, 0x20); a.short(0x72, 'x101_lp_id')   # inc di / cmp di, 32 / jb
+    a.label('x101_lp_set')
+    a.b(0x2e, 0x8a, 0x07, 0x32, 0xe4, 0x8b, 0xf8)            # mov al, cs:[bx] / xor ah, ah / mov di, ax
+    a.b(0x2e, 0x8a, 0x04, 0x2e, 0x88, 0x85); a.word('look_pot')   # mov al, cs:[si] / mov cs:[di+look_pot], al
+    a.b(0x43, 0x46); a.short(0xe2, 'x101_lp_set')            # inc bx / inc si / loop
+    a.b(0x2e, 0xc6, 0x06); a.word('icon_look'); a.b(LOOK_POT)
+    a.b(0x5f, 0x5e, 0x59, 0x5b, 0x58, 0xc3)
+
+    # --- group OVL_POT: the row, the chest's roll, the clicks ---
+    a.ovl_begin(OVL_POT); a.ovl_entry('pot_row', 'jump', 'x101_pr_off')
+    # pot_row: called again after each special's PlaceIcons (pot_n: the next); then the healing potions, capped at
+    # the places left and after the specials, by the game's code from C790
+    a.b(0x50, 0x51, 0x52, 0x56, 0x57, 0x06)                  # push ax cx dx si di es
+    a.b(0x2e, 0x80, 0x3e); a.word('pot_n'); a.b(0x00); a.short(0x75, 'x101_pr_next')
+    a.near(0xe8, 'pot_panel')                                # this panel's specials
+    a.label('x101_pr_next')
+    a.b(0x2e, 0xa0); a.word('pot_n'); a.b(0x2e, 0x3a, 0x06); a.word('pot_cnt'); a.short(0x72, 'x101_pr_one')
+    a.near(0xe9, 'x101_pr_heal')
+    a.label('x101_pr_one')                                   # al = the place (0-2)
+    a.b(0x2e, 0xfe, 0x06); a.word('pot_n')
+    a.b(0x32, 0xe4, 0x8b, 0xf0)                              # xor ah, ah / mov si, ax
+    a.b(0xb2, POT_STEP, 0xf6, 0xe2, 0x05, *u(POT_X), 0xa3, 0x9c, 0xe4)   # [0E49Ch] = x of the place
+    a.b(0x8b, 0xc6, 0xd1, 0xe0, 0x2e, 0x02, 0x06); a.word('pot_item'); a.b(0xa3, 0xa6, 0xe4)   # [0E4A6h] = the item: 9, 0Bh, 0Dh (0Fh the chest's)
+    for addr, value in ((0xe49a, POT_FRAME), (0xe49e, POT_Y), (0xe4a0, POT_STEP), (0xe4a2, 5)):
+        a.b(0xc7, 0x06, *u(addr), *u(value))
+    a.b(0x2e, 0xa0); a.word('pot_pan'); a.b(0xb2, POT_SLOTS, 0xf6, 0xe2, 0x03, 0xc6, 0x8b, 0xd8)   # bx = j = 3 x panel + place
+    a.b(0xb2, 0x0a, 0xf6, 0xe2, 0x05, *u(POT_DESC), 0x8b, 0xf8)   # di = its descriptor (POT_DESC + 10 j)
+    a.b(0x56, 0x8b, 0x36, 0xa8, 0xe4, 0x81, 0xc6, *u(10 * POT_GAME_DESC))   # push si / si = the game's potion descriptor (this panel's)
+    a.b(0x57, 0x1e, 0x07, 0xfc, 0xb9, 0x05, 0x00, 0xf3, 0xa5, 0x5f)   # push di / push ds / pop es / cld / mov cx, 5 / rep movsw / pop di
+    a.b(0xd1, 0xe3, 0x2e, 0x8b, 0x97); a.word('pot_texts'); a.b(0x89, 0x15)   # its text: [di] = POT_TEXT[j]
+    a.b(0x8b, 0xc7, 0x2b, 0x06, 0xa8, 0xe4, 0x33, 0xd2, 0xb9, 0x05, 0x00, 0xf7, 0xf1, 0xa3, 0xa4, 0xe4)   # [0E4A4h] = (di - [0E4A8h]) / 5 = 2 k
+    a.b(0x5e, 0x2e, 0x8a, 0x84); a.word('pot_list'); a.b(0x32, 0xe4)   # pop si / ax = the potion (1-12)
+    a.b(0x8b, 0x3d, 0x50, 0xbe); a.word('pot_of'); a.near(0xe8, 'ench_put')   # mov di, [di] / push ax / "Potion of "
+    a.b(0x58, 0x50, 0x48, 0xd1, 0xe0, 0x8b, 0xd8, 0x2e, 0x8b, 0xb7); a.word('pot_names')   # its name
+    a.near(0xe8, 'ench_put'); a.b(0xc6, 0x05, 0x00)          # ... and the end
+    a.b(0x58, 0x48, 0xb1, 0x03, 0xd3, 0xe0, 0x05); a.word('pot_looks'); a.b(0x8b, 0xf0)   # si = its look's values
+    a.b(0xbb); a.word('pot_pixels'); a.b(0xb9, len(POT_PIXELS), 0x00); a.near(0xe8, 'look_put')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xb9, 0x01, 0x00)   # pop es di si dx cx ax / mov cx, 1
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x5d, 0xcb)   # PlaceIcons, then this site again
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x72, 0xc7)
+    a.near(0xe9, 'call_game')
+    a.label('x101_pr_heal')
+    a.b(0x2e, 0xc6, 0x06); a.word('pot_n'); a.b(0x00)
+    a.b(0x8b, 0x36, 0x90, 0xe4, 0x33, 0xc9, 0x8a, 0x0c)      # mov si, [0E490h] / xor cx, cx / mov cl, [si]   the healing potions
+    a.b(0xb0, 0x04, 0x2e, 0x2a, 0x06); a.word('pot_cnt'); a.b(0x32, 0xe4)   # ax = 4 - the specials: the places left
+    a.b(0x3b, 0xc8); a.short(0x76, 'x101_pr_cap'); a.b(0x8b, 0xc8)   # cmp cx, ax / jbe / mov cx, ax
+    a.label('x101_pr_cap')
+    a.b(0x2e, 0xa0); a.word('pot_cnt'); a.b(0xb2, POT_STEP, 0xf6, 0xe2, 0x05, *u(POT_X), 0xa3, 0x9c, 0xe4)   # x after the specials
+    a.b(0xc7, 0x06, 0x9a, 0xe4, *u(POT_FRAME))               # mov word [0E49Ah], 4   (as C784)
+    a.b(0xc7, 0x46, 0x02, 0x90, 0xc7)                        # on at C790 (cx = their number, si = the table)
+    a.b(0x07, 0x5f, 0x83, 0xc4, 0x02, 0x5a, 0x83, 0xc4, 0x02, 0x58)   # pop es di / (si) / pop dx / (cx) / pop ax
+    a.near(0xe9, 'rules_done')
+    # pot_panel: pot_cnt, pot_list = this panel's specials ([0E4A8h] 0EF40h the first panel: [0ED88h]'s; the second:
+    # [0ED8Ch]'s in modes 1, 8, 0Bh, the chest's in 2 (a lair) and 0Ah (the hoard), none else: the Temple's stock),
+    # pot_item = the first's item, pot_pan = the panel (0, 1)
+    a.label('pot_panel')
+    a.b(0x2e, 0xc6, 0x06); a.word('pot_cnt'); a.b(0x00, 0x2e, 0xc6, 0x06); a.word('pot_item'); a.b(POT_ITEM)
+    a.b(0x2e, 0xc6, 0x06); a.word('pot_pan'); a.b(0x00, 0x8b, 0x3e, 0x88, 0xed)   # di = the first panel's knight
+    a.b(0x81, 0x3e, 0xa8, 0xe4, 0x40, 0xef); a.short(0x74, 'x101_pp_knight')
+    a.b(0x2e, 0xfe, 0x06); a.word('pot_pan'); a.b(0xa1, 0x92, 0xed)   # the second panel / mov ax, [0ED92h]
+    a.b(0x3d, 0x02, 0x00); a.short(0x74, 'x101_pp_chest'); a.b(0x3d, 0x0a, 0x00); a.short(0x74, 'x101_pp_chest')
+    a.b(0x8b, 0x3e, 0x8c, 0xed)                              # di = the other knight
+    for mode in (0x01, 0x08):
+        a.b(0x3d, mode, 0x00); a.short(0x74, 'x101_pp_knight')
+    a.b(0x3d, 0x0b, 0x00); a.short(0x75, 'x101_pp_end')
+    a.label('x101_pp_knight')
+    a.b(0x8b, 0x45, 0x44, 0x3b, 0x06, 0x90, 0xe4); a.short(0x75, 'x101_pp_end')   # its own table drawn
+    a.near(0xe8, 'pot_slots'); a.short(0x72, 'x101_pp_end')
+    a.b(0x33, 0xf6)                                          # xor si, si
+    a.label('x101_pp_copy')
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pp_end')
+    a.b(0x2e, 0x88, 0x84); a.word('pot_list'); a.b(0x2e, 0xfe, 0x06); a.word('pot_cnt')
+    a.b(0x43, 0x46, 0x83, 0xfe, POT_SLOTS); a.short(0x72, 'x101_pp_copy')
+    a.label('x101_pp_end')
+    a.b(0xc3)
+    a.label('x101_pp_chest')
+    a.b(0x2e, 0xc6, 0x06); a.word('pot_item'); a.b(POT_CHEST_ITEM)
+    a.near(0xe8, 'pot_chest'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pp_end')
+    a.b(0x2e, 0xa2); a.word('pot_list'); a.b(0x2e, 0xc6, 0x06); a.word('pot_cnt'); a.b(0x01, 0xc3)
+    # pot_chest (the item screen in mode 2 or 0Ah): al = the chest's special potion shown, 0 none; bx = its byte in
+    # lair_potion when al > 0. Decided the first time it is looked at by a knight ([0ED88h]) with a free place, at
+    # rare_potion_chance % (none in a practice); a decided one is not shown to a knight with three (it stays)
+    a.label('pot_chest')
+    a.b(0x32, 0xc0, 0x83, 0x3e, *u(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'x101_pc_end')
+    a.near(0xe8, 'holder_slot'); a.short(0x72, 'x101_pc_end')
+    a.b(0x83, 0xc3, POT_HOLDER_OFF, 0x8b, 0x3e, 0x88, 0xed)   # add bx, lair_potion - lair_ench / di = the knight
+    a.b(0x2e, 0x8a, 0x07, 0x0a, 0xc0); a.short(0x75, 'x101_pc_have')
+    a.near(0xe8, 'pot_free'); a.short(0x72, 'x101_pc_end')   # three already: left undecided
+    a.b(0x2e, 0xc6, 0x07, 0x01, 0x51, 0x52)                  # decided: none / push cx dx
+    a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xb9, 100, 0x00, 0xf7, 0xf1)   # dx = 0-99
+    a.b(0x2e, 0x3a, 0x16); a.word('rules_table', G_POT_CHANCE); a.short(0x73, 'x101_pc_pop')
+    a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xb9, len(POT_ROLL), 0x00, 0xf7, 0xf1)   # one of those built, each as likely
+    a.b(0x8b, 0xf2, 0x2e, 0x8a, 0x84); a.word('pot_roll'); a.b(0xfe, 0xc0, 0x2e, 0x88, 0x07)   # cs:[bx] = 1 + it
+    a.label('x101_pc_pop')
+    a.b(0x5a, 0x59, 0x2e, 0x8a, 0x07)                        # pop dx cx / mov al, cs:[bx]
+    a.label('x101_pc_have')
+    a.b(0xfe, 0xc8); a.short(0x74, 'x101_pc_end')            # dec al / jz   none
+    a.near(0xe8, 'pot_free'); a.short(0x73, 'x101_pc_end')   # shown to a knight with a free place
+    a.b(0x32, 0xc0)
+    a.label('x101_pc_end')
+    a.b(0xc3)
+    # pot_free (di = a record): CF = 0 when it is a human's knight with a free place; keeps all
+    a.label('pot_free')
+    a.b(0x50, 0x53, 0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'x101_pf_full')
+    a.near(0xe8, 'pot_slots'); a.short(0x72, 'x101_pf_full')
+    a.b(0x2e, 0x80, 0xbf); a.word('pot_k', POT_SLOTS - 1); a.b(0x00); a.short(0x75, 'x101_pf_full')
+    a.b(0x5b, 0x58, 0xf8, 0xc3)
+    a.label('x101_pf_full')
+    a.b(0x5b, 0x58, 0xf9, 0xc3)
+    # pot_add (di = a knight's record, al = a potion): into its first free place; CF = 1 none free; keeps all
+    a.label('pot_add')
+    a.b(0x53, 0x51); a.near(0xe8, 'pot_slots'); a.short(0x72, 'x101_pa_end')
+    a.b(0xb9, POT_SLOTS, 0x00)
+    a.label('x101_pa_loop')
+    a.b(0x2e, 0x80, 0xbf); a.word('pot_k'); a.b(0x00); a.short(0x74, 'x101_pa_put')
+    a.b(0x43); a.short(0xe2, 'x101_pa_loop'); a.b(0xf9); a.short(0xeb, 'x101_pa_end')
+    a.label('x101_pa_put')
+    a.b(0x2e, 0x88, 0x87); a.word('pot_k'); a.b(0xf8)
+    a.label('x101_pa_end')
+    a.b(0x59, 0x5b, 0xc3)
+    # pot_remove (bx = a knight's places (pot_slots), cx = one of them, 0-2): emptied, the ones after it moved up
+    a.label('pot_remove')
+    a.b(0x50, 0x53, 0x51, 0x03, 0xd9)                        # push ax bx cx / add bx, cx
+    a.label('x101_pm_loop')
+    a.b(0x83, 0xf9, POT_SLOTS - 1); a.short(0x73, 'x101_pm_last')
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k', 1); a.b(0x2e, 0x88, 0x87); a.word('pot_k')
+    a.b(0x43, 0x41); a.short(0xeb, 'x101_pm_loop')
+    a.label('x101_pm_last')
+    a.b(0x2e, 0xc6, 0x87); a.word('pot_k'); a.b(0x00, 0x59, 0x5b, 0x58, 0xc3)
+
+    # pot_click (from rules_sell, a click on item 9, 0Bh, 0Dh or 0Fh; di = its descriptor, ax = its flags): the
+    # first panel's own on its own screen (flags 10h, not the Temple or Stonehenge): drunk; the second panel's (flags
+    # 20h: to take): the chest's into a free place, another knight's into a free place or by the swap rule. Then the
+    # sound and the screen again (CFE3), as the game; anything else: nothing
+    a.ovl_entry('pot_click', 'jump', 'x101_sl_none')
+    a.b(0x50, 0x51, 0x52, 0x56, 0x57, 0x06, 0x8b, 0xd0)      # push ax cx dx si di es / mov dx, ax   the flags
+    a.b(0x8b, 0xc7, 0x2d, *u(POT_DESC)); a.short(0x72, 'x101_pk_none')   # j = (di - POT_DESC) / 10
+    a.b(0x3d, 10 * POT_DESCS, 0x00); a.short(0x73, 'x101_pk_none')
+    a.b(0xb1, 0x0a, 0xf6, 0xf1, 0x0a, 0xe4); a.short(0x75, 'x101_pk_none')
+    a.b(0x32, 0xed, 0x3c, POT_SLOTS); a.short(0x73, 'x101_pk_other')
+    a.b(0xf6, 0xc2, 0x10); a.short(0x74, 'x101_pk_none')     # the knight's own, usable here
+    a.b(0x8a, 0xc8, 0x8b, 0x3e, 0x88, 0xed); a.near(0xe8, 'pot_slots'); a.short(0x72, 'x101_pk_none')   # cx = its place / di = the knight
+    a.b(0x8b, 0xf3, 0x03, 0xf1, 0x2e, 0x8a, 0x84); a.word('pot_k'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pk_none')
+    for mode in (0x03, 0x06):                                # D105: Stonehenge, the High Temple: given up (spec_give)
+        a.b(0x83, 0x3e, 0x92, 0xed, mode); a.short(0x74, 'x105_pk_give')
+    a.near(0xe8, 'pot_drink'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pk_none')   # SR4: the effect (OVL_POT_FX); al = 0: not drunk
+    a.near(0xe8, 'pot_remove')
+    a.b(0x8b, 0x5e, 0xfe, 0x89, 0x1e, 0x78, 0xf3)            # [0F378h] = the item used (as the game)
+    a.label('x101_pk_redraw')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0x3a, 0xc0)      # pop es di si dx cx ax / ZF = 1: the sound, the screen again
+    a.near(0xe9, 'rules_flags')
+    a.label('x105_pk_give')                                  # D105: out of its place, then the kind's offering or sale
+    a.near(0xe8, 'pot_remove'); a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xb0, SK_POT); a.near(0xe9, 'spec_give')   # SR4: group OVL_SPEC
+    a.label('x101_pk_none')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58); a.near(0xe9, 'x101_sl_none')
+    a.label('x101_pk_other')
+    a.b(0xf6, 0xc2, 0x20); a.short(0x74, 'x101_pk_none')     # one to take
+    a.b(0x2c, POT_SLOTS, 0x8a, 0xc8, 0x8b, 0x3e, 0x88, 0xed)   # cx = its place / di = the taker
+    a.b(0x83, 0x7e, 0xfe, POT_CHEST_ITEM); a.short(0x75, 'x101_pk_knight')
+    a.near(0xe8, 'pot_chest'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pk_none')   # the chest's (shown: a free place)
+    a.b(0x2e, 0xc6, 0x07, 0x01); a.near(0xe8, 'pot_add'); a.short(0xeb, 'x101_pk_taken')   # the chest's: none
+    a.label('x101_pk_knight')
+    a.b(0x57, 0x8b, 0x3e, 0x8c, 0xed); a.near(0xe8, 'pot_slots'); a.b(0x5f); a.short(0x72, 'x101_pk_none')   # bx = the giver's places
+    a.b(0x8b, 0xf3, 0x03, 0xf1, 0x2e, 0x8a, 0x84); a.word('pot_k'); a.b(0x0a, 0xc0); a.short(0x74, 'x101_pk_none')
+    a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'x101_pk_none')
+    a.near(0xe8, 'pot_add'); a.short(0x72, 'x101_pk_swap')   # into a free place, the giver's emptied
+    a.near(0xe8, 'pot_remove'); a.short(0xeb, 'x101_pk_taken')
+    a.label('x101_pk_swap')                                  # three: places 1 -> 2 -> 3, the new one first, the third to the giver
+    a.b(0x53, 0x8a, 0xe0); a.near(0xe8, 'pot_slots')         # push bx / mov ah, al / bx = the taker's places
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k', 2); a.b(0x2e, 0x88, 0x84); a.word('pot_k')
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k', 1); a.b(0x2e, 0x88, 0x87); a.word('pot_k', 2)
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k'); a.b(0x2e, 0x88, 0x87); a.word('pot_k', 1)
+    a.b(0x2e, 0x88, 0xa7); a.word('pot_k'); a.b(0x5b)
+    a.label('x101_pk_taken')
+    a.b(0xff, 0x06, 0xaa, 0xe4); a.near(0xe9, 'x101_pk_redraw')   # inc word [0E4AAh]   one taken (as the game)
+    # the look data and the texts
+    a.label('pot_pixels'); a.b(bytes(POT_PIXELS))
+    a.label('pot_looks')
+    for n in range(1, len(POT_NAMES) + 1):
+        a.b(bytes(POT_LOOKS[n]))
+    a.label('pot_roll'); a.b(bytes(POT_ROLL))
+    a.label('pot_texts')
+    for t in POT_TEXT:
+        a.b(*u(t))
+    a.label('pot_of'); a.b(POT_OF + b'\0')
+    a.label('pot_names')
+    for n in range(len(POT_NAMES)):
+        a.word(f'pot_name{n}')
+    for n, name in enumerate(POT_NAMES):
+        a.label(f'pot_name{n}'); a.b(name.encode() + b'\0')
+    a.ovl_end()
+
+    # --- group OVL_POT_FX: the drink (al = the potion, di = the knight; keeps all) ---
+    a.ovl_begin(OVL_POT_FX); a.ovl_entry('pot_drink', 'call')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x3c, P_DANU); a.short(0x75, 'x101_dk_full')   # push ax bx cx dx
+    # Danu: HP + max HP, at most 2 x max (and 999), kept above max (pot_fx); a life below max_lives; no disease
+    a.b(0x8b, 0x4d, 0x3c, 0x8b, 0xc1, 0x03, 0xc0, 0x3d, *u(MAX_HP)); a.short(0x76, 'x101_dk_cap'); a.b(0xb8, *u(MAX_HP))
+    a.label('x101_dk_cap')
+    a.b(0x03, 0x4d, 0x38, 0x3b, 0xc8); a.short(0x7e, 'x101_dk_hp'); a.b(0x8b, 0xc8)   # cx = HP + max, capped
+    a.label('x101_dk_hp')
+    a.b(0x89, 0x4d, 0x38); a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_dk_life')
+    a.b(0x2e, 0x80, 0x8f); a.word('pot_fx'); a.b(POT_OVER)
+    a.label('x101_dk_life')
+    a.b(0x2e, 0xa0); a.word('rules_table', G_MAX_LIVES)
+    a.b(0x80, 0x7d, 0x31, 0x00); a.short(0x7e, 'x101_dk_cure'); a.b(0x38, 0x45, 0x31); a.short(0x7d, 'x101_dk_cure')
+    a.b(0xfe, 0x45, 0x31); a.short(0xeb, 'x101_dk_cure')     # inc byte [di+31h]
+    a.label('x101_dk_full')                                  # Full Restoration: full HP (above max kept), max_lives, no disease
+    a.b(0x3c, P_FULL); a.short(0x75, 'x101_dk_stat')
+    a.b(0x8b, 0x45, 0x3c, 0x3b, 0x45, 0x38); a.short(0x7c, 'x101_dk_lives'); a.b(0x89, 0x45, 0x38)
+    a.label('x101_dk_lives')
+    a.b(0x2e, 0xa0); a.word('rules_table', G_MAX_LIVES)
+    a.b(0x80, 0x7d, 0x31, 0x00); a.short(0x7e, 'x101_dk_cure'); a.b(0x38, 0x45, 0x31); a.short(0x7d, 'x101_dk_cure')
+    a.b(0x88, 0x45, 0x31)                                    # mov [di+31h], al
+    a.label('x101_dk_cure')
+    a.b(0xc7, 0x45, 0x60, 0x00, 0x00); a.short(0xeb, 'x101_dk_end')   # mov word [di+60h], 0   (as CCA9)
+    a.label('x101_dk_stat')                                  # Strength, Endurance, Constitution: +1, up to POT_STAT_MAX
+    a.b(0xbb, 0x2e, 0x00, 0x3c, P_STR); a.short(0x74, 'x101_dk_inc')
+    a.b(0xb3, 0x30, 0x3c, P_END); a.short(0x74, 'x101_dk_inc')
+    a.b(0xb3, 0x2f, 0x3c, P_CON); a.short(0x74, 'x101_dk_inc')
+    a.b(0x3c, P_LIFE); a.short(0x75, 'x102_dk_fight')
+    # Life: life_potion_hp more max HP for good (life_k, max_hp) and as much HP at once
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_dk_end')
+    a.b(0x2e, 0x80, 0xbf); a.word('life_k'); a.b(0xff); a.short(0x74, 'x101_dk_end')
+    a.b(0x2e, 0xfe, 0x87); a.word('life_k')
+    a.b(0x2e, 0xa0); a.word('rules_table', G_LIFE_HP); a.b(0x32, 0xe4, 0x01, 0x45, 0x38)   # add [di+38h], ax
+    a.short(0xeb, 'x101_dk_end')
+    # D102: Might, Fire Resistance: for the next campaign fight (pot_fx); one of the same kind already waiting: not
+    # drunk (al = 0 back, the potion stays)
+    a.label('x102_dk_fight')
+    a.b(0x3c, P_RECALL); a.short(0x74, 'x103_dk_map')        # D103: the map potions (group OVL_MAP)
+    a.b(0x3c, P_INVIS); a.short(0x74, 'x103_dk_map')
+    a.b(0x3c, P_LEVIT); a.short(0x75, 'x103_dk_fight')
+    a.label('x103_dk_map')
+    a.near(0xe8, 'pot_map'); a.b(0x0a, 0xc0); a.short(0x74, 'x102_dk_twice'); a.near(0xe9, 'x101_dk_end')
+    a.label('x103_dk_fight')
+    a.b(0xb4, FX_MIGHT, 0x3c, P_MIGHT); a.short(0x74, 'x102_dk_fx')
+    a.b(0xb4, FX_FIRE, 0x3c, P_FIRE); a.short(0x74, 'x102_dk_fx')
+    a.b(0xb4, FX_SPEED, 0x3c, P_SPEED); a.short(0x75, 'x101_dk_end')   # D104
+    a.label('x102_dk_fx')
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x101_dk_end')
+    a.b(0x2e, 0x84, 0xa7); a.word('pot_fx'); a.short(0x75, 'x102_dk_twice')   # test cs:[bx+pot_fx], ah
+    a.b(0x2e, 0x08, 0xa7); a.word('pot_fx'); a.short(0xeb, 'x101_dk_end')     # or cs:[bx+pot_fx], ah
+    a.label('x102_dk_twice')
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0xb0, 0x00, 0xc3)            # pop dx cx bx ax / mov al, 0 / ret
+    a.label('x101_dk_inc')
+    a.b(0x80, 0x39, POT_STAT_MAX); a.short(0x7d, 'x101_dk_end'); a.b(0xfe, 0x01)   # cmp byte [bx+di], max / jge / inc
+    a.label('x101_dk_end')
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0xc3)
+    a.ovl_end()
+
+    # --- group OVL_MAP (D103): the attack prompt's choice and the map potions' drink ---
+    # pot_prompt (from rules_pot_prompt): a knight already invisible is not fought (its invisibility ends; 04E8
+    # returns 1 at 0489, no screen); the screen also opens for one holding Invisibility or Recall (PR_OPEN: drunk
+    # there they cancel the fight, pot_cancel); else the game's (the Scroll of Protection)
+    a.ovl_begin(OVL_MAP); a.ovl_entry('pot_prompt', 'jump', 'x103_pp_game')
+    a.b(0x50, 0x53, 0x51, 0x52); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_po_game')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_INVIS); a.short(0x74, 'x103_po_hold')
+    a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ FX_INVIS)
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0xc7, 0x46, 0x02, 0x89, 0x04); a.near(0xe9, 'rules_done')   # on at 0489: mov ax, 1 / ret
+    a.label('x103_po_hold')
+    a.near(0xe8, 'pot_slots'); a.b(0xb9, POT_SLOTS, 0x00)
+    a.label('x103_po_loop')
+    a.b(0x2e, 0x8a, 0x87); a.word('pot_k'); a.b(0x3c, P_INVIS); a.short(0x74, 'x103_po_open')
+    a.b(0x3c, P_RECALL); a.short(0x74, 'x103_po_open'); a.b(0x43); a.short(0xe2, 'x103_po_loop')
+    a.label('x103_po_game')
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0x80, 0x7c, 0x12, 0x00); a.short(0x74, 'x103_po_flags')   # no scroll: ZF = 1, no screen
+    a.label('x103_po_mark')
+    a.b(0x2e, 0x80, 0x0e); a.word('pot_pr'); a.b(PR_OPEN)   # (ZF = 0: the screen)
+    a.label('x103_po_flags')
+    a.near(0xe9, 'rules_flags')
+    a.label('x103_po_open')
+    a.b(0x5a, 0x59, 0x5b, 0x58); a.short(0xeb, 'x103_po_mark')
+    # pot_map (from pot_drink, al = Recall, Invisibility or Levitation, di = the knight; al = 0 back: not drunk;
+    # may change bx, cx, dx). At the attack prompt (PR_OPEN) Invisibility and Recall cancel the fight (PR_CANCEL)
+    # and Levitation is not drunk; on the map a second Invisibility or Levitation while one waits is not drunk.
+    # Recall: full HP (above max kept), lives as the home village (village_lives), at its home village (the start
+    # place, as HOMESICK), the turn ends (the budget spent, as E); the Hawk's flight or landing ends for the knight
+    # whose turn it is (as AB3B)
+    a.ovl_entry('pot_map', 'call')
+    a.b(0x56); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_pm_no')
+    a.b(0x2e, 0x8a, 0x0e); a.word('pot_pr')              # mov cl, cs:[pot_prompt]
+    a.b(0x3c, P_LEVIT); a.short(0x75, 'x103_pm_invis')
+    a.b(0xf6, 0xc1, PR_OPEN); a.short(0x75, 'x103_pm_no')
+    a.b(0xb4, FX_LEV_WAIT | FX_LEV_ON); a.short(0xeb, 'x103_pm_set')
+    a.label('x103_pm_invis')
+    a.b(0x3c, P_INVIS); a.short(0x75, 'x103_pm_recall')
+    a.b(0xf6, 0xc1, PR_OPEN); a.short(0x75, 'x103_pm_cancel')
+    a.b(0xb4, FX_INVIS)
+    a.label('x103_pm_set')                                   # ah = the bits: none of them already: the first one set
+    a.b(0x2e, 0x84, 0xa7); a.word('pot_fx'); a.short(0x75, 'x103_pm_no')
+    a.b(0x80, 0xe4, FX_INVIS | FX_LEV_WAIT, 0x2e, 0x08, 0xa7); a.word('pot_fx'); a.short(0xeb, 'x103_pm_yes')
+    a.label('x103_pm_recall')
+    a.b(0x8b, 0x45, 0x3c, 0x3b, 0x45, 0x38); a.short(0x7c, 'x103_pm_hp'); a.b(0x89, 0x45, 0x38)
+    a.label('x103_pm_hp')
+    a.b(0x8b, 0xf7); a.near(0xe8, 'village_lives')           # mov si, di
+    a.b(0xd1, 0xe3, 0xd1, 0xe3, 0x2e, 0x8b, 0x87); a.word('start_pos'); a.b(0x2e, 0x8b, 0x97); a.word('start_pos', 2)
+    a.near(0xe8, 'knight_move')
+    a.b(0xa1, 0xac, 0xcc, 0xa3, 0x98, 0xcc)                  # mov ax, [0CCACh] / mov [0CC98h], ax
+    a.b(0x3b, 0x3e, 0xe8, 0x77); a.short(0x75, 'x103_pm_rc')
+    a.b(0x33, 0xc0, 0xa3, 0xa0, 0xcc, 0xa3, 0x9e, 0xcc, 0xa3, 0xa2, 0xcc)
+    a.label('x103_pm_rc')
+    a.b(0xf6, 0xc1, PR_OPEN); a.short(0x74, 'x103_pm_yes')
+    a.label('x103_pm_cancel')
+    a.b(0x2e, 0x80, 0x0e); a.word('pot_pr'); a.b(PR_CANCEL)
+    a.label('x103_pm_yes')
+    a.b(0xb0, 0x01); a.short(0xeb, 'x103_pm_end')
+    a.label('x103_pm_no')
+    a.b(0xb0, 0x00)
+    a.label('x103_pm_end')
+    a.b(0x5e, 0xc3)
+    a.ovl_end()
+
+    # --- group OVL_SPEC (D105): the special items' shared cold code, by kind (potions; the rings and gems add theirs
+    # to spec_kinds and spec_as) ---
+    a.ovl_begin(OVL_SPEC)
+    # spec_take_all (from take_all, si = the winner, di = the beaten knight): for each kind, the beaten knight's
+    # special items, from its last place back, into the winner's free places while it has one (the rest stay at the
+    # cross); the winner a knight's record (a computer knight), not the dragon; keeps all. dead_knights_cross off only (D106)
+    a.ovl_entry('spec_take_all', 'call')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57)                  # push ax bx cx dx si di
+    a.b(0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.b(0x5f); a.short(0x72, 'x105_ta_end')   # the winner's number
+    a.b(0x8a, 0xc3); a.near(0xe8, 'knight_no'); a.short(0x72, 'x105_ta_end')   # mov al, bl / the beaten one's
+    a.b(0x8a, 0xd0, 0x8a, 0xf3, 0xbe); a.word('spec_kinds')  # mov dl, al / mov dh, bl / mov si, spec_kinds
+    a.label('x105_ta_kind')
+    a.b(0x2e, 0x8a, 0x4c, 0x02, 0x32, 0xed); a.short(0xe3, 'x105_ta_end')   # cx = its places per knight; 0: the table's end
+    a.b(0x8a, 0xc2, 0xf6, 0xe1, 0x2e, 0x03, 0x04, 0x8b, 0xf8)   # di = the winner's places: [si] + n x its number
+    a.b(0x8a, 0xc6, 0xf6, 0xe1, 0x2e, 0x03, 0x04, 0x8b, 0xd8)   # bx = the beaten knight's
+    a.b(0x8a, 0xe1)                                          # mov ah, cl
+    a.label('x105_ta_item')
+    a.b(0x53, 0x03, 0xd9, 0x2e, 0x8a, 0x47, 0xff, 0x5b, 0x0a, 0xc0); a.short(0x74, 'x105_ta_next')   # al = its place cx - 1
+    a.b(0x56, 0x51, 0x8b, 0xf7, 0x8a, 0xcc, 0x32, 0xed)      # push si cx / mov si, di / mov cl, ah / xor ch, ch
+    a.label('x105_ta_free')
+    a.b(0x2e, 0x80, 0x3c, 0x00); a.short(0x74, 'x105_ta_put'); a.b(0x46); a.short(0xe2, 'x105_ta_free')
+    a.b(0x59, 0x5e); a.short(0xeb, 'x105_ta_skip')           # the winner full: the next kind
+    a.label('x105_ta_put')
+    a.b(0x2e, 0x88, 0x04, 0x59, 0x5e, 0x53, 0x03, 0xd9, 0x2e, 0xc6, 0x47, 0xff, 0x00, 0x5b)   # moved, its place emptied
+    a.label('x105_ta_next')
+    a.short(0xe2, 'x105_ta_item')
+    a.label('x105_ta_skip')
+    a.b(0x83, 0xc6, 0x05); a.short(0xeb, 'x105_ta_kind')
+    a.label('x105_ta_end')
+    a.b(0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)
+    # spec_take_one (D106; from take_one at 0B1A, si = the winner, di = the beaten knight with lives left, bx = 3F2h): the
+    # game's order (DS:03F2) walked as 0B21 does, each special kind just before the game's item it counts as (spec_as):
+    # the beaten knight's first item of that kind into a free place of the winner (sk_one, CF = 1). Else (CF = 0) bx = the
+    # first entry whose item the beaten knight has (or the end, FFFFh): the game takes it. dead_knights_cross off: bx as given
+    a.ovl_entry('spec_take_one', 'call')
+    a.b(0x2e, 0x80, 0x3e)   # cmp byte ptr cs:[@rules_table+G_CROSS], 0
+    a.word('rules_table', G_CROSS)
+    a.b(0x00)
+    a.short(0x74, 'x106_sto_ret')
+    a.b(0x50, 0x51, 0x55)   # push ax / push cx / push bp
+    a.label('x106_sto_order')
+    a.b(0x8b, 0x07, 0x83, 0xf8, 0xff)   # mov ax, word ptr [bx] / cmp ax, 0xffff
+    a.short(0x74, 'x106_sto_pop')
+    a.b(0xbd)   # mov bp, @spec_kinds
+    a.word('spec_kinds')
+    a.b(0x31, 0xc9)   # xor cx, cx
+    a.label('x106_sto_kind')
+    a.b(0x2e, 0x80, 0x7e, 0x02, 0x00)   # cmp byte ptr cs:[bp+2], 0
+    a.short(0x74, 'x106_sto_item')
+    a.b(0x53, 0x89, 0xcb, 0x2e, 0x3a, 0x87)   # push bx / mov bx, cx / cmp al, byte ptr cs:[bx+@spec_as]
+    a.word('spec_as')
+    a.b(0x5b)   # pop bx
+    a.short(0x75, 'x106_sto_next')
+    a.near(0xe8, 'sk_one')
+    a.short(0x72, 'x106_sto_pop')
+    a.label('x106_sto_next')
+    a.b(0x83, 0xc5, 0x05, 0x41)   # add bp, 5 / inc cx
+    a.short(0xeb, 'x106_sto_kind')
+    a.label('x106_sto_item')
+    a.b(0x53, 0x8b, 0x5d, 0x44, 0x01, 0xc3, 0x80, 0x3f, 0x00, 0x5b)   # push bx / mov bx, word ptr [di+0x44] / add bx, ax / cmp byte ptr [bx], 0 / pop bx
+    a.short(0x75, 'x106_sto_game')
+    a.b(0x43, 0x43)   # inc bx / inc bx
+    a.short(0xeb, 'x106_sto_order')
+    a.label('x106_sto_game')
+    a.b(0xf8)   # clc
+    a.label('x106_sto_pop')
+    a.b(0x5d, 0x59, 0x58)   # pop bp / pop cx / pop ax
+    a.label('x106_sto_ret')
+    a.b(0xc3)   # ret
+    # spec_cross (D106; from take_all at 0BC5, dead_knights_cross on; si = the winner, di = the beaten knight with no
+    # lives left): everything that fits. A knight winner (a computer knight): all gold up to max_gold, daggers up to 10,
+    # the better sword and the better armour with their enchantments (higher, or the same enchanted against plain: the
+    # two change places, so the worse one stays; the Sword of Sharpness's item with it; better armour: the winner's HP up
+    # by the bonus gained). The dragon (half the gold taken at 0B00): no gold, daggers, sword or armour; the sword's and
+    # the armour's enchantments into the hoard's bytes if free (not decided or none; a sword's not with a Sword of
+    # Sharpness in the hoard); D107: the Sword of Sharpness into a hoard with none and no sword enchantment. Both: every item of the table but the Sword of Sharpness (counts added, keys and
+    # Moonstones ORed), then the specials of each kind into free places (sk_one). CF = 1: done, on at 0B8A; CF = 0: off,
+    # or a winner that is neither (D105's and the game's TakeALL). What is not taken stays: the dead knight's cross
+    a.ovl_entry('spec_cross', 'call')
+    a.b(0x2e, 0x80, 0x3e)   # cmp byte ptr cs:[@rules_table+G_CROSS], 0
+    a.word('rules_table', G_CROSS)
+    a.b(0x00)
+    a.short(0x75, 'x106_sc_on')
+    a.b(0xc3)   # ret
+    a.label('x106_sc_on')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x55)   # push ax / push bx / push cx / push dx / push bp
+    a.near(0xe8, 'knight_no')
+    a.short(0x73, 'x106_sc_lk'); a.near(0xe9, 'x106_sc_old')   # the beaten one not a knight's record: the old way
+    a.label('x106_sc_lk')
+    a.b(0x88, 0xdd, 0x57, 0x89, 0xf7)   # mov ch, bl / push di / mov di, si
+    a.near(0xe8, 'knight_no')
+    a.b(0x5f, 0x88, 0xd9)   # pop di / mov cl, bl
+    a.short(0x73, 'x106_sc_knight'); a.near(0xe9, 'x106_sc_dragon')   # the winner not a knight's record
+    a.label('x106_sc_knight')
+    a.b(0x2e, 0xa1)   # mov ax, word ptr cs:[@rules_table+G_MAX_GOLD]
+    a.word('rules_table', G_MAX_GOLD)
+    a.b(0x2b, 0x44, 0x32)   # sub ax, word ptr [si+0x32]
+    a.short(0x7e, 'x106_sc_dag')
+    a.b(0x3b, 0x45, 0x32)   # cmp ax, word ptr [di+0x32]
+    a.short(0x7e, 'x106_sc_gold')
+    a.b(0x8b, 0x45, 0x32)   # mov ax, word ptr [di+0x32]
+    a.label('x106_sc_gold')
+    a.b(0x01, 0x44, 0x32, 0x29, 0x45, 0x32)   # add word ptr [si+0x32], ax / sub word ptr [di+0x32], ax
+    a.label('x106_sc_dag')
+    a.b(0xb0, 0x0a, 0x2a, 0x44, 0x34)   # mov al, 10 / sub al, byte ptr [si+0x34]
+    a.short(0x7e, 'x106_sc_sword')
+    a.b(0x3a, 0x45, 0x34)   # cmp al, byte ptr [di+0x34]
+    a.short(0x7e, 'x106_sc_dag2')
+    a.b(0x8a, 0x45, 0x34)   # mov al, byte ptr [di+0x34]
+    a.label('x106_sc_dag2')
+    a.b(0x00, 0x44, 0x34, 0x28, 0x45, 0x34)   # add byte ptr [si+0x34], al / sub byte ptr [di+0x34], al
+    a.label('x106_sc_sword')
+    a.near(0xe8, 'ench_raw')
+    a.b(0x88, 0xc2, 0x87, 0xfe)   # mov dl, al / xchg si, di
+    a.near(0xe8, 'ench_raw')
+    a.b(0x87, 0xfe, 0x88, 0xc6, 0x8b, 0x45, 0x40, 0x3b, 0x44, 0x40)   # xchg si, di / mov dh, al / mov ax, word ptr [di+0x40] / cmp ax, word ptr [si+0x40]
+    a.short(0x7f, 'x106_sc_sswap')
+    a.short(0x7c, 'x106_sc_arm')
+    a.b(0x08, 0xd2)   # or dl, dl
+    a.short(0x75, 'x106_sc_arm')
+    a.b(0x08, 0xf6)   # or dh, dh
+    a.short(0x74, 'x106_sc_arm')
+    a.label('x106_sc_sswap')
+    a.b(0x87, 0x44, 0x40, 0x89, 0x45, 0x40, 0xbb)   # xchg ax, word ptr [si+0x40] / mov word ptr [di+0x40], ax / mov bx, @ench_k
+    a.word('ench_k')
+    a.near(0xe8, 'sk_swap')
+    a.b(0xbb)   # mov bx, @ench_w
+    a.word('ench_w')
+    a.near(0xe8, 'sk_swap')
+    a.b(0x83, 0x7c, 0x40, 0x19)   # cmp word ptr [si+0x40], 0x19
+    a.short(0x75, 'x106_sc_arm')
+    a.b(0x56, 0x57, 0x8b, 0x74, 0x44, 0x8b, 0x7d, 0x44, 0x8a, 0x45, 0x04, 0x00, 0x44, 0x04, 0xc6, 0x45, 0x04, 0x00, 0x5f, 0x5e)   # push si / push di / mov si, word ptr [si+0x44] / mov di, word ptr [di+0x44] / mov al, byte ptr [di+4] / add byte ptr [si+4], al / mov byte ptr [di+4], 0 / pop di / pop si
+    a.label('x106_sc_arm')
+    a.near(0xe8, 'arm_raw')
+    a.b(0x88, 0xc2, 0x87, 0xfe)   # mov dl, al / xchg si, di
+    a.near(0xe8, 'arm_raw')
+    a.b(0x87, 0xfe, 0x88, 0xc6, 0x8b, 0x45, 0x42, 0x3b, 0x44, 0x42)   # xchg si, di / mov dh, al / mov ax, word ptr [di+0x42] / cmp ax, word ptr [si+0x42]
+    a.short(0x7f, 'x106_sc_aswap')
+    a.short(0x7c, 'x106_sc_items')
+    a.b(0x08, 0xd2)   # or dl, dl
+    a.short(0x75, 'x106_sc_items')
+    a.b(0x08, 0xf6)   # or dh, dh
+    a.short(0x74, 'x106_sc_items')
+    a.label('x106_sc_aswap')
+    a.b(0x87, 0x44, 0x42, 0x89, 0x45, 0x42, 0xbb)   # xchg ax, word ptr [si+0x42] / mov word ptr [di+0x42], ax / mov bx, @arm_k
+    a.word('arm_k')
+    a.near(0xe8, 'sk_swap')
+    a.b(0xbb)   # mov bx, @arm_w
+    a.word('arm_w')
+    a.near(0xe8, 'sk_swap')
+    a.near(0xe8, 'sk_ahp')
+    a.b(0x89, 0xc2, 0x8b, 0x44, 0x42)   # mov dx, ax / mov ax, word ptr [si+0x42]
+    a.near(0xe8, 'sk_ahp')
+    a.b(0x29, 0xd0)   # sub ax, dx
+    a.short(0x7e, 'x106_sc_items')
+    a.b(0x01, 0x44, 0x38)   # add word ptr [si+0x38], ax
+    a.short(0xeb, 'x106_sc_items')
+    a.label('x106_sc_dragon')
+    a.b(0x81, 0xfe, 0x26, 0x6e)   # cmp si, 0x6e26
+    a.short(0x75, 'x106_sc_old')
+    a.b(0x87, 0xfe)   # xchg si, di
+    a.near(0xe8, 'ench_raw')
+    a.b(0x08, 0xc0)   # or al, al
+    a.short(0x74, 'x106_sc_darm')
+    a.b(0xbb)   # mov bx, @hoard_ench
+    a.word('hoard_ench')
+    a.b(0x2e, 0x80, 0x3f, 0x02)   # cmp byte ptr cs:[bx], 2
+    a.short(0x73, 'x106_sc_darm')
+    a.b(0x80, 0x3e, 0xec, 0x6e, 0x00)   # cmp byte ptr [0x6eec], 0
+    a.short(0x75, 'x106_sc_darm')
+    a.b(0x40, 0x2e, 0x88, 0x07)   # inc ax / mov byte ptr cs:[bx], al
+    a.near(0xe8, 'ench_clear')
+    a.label('x106_sc_darm')
+    a.near(0xe8, 'arm_raw')
+    a.b(0x08, 0xc0)   # or al, al
+    a.short(0x74, 'x106_sc_dend')
+    a.b(0xbb)   # mov bx, @arm_lair+LAIR_COUNT
+    a.word('arm_lair', LAIR_COUNT)
+    a.b(0x2e, 0x80, 0x3f, 0x02)   # cmp byte ptr cs:[bx], 2
+    a.short(0x73, 'x106_sc_dend')
+    a.b(0x40, 0x2e, 0x88, 0x07)   # inc ax / mov byte ptr cs:[bx], al
+    a.near(0xe8, 'arm_clear')
+    a.label('x106_sc_dend')
+    a.b(0x87, 0xfe)   # xchg si, di
+    a.near(0xe8, 'sk_sharp')   # D107
+    a.label('x106_sc_items')
+    a.b(0x56, 0x57, 0x8b, 0x74, 0x44, 0x8b, 0x7d, 0x44, 0x31, 0xdb)   # push si / push di / mov si, word ptr [si+0x44] / mov di, word ptr [di+0x44] / xor bx, bx
+    a.label('x106_sc_iloop')
+    a.b(0x80, 0xfb, 0x04)   # cmp bl, 4
+    a.short(0x74, 'x106_sc_inext')
+    a.b(0x8b, 0x01, 0x80, 0xfb, 0x14)   # mov ax, word ptr [bx+di] / cmp bl, 0x14
+    a.short(0x72, 'x106_sc_count')
+    a.b(0x09, 0x00)   # or word ptr [bx+si], ax
+    a.short(0xeb, 'x106_sc_clear')
+    a.label('x106_sc_count')
+    a.b(0x00, 0x00)   # add byte ptr [bx+si], al
+    a.label('x106_sc_clear')
+    a.b(0xc7, 0x01, 0x00, 0x00)   # mov word ptr [bx+di], 0
+    a.label('x106_sc_inext')
+    a.b(0x80, 0xc3, 0x02, 0x80, 0xfb, 0x18)   # add bl, 2 / cmp bl, 0x18
+    a.short(0x72, 'x106_sc_iloop')
+    a.b(0x5f, 0x5e, 0xbd)   # pop di / pop si / mov bp, @spec_kinds
+    a.word('spec_kinds')
+    a.label('x106_sc_kind')
+    a.b(0x2e, 0x80, 0x7e, 0x02, 0x00)   # cmp byte ptr cs:[bp+2], 0
+    a.short(0x74, 'x106_sc_done')
+    a.label('x106_sc_spec')
+    a.near(0xe8, 'sk_one')
+    a.short(0x72, 'x106_sc_spec')
+    a.b(0x83, 0xc5, 0x05)   # add bp, 5
+    a.short(0xeb, 'x106_sc_kind')
+    a.label('x106_sc_done')
+    a.b(0xf9)   # stc
+    a.short(0xeb, 'x106_sc_end')
+    a.label('x106_sc_old')
+    a.b(0xf8)   # clc
+    a.label('x106_sc_end')
+    a.b(0x5d, 0x5a, 0x59, 0x5b, 0x58, 0xc3)   # pop bp / pop dx / pop cx / pop bx / pop ax / ret
+    # sk_one (bp = a kind's spec_kinds entry, si = the winner, di = the beaten knight): the beaten knight's first item of
+    # that kind (its places packed) into a free place of the winner (sk_free); CF = 1 taken. Keeps all but the flags
+    a.label('sk_one')
+    a.b(0x50, 0x53, 0x51, 0x52)   # push ax / push bx / push cx / push dx
+    a.near(0xe8, 'sk_loser')
+    a.short(0x72, 'x106_so_no')
+    a.b(0x2e, 0x80, 0x3f, 0x00)   # cmp byte ptr cs:[bx], 0
+    a.short(0x74, 'x106_so_no')
+    a.b(0x53)   # push bx
+    a.near(0xe8, 'sk_free')
+    a.b(0x89, 0xd8, 0x5b)   # mov ax, bx / pop bx
+    a.short(0x72, 'x106_so_no')
+    a.b(0x50)   # push ax
+    a.near(0xe8, 'sk_first')
+    a.b(0x5b, 0x00, 0xd0, 0x2e, 0x88, 0x07, 0xf9)   # pop bx / add al, dl / mov byte ptr cs:[bx], al / stc
+    a.short(0xeb, 'x106_so_end')
+    a.label('x106_so_no')
+    a.b(0xf8)   # clc
+    a.label('x106_so_end')
+    a.b(0x5a, 0x59, 0x5b, 0x58, 0xc3)   # pop dx / pop cx / pop bx / pop ax / ret
+    # sk_free (bp = a kind, si = the winner): bx = its free place of that kind, dl = what the item gets added there (0 a
+    # knight's place; 1 the dragon's hoard place, free when not decided (0) or none (1)); CF = 1 none. Clobbers dx
+    a.label('sk_free')
+    a.b(0x51, 0x57, 0x89, 0xf7)   # push cx / push di / mov di, si
+    a.near(0xe8, 'knight_no')
+    a.b(0x5f)   # pop di
+    a.short(0x72, 'x106_sf_dragon')
+    a.near(0xe8, 'sk_base')
+    a.label('x106_sf_loop')
+    a.b(0x2e, 0x80, 0x3f, 0x00)   # cmp byte ptr cs:[bx], 0
+    a.short(0x74, 'x106_sf_yes')
+    a.b(0x43)   # inc bx
+    a.short(0xe2, 'x106_sf_loop')
+    a.b(0xf9)   # stc
+    a.short(0xeb, 'x106_sf_end')
+    a.label('x106_sf_dragon')
+    a.b(0x81, 0xfe, 0x26, 0x6e, 0xf9)   # cmp si, 0x6e26 / stc
+    a.short(0x75, 'x106_sf_end')
+    a.b(0x2e, 0x8b, 0x5e, 0x03, 0x2e, 0x80, 0x3f, 0x02, 0xf5, 0xb2, 0x01)   # mov bx, word ptr cs:[bp+3] / cmp byte ptr cs:[bx], 2 / cmc / mov dl, 1
+    a.short(0xeb, 'x106_sf_end')
+    a.label('x106_sf_yes')
+    a.b(0xb2, 0x00)   # mov dl, 0
+    a.label('x106_sf_end')
+    a.b(0x59, 0xc3)   # pop cx / ret
+    # sk_loser (di = the beaten knight, bp = a kind): bx = its places of that kind, cx = how many; CF = 1 not a knight's
+    # record. Clobbers dx. sk_base (bl = a knight's number): the same for that knight
+    a.label('sk_loser')
+    a.near(0xe8, 'knight_no')
+    a.short(0x72, 'x106_sl_end')
+    a.near(0xe8, 'sk_base')
+    a.b(0xf8)   # clc
+    a.label('x106_sl_end')
+    a.b(0xc3)   # ret
+    a.label('sk_base')
+    a.b(0x50, 0x2e, 0x8a, 0x46, 0x02, 0x98, 0x89, 0xc1, 0xf6, 0xe3, 0x2e, 0x03, 0x46, 0x00, 0x89, 0xc3, 0x58, 0xc3)   # push ax / mov al, byte ptr cs:[bp+2] / cbw / mov cx, ax / mul bl / add ax, word ptr cs:[bp] / mov bx, ax / pop ax / ret
+    # sk_first (bx = places, packed; cx = how many): al = the first, the rest moved up, the last emptied (ah clobbered)
+    a.label('sk_first')
+    a.b(0x53, 0x51, 0x2e, 0x8a, 0x07)   # push bx / push cx / mov al, byte ptr cs:[bx]
+    a.label('x106_sfi_loop')
+    a.b(0x49)   # dec cx
+    a.short(0x74, 'x106_sfi_end')
+    a.b(0x2e, 0x8a, 0x67, 0x01, 0x2e, 0x88, 0x27, 0x43)   # mov ah, byte ptr cs:[bx+1] / mov byte ptr cs:[bx], ah / inc bx
+    a.short(0xeb, 'x106_sfi_loop')
+    a.label('x106_sfi_end')
+    a.b(0x2e, 0xc6, 0x07, 0x00, 0x59, 0x5b, 0xc3)   # mov byte ptr cs:[bx], 0 / pop cx / pop bx / ret
+    # sk_swap (cs:bx = a byte per knight, cl and ch = two knights' numbers): their bytes exchanged (bx clobbered)
+    a.label('sk_swap')
+    a.b(0x50, 0x57, 0x89, 0xdf, 0x88, 0xc8, 0x98, 0x01, 0xc3, 0x88, 0xe8, 0x01, 0xc7, 0x2e, 0x8a, 0x07, 0x2e, 0x86, 0x05, 0x2e, 0x88, 0x07, 0x5f, 0x58, 0xc3)   # push ax / push di / mov di, bx / mov al, cl / cbw / add bx, ax / mov al, ch / add di, ax / mov al, byte ptr cs:[bx] / xchg al, byte ptr cs:[di] / mov byte ptr cs:[bx], al / pop di / pop ax / ret
+    # sk_ahp (ax = an armour): ax = its max HP bonus (G_ARMOUR_HP; 0 for any other)
+    a.label('sk_ahp')
+    a.b(0x83, 0xe8, 0x1b, 0x83, 0xf8, 0x03)   # sub ax, 0x1b / cmp ax, 3
+    a.short(0x77, 'x106_sa_none')
+    a.b(0x53, 0x89, 0xc3, 0xd1, 0xe3, 0x2e, 0x8b, 0x87)   # push bx / mov bx, ax / shl bx, 1 / mov ax, word ptr cs:[bx+@rules_table+G_ARMOUR_HP]
+    a.word('rules_table', G_ARMOUR_HP)
+    a.b(0x5b, 0xc3)   # pop bx / ret
+    a.label('x106_sa_none')
+    a.b(0x31, 0xc0, 0xc3)   # xor ax, ax / ret
+    # sk_sharp (D107; si = the dragon, di = the beaten knight): the Sword of Sharpness into the hoard (as the game) when the hoard has none and no sword enchantment lies
+    # there (never one where it lies); the dead knight then has the long sword. Else it stays at the cross. Clobbers bx
+    a.label('sk_sharp')
+    a.b(0x8b, 0x5d, 0x44, 0x80, 0x7f, 0x04, 0x00)   # mov bx, word ptr [di+0x44] / cmp byte ptr [bx+4], 0
+    a.short(0x74, 'x107_sc_nos')
+    a.b(0x80, 0x3e, 0xec, 0x6e, 0x00)   # cmp byte ptr [0x6eec], 0
+    a.short(0x75, 'x107_sc_nos')
+    a.b(0x2e, 0x80, 0x3e); a.word('hoard_ench'); a.b(0x02)   # cmp byte ptr cs:[hoard_ench], 2
+    a.short(0x73, 'x107_sc_nos')
+    a.b(0xc6, 0x47, 0x04, 0x00, 0xc6, 0x06, 0xec, 0x6e, 0x01)   # mov byte ptr [bx+4], 0 / mov byte ptr [0x6eec], 1
+    a.b(0x83, 0x7d, 0x40, SHARPNESS); a.short(0x75, 'x107_sc_nos')   # cmp word ptr [di+0x40], 19h
+    a.b(0xc7, 0x45, 0x40, 0x16, 0x00)   # mov word ptr [di+0x40], 16h   the long sword
+    a.label('x107_sc_nos')
+    a.b(0xc3)   # ret
+    # spec_give (from a kind's click on the knight's own special item at Stonehenge or the High Temple, already out
+    # of its place; al = the kind): it counts as the game's item spec_as[kind] (the potions: the Potion of Healing).
+    # Stonehenge (mode 3): the offering made ([0F378h] = that item, as CC82); the sound and the screen again (CFE3).
+    # The Temple (mode 6): sold as that item, on at D049 (the sound, half its price DS:0EDAEh in gold, the max HP,
+    # the screen) with si = di (its dec [bx+si] / inc [bx+di] cancel: the Temple's stock and the knight's count of
+    # that item unchanged)
+    a.ovl_entry('spec_give', 'jump', 'x101_sl_none')
+    a.b(0x32, 0xe4, 0x8b, 0xd8, 0x2e, 0x8a, 0x87); a.word('spec_as'); a.b(0x32, 0xe4)   # ax = the item it counts as
+    a.b(0x83, 0x3e, 0x92, 0xed, 0x06); a.short(0x74, 'x105_sg_temple')
+    a.b(0xa3, 0x78, 0xf3, 0xc7, 0x06, 0xac, 0xe4, 0x01, 0x00)   # mov [0F378h], ax / mov word [0E4ACh], 1   (as CC82)
+    a.b(0x3a, 0xc0); a.near(0xe9, 'rules_flags')             # ZF = 1: CFE3
+    a.label('x105_sg_temple')
+    a.b(0x89, 0x46, 0xfe, 0x8b, 0x36, 0x88, 0xed, 0x8b, 0xfe, 0x89, 0x76, 0x00)   # game bx = it / si = di = the knight / game bp
+    a.b(0xb9, 0xae, 0xed, 0xc7, 0x46, 0x02, 0x49, 0xd0); a.near(0xe9, 'rules_done')   # mov cx, 0EDAEh / on at D049
+    a.ovl_end()
+
+
+RING_KIND = dict(p='ring', g=OVL_RING, on=G_RINGS, chance=G_RING_CHANCE, places='ring_k', slots='ring_slots',
+                 n=RING_SLOTS, icons=RING_ICONS, x=RING_X, y=RING_Y, step=RING_STEP, frame=RING_FRAME, flags=1,
+                 item=RING_ITEM, chest_item=RING_CHEST_ITEM, game_desc=RING_GAME_DESC, count=RING_COUNT,
+                 desc=RING_DESC, descs=RING_DESCS, texts=RING_TEXT, of=RING_OF, names=RING_NAMES,
+                 looks=RING_LOOKS, pixels=RING_PIXELS, roll=RING_ROLL, holder_off=RING_HOLDER_OFF, kind=SK_RING,
+                 chest_after=True, site=0xc5a7, cont=0xc5c6, skip=0xc5e7, fallback='x108_rr_off')
+
+
+def rings_code(a):
+    """D108: special rings, R1 (docs/rings-plan-2026-11-16.md): the base and the stat rings. Each knight has two places
+    (ring_k, packed from the first) on its panel's ring row, before its Rings of Protection; a lair chest or the hoard
+    holds at most one (lair_ring), shown after its Rings of Protection. The row, the roll and the clicks are kind_code
+    (group OVL_RING), written for the gems too; the stat rings are a bonus where the game reads the ability (ring_stat),
+    so the ability bytes never change."""
+    u = lambda v: (v & 0xff, v >> 8)
+    # ring_row (1000:C5A7, mov si,[0E490h] at DisplayMagic's ring row): the specials first (group OVL_RING)
+    a.label('rules_ring_row')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_RINGS); a.b(0x00); a.short(0x74, 'x108_rr_off')
+    a.near(0xe9, 'ring_row')
+    a.label('x108_rr_off')
+    a.b(0x8b, 0x36, 0x90, 0xe4); a.near(0xe9, 'rules_done')   # mov si, [0E490h]   (replaced)
+    # ring_slots (di = a knight's record): bx = 2 x its number, its places at cs:[bx+ring_k]; CF = 1 not a knight
+    a.label('ring_slots')
+    a.b(0x52); a.near(0xe8, 'knight_no'); a.short(0x72, 'x108_rs_end'); a.b(0xd1, 0xe3)   # push dx / shl bx, 1 (CF = 0)
+    a.label('x108_rs_end')
+    a.b(0x5a, 0xc3)
+    # ring_cnt (di = a record, al = a ring): al = how many of it the knight carries while it works: rare_rings on, a
+    # campaign (not a practice), a human's knight (computer knights hold rings without effect); ah lost
+    a.label('ring_cnt')
+    a.b(0x53, 0x8a, 0xe0, 0x32, 0xc0)                        # push bx / mov ah, al / xor al, al
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_RINGS); a.b(0x00); a.short(0x74, 'x108_rc_end')
+    a.b(0x83, 0x3e, *u(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'x108_rc_end')
+    a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'x108_rc_end')
+    a.near(0xe8, 'ring_slots'); a.short(0x72, 'x108_rc_end')
+    for k in range(RING_SLOTS):
+        a.b(0x2e, 0x38, 0xa7); a.word('ring_k', k); a.short(0x75, f'x108_rc_{k}'); a.b(0xfe, 0xc0)   # cmp cs:[bx+ring_k+k], ah / inc al
+        a.label(f'x108_rc_{k}')
+    a.label('x108_rc_end')
+    a.b(0x5b, 0xc3)
+    # ring_stat (si = a record, bx = an ability's offset, 2Eh-30h): cl = the ability as counted: + 1 for each of its
+    # rings (ring 1-3 = offset - 2Dh), at most POT_STAT_MAX (never below the byte); keeps all but cl and the flags
+    a.label('ring_stat')
+    a.b(0x50, 0x57, 0x8a, 0x08, 0x8a, 0xc3, 0x2c, 0x2d, 0x8b, 0xfe)   # push ax di / mov cl, [bx+si] / mov al, bl / sub al, 2Dh / mov di, si
+    a.near(0xe8, 'ring_cnt'); a.b(0x02, 0xc1, 0x3c, POT_STAT_MAX); a.short(0x76, 'x108_st_cap'); a.b(0xb0, POT_STAT_MAX)   # add al, cl / cmp al, 9 / jbe
+    a.label('x108_st_cap')
+    a.b(0x3a, 0xc1); a.short(0x72, 'x108_st_end'); a.b(0x8a, 0xc8)   # cmp al, cl / jb / mov cl, al
+    a.label('x108_st_end')
+    a.b(0x5f, 0x58, 0xc3)
+    # the abilities' reads (each replaces a mov or cmp of the ability byte; si = the record): the item screen's
+    # Strength, Endurance, Constitution digits (C2BD, C2F3, C329: mov cl,[si+..]), the movement at a redraw (02E9: mov
+    # bl,[si+30h], bx 0 before it), a fight's Endurance (356D: mov al,[si+30h]), a lair's extra monster for Strength
+    # above 3 (283D: cmp byte [si+2Eh],3; the flags back). Damage (2D84), max HP (02D3) and the turn's movement (A6C4)
+    # read it in their own handlers
+    for name, off in (('ring_cl_str', STAT_STR), ('ring_cl_end', STAT_END), ('ring_cl_con', STAT_CON)):
+        a.label('rules_' + name)
+        a.b(0xbb, off, 0x00); a.near(0xe8, 'ring_stat'); a.near(0xe9, 'rules_done')
+    a.label('rules_ring_bl_end')
+    a.b(0x51, 0xbb, STAT_END, 0x00); a.near(0xe8, 'ring_stat'); a.b(0x88, 0x4e, 0xfe, 0x59); a.near(0xe9, 'rules_done')   # mov [bp-2], cl
+    a.label('rules_ring_al_end')
+    a.b(0x51, 0xbb, STAT_END, 0x00); a.near(0xe8, 'ring_stat'); a.b(0x8a, 0xc1, 0x59); a.near(0xe9, 'rules_done')   # mov al, cl
+    a.label('rules_ring_lair')
+    a.b(0x51, 0xbb, STAT_STR, 0x00); a.near(0xe8, 'ring_stat'); a.b(0x80, 0xf9, 0x03, 0x59); a.near(0xe9, 'rules_flags')   # cmp cl, 3
+    kind_code(a, RING_KIND)
+    # D109 (R3): ring_life (from lives' end, si = the knight that lost lives, [bp+2] = the site + 4; keeps all), in
+    # group OVL_POT_FX. Undying: lives 0 or less (after Rebirth and the invulnerable rule) with the ring: one ring
+    # gone, 1 life, HP up to max, at its home village (the turn's movement: Combat spends it after every fight).
+    # A fight lost to the Guardian (0ADD, the winner of type GUARDIAN_TYPE) takes two lives more at 0FFF: 3 here, so
+    # one loss costs one ring. Absorb Soul: a fight (0ADD: the winner [897Bh]; 0AED: [8979h]) that took a knight's last
+    # life: a winner still standing with the ring gets a life, up to max_lives
+    if RING_SLOTS != 2:
+        raise ValueError('D109: ring_life removes an Undying ring from two places')
+    a.ovl_begin(OVL_POT_FX); a.ovl_entry('ring_life', 'call')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x57)                        # push ax bx cx dx di
+    a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7f, 'x109_rl_ret')   # cmp byte [si+31h], 0 / jg   not dead
+    a.b(0x8b, 0xfe, 0xb0, R_UNDYING); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x74, 'x109_rl_soul')
+    a.near(0xe8, 'ring_slots')                               # bx = its places
+    a.b(0x2e, 0x80, 0xbf); a.word('ring_k'); a.b(R_UNDYING); a.short(0x75, 'x109_rl_2nd')
+    a.b(0x2e, 0x8a, 0x87); a.word('ring_k', 1); a.b(0x2e, 0x88, 0x87); a.word('ring_k')   # the second moves up
+    a.label('x109_rl_2nd')
+    a.b(0x2e, 0xc6, 0x87); a.word('ring_k', 1); a.b(0x00)
+    a.b(0xc6, 0x44, 0x31, 0x01)                              # mov byte [si+31h], 1
+    a.b(0x81, 0x7e, 0x02, 0xe1, 0x0a); a.short(0x75, 'x109_rl_hp')   # cmp word [bp+2], 0AE1h / jne
+    a.b(0x8b, 0x1e, 0x7b, 0x89, 0x80, 0x7f, 0x35, GUARDIAN_TYPE); a.short(0x75, 'x109_rl_hp')
+    a.b(0xc6, 0x44, 0x31, 0x03)                              # mov byte [si+31h], 3   (0FFF: two more)
+    a.label('x109_rl_hp')
+    a.b(0x8b, 0x44, 0x3c, 0x39, 0x44, 0x38); a.short(0x7d, 'x109_rl_home'); a.b(0x89, 0x44, 0x38)
+    a.label('x109_rl_home')
+    a.near(0xe8, 'knight_no'); a.b(0xd1, 0xe3, 0xd1, 0xe3, 0x2e, 0x8b, 0x87); a.word('start_pos')
+    a.b(0x2e, 0x8b, 0x97); a.word('start_pos', 2); a.near(0xe8, 'knight_move')
+    a.label('x109_rl_ret')
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x58, 0xc3)
+    a.label('x109_rl_soul')
+    a.b(0x8b, 0x3e, 0x7b, 0x89, 0x81, 0x7e, 0x02, 0xe1, 0x0a); a.short(0x74, 'x109_rl_win')   # di = [897Bh] at 0ADD
+    a.b(0x8b, 0x3e, 0x79, 0x89, 0x81, 0x7e, 0x02, 0xf1, 0x0a); a.short(0x75, 'x109_rl_end')   # di = [8979h] at 0AED
+    a.label('x109_rl_win')
+    a.near(0xe8, 'section'); a.short(0x72, 'x109_rl_end')    # the loser a knight
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'x109_rl_end')   # the winner standing
+    a.b(0xb0, R_SOUL); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x74, 'x109_rl_end')
+    a.b(0x8a, 0x45, 0x31, 0x2e, 0x3a, 0x06); a.word('rules_table', G_MAX_LIVES); a.short(0x7d, 'x109_rl_end')
+    a.b(0xfe, 0x45, 0x31)                                    # inc byte [di+31h]
+    a.label('x109_rl_end')
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x58, 0xc3)
+    a.ovl_end()
+    charisma_code(a)
+
+
+def charisma_code(a):
+    """D112 (R4): the Ring of Charisma. Resident: the four hook handlers (the High Temple's buying D003 and selling
+    D056, Mythral's donation BC1B, Math's mood B8EF) and the calls in horse_buy, x42_pay, rules_sell, the healer and
+    item_palette; the work in group OVL_POT_FX. n = the knight's Charisma rings (ring_cnt: 0 for computer knights, in a
+    practice and with rare_rings off), D = charisma_discount. Buying: a price above 1 becomes max(1, price - n x D).
+    Selling (the merchant's items and horses, the Temple, D42's trade-in credit): at most the knight's own buying price
+    - 1, whatever the rings, so nothing is bought back for what it sold for. Without overlays every call returns at
+    once and the game's own prices stay."""
+    def h(name):                                             # a hook handler (resident)
+        a.label('rules_' + name)
+    # High Temple, buying (1000:D003, mov ax,[bx]: bx = the item's price word, the buyer [0ED88h])
+    h('cha_tbuy')
+    a.b(0x8b, 0x5e, 0xfe, 0x8b, 0x07, 0x56, 0x8b, 0x36, 0x88, 0xed)   # mov bx, [bp-2] / mov ax, [bx] / push si / mov si, [0ED88h]
+    a.near(0xe8, 'cha_cut'); a.b(0x5e); a.near(0xe9, 'rules_done')
+    # High Temple, selling (1000:D056, shr ax,1: ax = the item's price, the game's bp = the seller): half, capped
+    h('cha_tsell')
+    a.b(0x52, 0x8b, 0xd0, 0xd1, 0xe8, 0x56, 0x8b, 0x76, 0x00)   # push dx / mov dx, ax / shr ax, 1 / push si / mov si, [bp]
+    a.near(0xe8, 'cha_cap'); a.b(0x5e, 0x5a); a.near(0xe9, 'rules_done')
+    # Mythral (1000:BC1B, mov bx,[0E243h]: the donation, before its band is looked up): it counts n x D more
+    h('cha_mythral')
+    a.b(0x8b, 0x1e, 0x43, 0xe2); a.near(0xe8, 'cha_more'); a.b(0x89, 0x5e, 0xfe); a.near(0xe9, 'rules_done')
+    # Math (1000:B8EF, mov si,[77E8h] / add al,[si+3Bh]: the roll plus his irritation)
+    h('cha_math')
+    a.b(0x8b, 0x36, 0xe8, 0x77, 0x02, 0x44, 0x3b); a.near(0xe8, 'cha_calm'); a.near(0xe9, 'rules_done')
+
+    a.ovl_begin(OVL_POT_FX)
+    # x112_nd (di = a knight): ax = n x D; keeps all else
+    a.label('x112_nd')
+    a.b(0xb0, R_CHARISMA); a.near(0xe8, 'ring_cnt')
+    a.b(0x2e, 0xf6, 0x26); a.word('rules_table', G_CHARISMA); a.b(0xc3)   # mul byte cs:[charisma_discount] / ret
+    # x112_cut (ax = a price, di = the knight): ax = the knight's price; 0 and 1 stay; keeps all else
+    a.label('x112_cut')
+    a.b(0x3d, 0x01, 0x00); a.short(0x76, 'x112_cc_r')        # cmp ax, 1 / jbe
+    a.b(0x51, 0x8b, 0xc8); a.near(0xe8, 'x112_nd')           # push cx / mov cx, ax / call x112_nd
+    a.b(0x91, 0x2b, 0xc1); a.short(0x77, 'x112_cc_ok'); a.b(0xb8, 0x01, 0x00)   # xchg ax, cx / sub ax, cx / ja / mov ax, 1
+    a.label('x112_cc_ok')
+    a.b(0x59)
+    a.label('x112_cc_r')
+    a.b(0xc3)
+    # x112_cap (ax = what the game pays, dx = the full buying price, di = the knight): ax = at most its price - 1
+    a.label('x112_cap')
+    a.b(0x52, 0x92); a.near(0xe8, 'x112_cut'); a.b(0x48); a.short(0x79, 'x112_cp_ok'); a.b(0x33, 0xc0)   # push dx / xchg ax, dx / dec ax / jns / xor ax, ax
+    a.label('x112_cp_ok')
+    a.b(0x3b, 0xc2); a.short(0x72, 'x112_cp_end'); a.b(0x8b, 0xc2)   # cmp ax, dx / jb / mov ax, dx
+    a.label('x112_cp_end')
+    a.b(0x5a, 0xc3)
+    # cha_cut, cha_cap: the same with si = the knight
+    for name, sub in (('cha_cut', 'x112_cut'), ('cha_cap', 'x112_cap')):
+        a.ovl_entry(name, 'call')
+        a.b(0x57, 0x8b, 0xfe); a.near(0xe8, sub); a.b(0x5f, 0xc3)   # push di / mov di, si / call / pop di / ret
+    # cha_shop (si = the buyer at BuyGoods): the game's own shop prices (rules.SHOP's compare and subtract bytes) set
+    # to the buyer's; every human purchase comes this way first, so the next buyer gets its own. Keeps all
+    a.ovl_entry('cha_shop', 'call')
+    a.b(0x50, 0x06, 0x57, 0x8e, 0x46, 0x04, 0x8b, 0xfe)      # push ax es di / mov es, [bp+4] / mov di, si
+    for name, cmp_h, sub_h, *_ in SHOP:
+        a.b(0x2e, 0xa1); a.word('rules_table', G_BUY + 2 * SELL_ITEMS.index(name)); a.near(0xe8, 'x112_cut')
+        a.b(0x26, 0xa2, cmp_h & 0xff, cmp_h >> 8, 0x26, 0xa2, sub_h & 0xff, sub_h >> 8)   # mov es:[compare], al / mov es:[subtract], al
+    a.b(0x5f, 0x07, 0x58, 0xc3)
+    # cha_credit (D42: bx, di = the old and the new item's offset in the price tables, si = the buyer): dx = the new
+    # one's price less the old one's selling value as capped; keeps all else
+    a.ovl_entry('cha_credit', 'call')
+    a.b(0x50, 0x57, 0x2e, 0x8b, 0x85); a.word('rules_table', G_BUY); a.b(0x8b, 0xfe); a.near(0xe8, 'x112_cut'); a.b(0x50)
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SELL); a.b(0x2e, 0x8b, 0x97); a.word('rules_table', G_BUY)
+    a.near(0xe8, 'x112_cap'); a.b(0x5a, 0x2b, 0xd0); a.short(0x73, 'x112_cr_ok'); a.b(0x33, 0xd2)   # pop dx / sub dx, ax / jnc / xor dx, dx
+    a.label('x112_cr_ok')
+    a.b(0x5f, 0x58, 0xc3)
+    # cha_horse (al = the horse bought, cx = the buyer's number, si = the buyer): dx = what it pays (D42's half of the
+    # old horse's price, capped, with merchant_trade_in); keeps all else
+    a.ovl_entry('cha_horse', 'call')
+    a.b(0x50, 0x53, 0x57, 0x8b, 0xfe, 0x32, 0xe4, 0x8b, 0xd8, 0xd1, 0xe3)   # push ax bx di / mov di, si / bx = horse x 2
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_HORSE_PRICE - 2); a.near(0xe8, 'x112_cut'); a.b(0x8b, 0xd0)
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TRADE_IN); a.b(0x00); a.short(0x74, 'x112_ho_end')
+    a.b(0x8b, 0xd9, 0x2e, 0x8a, 0x9f); a.word('horse_k'); a.b(0x32, 0xff, 0x0a, 0xdb); a.short(0x74, 'x112_ho_end')
+    a.b(0xd1, 0xe3, 0x52, 0x2e, 0x8b, 0x97); a.word('rules_table', G_HORSE_PRICE - 2); a.b(0x8b, 0xc2, 0xd1, 0xe8)   # the old: dx full, ax half
+    a.near(0xe8, 'x112_cap'); a.b(0x5a, 0x2b, 0xd0); a.short(0x73, 'x112_ho_end'); a.b(0x33, 0xd2)
+    a.label('x112_ho_end')
+    a.b(0x5f, 0x5b, 0x58, 0xc3)
+    # cha_more (bx = Mythral's donation, the visitor [77E8h]): bx + n x D when above 0; keeps all else
+    a.ovl_entry('cha_more', 'call')
+    a.b(0x0b, 0xdb); a.short(0x7e, 'x112_mo_r')
+    a.b(0x50, 0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'x112_nd'); a.b(0x03, 0xd8, 0x5f, 0x58)
+    a.label('x112_mo_r')
+    a.b(0xc3)
+    # cha_calm (ax = Math's roll plus irritation, si = the visitor): above the frog's limit (the game's compare at
+    # B900, as custom rules set it) each ring calms him with charisma_math % (a game_random draw): ax = the limit, the
+    # mildest gift. Not on a first visit (irritation 0FFh: the game rolls again). Keeps all else
+    a.ovl_entry('cha_calm', 'call')
+    a.b(0x80, 0x7c, 0x3b, 0xff); a.short(0x74, 'x112_ca_r')
+    a.b(0x53, 0x51, 0x52, 0x57, 0x06, 0x8e, 0x46, 0x04, 0x26, 0x8b, 0x1e, 0x01, 0xb9)   # push bx cx dx di es / bx = the limit
+    a.b(0x3b, 0xc3); a.short(0x7e, 'x112_ca_end')            # cmp ax, bx / jle   not angry
+    a.b(0x50, 0x8b, 0xfe, 0xb0, R_CHARISMA); a.near(0xe8, 'ring_cnt'); a.b(0x8a, 0xc8, 0x32, 0xed, 0x58)   # cx = n
+    a.short(0xe3, 'x112_ca_end')
+    a.label('x112_ca_lp')
+    a.b(0x50); a.near(0xe8, 'game_random')
+    a.b(0x25, 0xff, 0x7f, 0x33, 0xd2, 0xbf, 0x64, 0x00, 0xf7, 0xf7, 0x58)   # and ax, 7FFFh / xor dx, dx / div 100 / pop ax
+    a.b(0x2e, 0x3a, 0x16); a.word('rules_table', G_CHA_MATH); a.short(0x72, 'x112_ca_calm'); a.short(0xe2, 'x112_ca_lp')
+    a.short(0xeb, 'x112_ca_end')
+    a.label('x112_ca_calm')
+    a.b(0x8b, 0xc3)
+    a.label('x112_ca_end')
+    a.b(0x07, 0x5f, 0x5a, 0x59, 0x5b)
+    a.label('x112_ca_r')
+    a.b(0xc3)
+    # cha_texts (the item screen opens): the shop's, the Temple's and the horses' price texts with the visitor's
+    # ([77E8h]) prices; each value fits the text built for the full price. Keeps all
+    a.ovl_entry('cha_texts', 'call')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x06, 0xfc, 0x8b, 0x36, 0xe8, 0x77, 0x1e, 0x07)   # push ... / cld / si = the visitor / es = ds
+    a.b(0xbb); a.word('x112_tab'); a.b(0xb9, len(PRICE_TEXTS), 0x00)
+    a.label('x112_tx_lp')
+    a.b(0x2e, 0x8b, 0x7f, 0x02, 0x2e, 0x8a, 0x57, 0x04, 0xf6, 0xc2, 0x02); a.short(0x74, 'x112_tx_cs')
+    a.b(0x06, 0x8e, 0x46, 0x04, 0x26, 0x8b, 0x05, 0x07); a.short(0xeb, 'x112_tx_val')   # the Temple's: MAIN's code word
+    a.label('x112_tx_cs')
+    a.b(0x2e, 0x8b, 0x05)                                    # the shop's: G_BUY
+    a.label('x112_tx_val')
+    a.near(0xe8, 'x112_val'); a.b(0x2e, 0x8b, 0x3f); a.near(0xe8, 'x112_put')
+    a.b(0x83, 0xc3, 0x05); a.short(0xe2, 'x112_tx_lp')
+    a.b(0x0e, 0x07, 0x33, 0xdb)                              # the horses' texts in G_HORSE_TEXT and G_HORSE_SELL
+    a.label('x112_tx_h')
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_HORSE_PRICE); a.b(0x50, 0xb2, 0x00); a.near(0xe8, 'x112_val')
+    a.b(0x8b, 0xfb, 0x6b, 0xff, HORSE_TEXT_SIZE // 2, 0x81, 0xc7); a.word('rules_table', G_HORSE_TEXT)
+    a.b(0x57); a.near(0xe8, 'x112_put'); a.b(0x5f, 0x58, 0xb2, 0x01); a.near(0xe8, 'x112_val')
+    d = (G_HORSE_SELL - G_HORSE_TEXT) & 0xffff
+    a.b(0x81, 0xc7, d & 0xff, d >> 8); a.near(0xe8, 'x112_put')
+    a.b(0x83, 0xc3, 0x02, 0x83, 0xfb, 2 * HORSE_N); a.short(0x72, 'x112_tx_h')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)
+    # x112_val (ax = a full price, dl bit 0 = a selling text, si = the knight): ax = the value shown; keeps all else
+    a.label('x112_val')
+    a.b(0x57, 0x8b, 0xfe, 0xf6, 0xc2, 0x01); a.short(0x74, 'x112_va_buy')
+    a.b(0x52, 0x8b, 0xd0, 0xd1, 0xe8); a.near(0xe8, 'x112_cap'); a.b(0x5a); a.short(0xeb, 'x112_va_end')
+    a.label('x112_va_buy')
+    a.near(0xe8, 'x112_cut')
+    a.label('x112_va_end')
+    a.b(0x5f, 0xc3)
+    # x112_put (es:di = a text, ax = a value): the text's number becomes ax, " GP" or "GP" after it as before, NUL;
+    # nothing without a digit. Keeps bx, cx, dx
+    a.label('x112_put')
+    a.b(0x53, 0x51, 0x52, 0x8b, 0xc8)
+    a.label('x112_pu_find')
+    a.b(0x26, 0x8a, 0x05, 0x0a, 0xc0); a.short(0x74, 'x112_pu_end')
+    a.b(0x2c, 0x30, 0x3c, 0x09); a.short(0x76, 'x112_pu_got'); a.b(0x47); a.short(0xeb, 'x112_pu_find')
+    a.label('x112_pu_got')
+    a.b(0x8b, 0xdf)
+    a.label('x112_pu_skip')
+    a.b(0x43, 0x26, 0x8a, 0x07, 0x2c, 0x30, 0x3c, 0x09); a.short(0x76, 'x112_pu_skip')
+    a.b(0x26, 0x8a, 0x1f, 0x53, 0xbb, 0x0a, 0x00, 0x8b, 0xc1, 0x33, 0xc9)   # bl = the char after / push bx / bx = 10 / ax = the value / cx = 0
+    a.label('x112_pu_div')
+    a.b(0x33, 0xd2, 0xf7, 0xf3, 0x52, 0x41, 0x0b, 0xc0); a.short(0x75, 'x112_pu_div')
+    a.label('x112_pu_wr')
+    a.b(0x58, 0x04, 0x30, 0xaa); a.short(0xe2, 'x112_pu_wr')
+    a.b(0x5b, 0x80, 0xfb, 0x20); a.short(0x75, 'x112_pu_g'); a.b(0xb0, 0x20, 0xaa)
+    a.label('x112_pu_g')
+    a.b(0xb8, 0x47, 0x50, 0xab, 0xb0, 0x00, 0xaa)            # "GP", NUL
+    a.label('x112_pu_end')
+    a.b(0x5a, 0x59, 0x5b, 0xc3)
+    # the price texts: DS offset, the price's place (G_BUY in the table, or the Temple's word in MAIN's code), kind
+    # (bit 0 selling, bit 1 the Temple's)
+    temple = dict(TEMPLE)
+    a.label('x112_tab')
+    for ds_off, name, kind in PRICE_TEXTS:
+        a.b(ds_off & 0xff, ds_off >> 8)
+        if name in SELL_ITEMS:
+            a.word('rules_table', G_BUY + 2 * SELL_ITEMS.index(name)); a.b(int(kind == 'sell'))
+        else:
+            site = TEMPLE_SITES[temple[name]]
+            a.b(site & 0xff, site >> 8, 2 | int(kind == 'sell'))
+    a.ovl_end()
+
+
+GEM_KIND = dict(p='gem', g=OVL_GEM, on=G_GEMS, chance=G_GEM_CHANCE, places='gem_k', slots='pot_slots',
+                n=GEM_SLOTS, icons=GEM_ICONS, x=GEM_X, y=GEM_Y, step=GEM_STEP, frame=GEM_FRAME, flags=5,
+                item=GEM_ITEM, chest_item=GEM_CHEST_ITEM, game_desc=GEM_GAME_DESC, count=GEM_COUNT,
+                desc=GEM_DESC, descs=GEM_DESCS, texts=GEM_TEXT, of=GEM_OF, names=GEM_NAMES,
+                looks=GEM_LOOKS, pixels=GEM_PIXELS, roll=GEM_ROLL, holder_off=GEM_HOLDER_OFF, kind=SK_GEM,
+                chest_after=True, site=0xc567, cont=0xc586, skip=0xc5a7, fallback='x113_gr_off',
+                use='gem_use', remove_resident=True, armed='dup_armed', armed_text=DUP_TEXT,
+                armed_end=DUP_TEXT + len(GEM_OF) + len(GEM_NAMES[GM_DUP - 1]))
+
+
+def gems_code(a):
+    """D113: special gems, G1 (docs/gems-plan-2026-11-18.md): the base, the Gem of Fury and the Gem of Keyfinding. Each
+    knight has three places (gem_k, packed from the first; three a knight as the potions, so pot_slots finds them) on
+    its panel's gem row, before its Gems of Seeing; a lair chest or the hoard holds at most one (lair_gem), shown after
+    its Gems of Seeing. The row, the roll and the clicks are kind_code (group OVL_GEM) with its use route: a click on
+    the knight's own where the game lets a Gem of Seeing be used goes to gem_use (group OVL_GEM_FX). Every gem but
+    Concealment is used up when its effect happens, and only then; a refused use leaves it."""
+    # gem_row (1000:C567, mov si,[0E490h], DisplayMagic's first instruction: its gem row): the specials first (group OVL_GEM)
+    a.label('rules_gem_row')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_GEMS); a.b(0x00); a.short(0x74, 'x113_gr_off')
+    a.near(0xe9, 'gem_row')
+    a.label('x113_gr_off')
+    a.b(0x8b, 0x36, 0x90, 0xe4); a.near(0xe9, 'rules_done')   # mov si, [0E490h]   (replaced)
+    kind_code(a, GEM_KIND)
+    # gem_use (from gem_click: the knight's own special clicked where it can be used; al = the gem, ah = its place;
+    # the game's registers but ax): Fury: FX_FURY for the next campaign fight (refused while one waits); Keyfinding:
+    # IDROPPEDMYKEY's effect (key_show: the key screen on the map, keys_shown: the lairs holding a key glow until the
+    # turn ends) and the screen closes, as the Gem of Seeing's ([0E4ACh] = 1). Used: out of its place, [0F378h] = its
+    # item (as the game), then the sound and the screen again (CFE3); not used (refused, Concealment, a gem not built
+    # yet): nothing (CC4D). D114: Spying: the Scroll of the Wyrm's screen without the Wyrm (CD3E-CD5B but [0F37Ah]):
+    # mode 0Bh, the first other knight (CAE6), drawn anew from the start ([0ED86h]); used up at the click. Duplication:
+    # armed (dup_armed = 1 + its place, the armed text at DUP_TEXT; the row points its descriptor there), the sound and
+    # the screen again; dup_click takes the next click
+    a.ovl_begin(OVL_GEM_FX); a.ovl_entry('gem_use', 'jump', 'x101_sl_none')
+    a.b(0x53, 0x51, 0x52, 0x57, 0x8a, 0xcc, 0x32, 0xed, 0x8b, 0x3e, 0x88, 0xed)   # push bx cx dx di / cx = its place / di = the knight
+    a.b(0x3c, GM_FURY); a.short(0x75, 'x113_gu_keys')
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x113_gu_none')
+    a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_FURY); a.short(0x75, 'x113_gu_none')   # one waits: refused
+    a.b(0x2e, 0x80, 0x8f); a.word('pot_fx'); a.b(FX_FURY); a.short(0xeb, 'x113_gu_used')
+    a.label('x113_gu_keys')
+    a.b(0x3c, GM_KEYS); a.short(0x75, 'x114_gu_spy')
+    a.b(0x2e, 0xc6, 0x06); a.word('key_show'); a.b(0x01, 0x2e, 0xc6, 0x06); a.word('keys_shown'); a.b(0x01)
+    a.b(0xc7, 0x06, 0xac, 0xe4, 0x01, 0x00)                  # mov word [0E4ACh], 1   the screen closes
+    a.label('x113_gu_used')
+    a.near(0xe8, 'x114_gu_out')
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x3a, 0xc0); a.near(0xe9, 'rules_flags')   # pop di dx cx bx / ZF = 1: the sound, the screen again
+    a.label('x113_gu_none')
+    a.b(0x5f, 0x5a, 0x59, 0x5b); a.near(0xe9, 'x101_sl_none')
+    a.label('x114_gu_spy')
+    a.b(0x3c, GM_SPY); a.short(0x75, 'x114_gu_dup')
+    a.b(0x56, 0xbe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xbb, 0x04, 0x00)   # D115: push si / mov si, 6C9Eh / mov bx, 4
+    a.label('x115_gu_who')                                   # another knight with lives left, or refused (kept)
+    a.b(0x3b, 0xf7); a.short(0x74, 'x115_gu_wnext'); a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7f, 'x115_gu_some')
+    a.label('x115_gu_wnext')
+    a.b(0x83, 0xc6, SLOT_SIZE, 0x4b); a.short(0x75, 'x115_gu_who'); a.b(0x5e); a.short(0xeb, 'x113_gu_none')
+    a.label('x115_gu_some')
+    a.b(0x5e); a.near(0xe8, 'x114_gu_out')
+    for addr, value in ((0xed94, 9), (0xed92, 0x0b), (0xed86, 1)):   # back to mode 9 after it / mode 0Bh / the screen anew
+        a.b(0xc7, 0x06, addr & 0xff, addr >> 8, value, 0x00)
+    a.b(0x5f, 0x5a, 0x59, 0x5b)                              # pop di dx cx bx
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xe6, 0xca)   # CAE6: the first other knight, then CC4D (ret), as the Wyrm
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0x4d, 0xcc)
+    a.near(0xe9, 'call_game')
+    a.label('x114_gu_dup')
+    a.b(0x3c, GM_DUP); a.short(0x75, 'x115_gu_greed')
+    a.b(0xfe, 0xc1, 0x2e, 0x88, 0x0e); a.word('dup_armed')   # inc cl / dup_armed = 1 + its place
+    a.b(0x56, 0xbf, DUP_TEXT & 0xff, DUP_TEXT >> 8, 0xbe); a.word('x114_dup_name'); a.near(0xe8, 'ench_put')   # push si / its armed text
+    a.b(0xc6, 0x05, 0x00, 0x5e, 0x5f, 0x5a, 0x59, 0x5b, 0x3a, 0xc0); a.near(0xe9, 'rules_flags')   # ... and the end / pop si di dx cx bx / ZF = 1
+    a.label('x115_gu_greed')                                 # D115: Greed: only from the map's item screen (greed_map:
+    a.b(0x3c, GM_GREED); a.short(0x75, 'x116_gu_aim')        # elsewhere the turn ends there: refused, kept); each lair's
+    a.b(0x2e, 0x80, 0x3e); a.word('greed_map'); a.b(0x00); a.short(0x74, 'x113_gu_none')   # gold on the map until the turn's end
+    a.b(0x2e, 0xc6, 0x06); a.word('greed_shown'); a.b(0x01)
+    a.b(0xc7, 0x06, 0xac, 0xe4, 0x01, 0x00); a.near(0xe9, 'x113_gu_used')   # the screen closes
+    # D116, D117: the aimed gems (Banish Monsters, Change Places, Frog, Slow): the game's seeing mode (as AB10: [0CCA0h] = 1,
+    # the knight's place saved) with gem_aim = the gem and aim_place its place; the screen closes, the sound; the gem
+    # stays until it hits. Only from the map's own item screen (greed_map: the others end the turn) and not while the
+    # seeing mode or the Hawk's flight is on; map_hold: the button that clicked is let go before the ball moves or fires
+    a.label('x116_gu_aim')
+    if AIM_START != tuple(range(AIM_START[0], AIM_START[-1] + 1)):
+        raise ValueError('AIM_START must be a range of gem numbers')
+    a.b(0x3c, AIM_START[0]); a.short(0x72, 'x116_gu_no'); a.b(0x3c, AIM_START[-1]); a.short(0x77, 'x116_gu_no')   # D117: a range
+    a.b(0x2e, 0x80, 0x3e); a.word('greed_map'); a.b(0x00); a.short(0x74, 'x116_gu_no')
+    a.b(0x83, 0x3e, 0xa0, 0xcc, 0x00); a.short(0x75, 'x116_gu_no')   # cmp word [0CCA0h], 0
+    a.b(0x83, 0x3e, 0x9e, 0xcc, 0x00); a.short(0x75, 'x116_gu_no')   # cmp word [0CC9Eh], 0
+    a.b(0x2e, 0xa2); a.word('gem_aim'); a.b(0x2e, 0x88, 0x0e); a.word('aim_place')   # mov cs:[gem_aim], al / mov cs:[aim_place], cl
+    a.b(0xc7, 0x06, 0xa0, 0xcc, 0x01, 0x00)                  # mov word [0CCA0h], 1
+    a.b(0xff, 0x75, 0x5c, 0x8f, 0x06, 0xa4, 0xcc, 0xff, 0x75, 0x5e, 0x8f, 0x06, 0xa6, 0xcc)   # [0CCA4h], [0CCA6h] = its place
+    a.b(0x2e, 0xc6, 0x06); a.word('map_hold'); a.b(0x01)
+    a.b(0xc7, 0x06, 0xac, 0xe4, 0x01, 0x00)                  # the screen closes
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0x3a, 0xc0); a.near(0xe9, 'rules_flags')   # pop di dx cx bx / ZF = 1: the sound, the screen again
+    a.label('x116_gu_no')
+    a.near(0xe9, 'x113_gu_none')
+    # x114_gu_out (di = the knight, cx = the used gem's place): out of its place, [0F378h] = its item (as the game); keeps all
+    a.label('x114_gu_out')
+    a.b(0x53); a.near(0xe8, 'pot_slots'); a.short(0x72, 'x114_go_end'); a.near(0xe8, 'gem_remove')
+    a.b(0x8b, 0x5e, 0xfe, 0x89, 0x1e, 0x78, 0xf3)            # [0F378h] = the item used (as the game)
+    a.label('x114_go_end')
+    a.b(0x5b, 0xc3)
+    # dup_click (rules_sell, any click while a Gem of Duplication is armed, before the game's use, the specials' own clicks
+    # and everything else; ax = the descriptor's flags, bx = the field, cx = the type, di = the descriptor): disarmed;
+    # the item clicked copied if it can be (the knight's own: mode 9 has no second panel): a dagger up to max_daggers;
+    # the Potion of Healing, the Gem of Seeing, the Ring of Protection (+ its HP at once, as a taken one), the Talisman
+    # and the scrolls up to DUP_CAP; a special potion or ring into a free place of its kind; a special gem but the Gem
+    # of Duplication, into the place it leaves. Copied: the gem out of its place, [0F378h] = its item, the sound and the
+    # screen again (CFE3); anything else (gold, weapon, armour and their enchantments, the Sword of Sharpness, keys,
+    # Moonstones, abilities, the horse, an empty place, its places full, at its cap): nothing changes but the gem is
+    # disarmed: the screen again without a sound (CD77). Never the item's use, an offering or a sale
+    a.ovl_entry('dup_click', 'jump', 'x101_sl_none')
+    a.b(0x50, 0x51, 0x52, 0x56, 0x57, 0x06)                  # push ax cx dx si di es
+    a.b(0x2e, 0x8a, 0x16); a.word('dup_armed'); a.b(0x2e, 0xc6, 0x06); a.word('dup_armed'); a.b(0x00, 0xfe, 0xca)   # dl = its place / disarmed
+    a.b(0x8b, 0x3e, 0x88, 0xed, 0x83, 0xe1, 0x0f)            # di = the knight / cx = the hotspot's type
+    a.b(0x83, 0x3e, 0x92, 0xed, 0x09); a.short(0x75, 'x114_dc_no')   # mode 9 only (the knight's own panel alone)
+    a.b(0x83, 0xfb, 0x34); a.short(0x75, 'x114_dc_items')    # a dagger (type 3, field 34h): up to the loot's cap (max_daggers)
+    a.b(0x80, 0xf9, 0x03); a.short(0x75, 'x114_dc_no')
+    a.b(0x8e, 0x46, 0x04, 0x26, 0xa0, DUP_DAGGERS & 0xff, DUP_DAGGERS >> 8, 0x38, 0x45, 0x34); a.short(0x73, 'x114_dc_no')   # mov es, [bp+4] / mov al, es:[CE19h] / cmp [di+34h], al
+    a.b(0x80, 0x7d, 0x34, 0x00); a.short(0x74, 'x114_dc_no')   # none: nothing to copy
+    a.b(0xfe, 0x45, 0x34); a.near(0xe9, 'x114_dc_copied')
+    a.label('x114_dc_items')                                 # an item table's count (type 1 or 5, even fields 0-12h but the Sword of Sharpness)
+    a.b(0xf6, 0xc3, 0x01); a.short(0x75, 'x114_dc_spec')
+    a.b(0x83, 0xfb, 0x14); a.short(0x73, 'x114_dc_no'); a.b(0x83, 0xfb, 0x04); a.short(0x74, 'x114_dc_no')
+    a.b(0x80, 0xf9, 0x01); a.short(0x74, 'x114_dc_tab'); a.b(0x80, 0xf9, 0x05); a.short(0x75, 'x114_dc_no')
+    a.label('x114_dc_tab')
+    a.b(0x8b, 0x36, 0x8a, 0xed, 0x80, 0x38, DUP_CAP); a.short(0x73, 'x114_dc_no')   # si = its table / cmp byte [bx+si], cap
+    a.b(0x80, 0x38, 0x00); a.short(0x74, 'x114_dc_no')       # none: nothing to copy
+    a.b(0xfe, 0x00, 0x83, 0xfb, 0x06); a.short(0x75, 'x114_dc_copied')   # inc byte [bx+si] / the Ring of Protection: its HP
+    a.b(0x2e, 0xa1); a.word('rules_table', G_RING); a.b(0x01, 0x45, 0x38); a.near(0xe9, 'x114_dc_copied')
+    a.label('x114_dc_no')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xc7, 0x46, 0x02, 0x77, 0xcd); a.near(0xe9, 'rules_done')   # on at CD77: C044 (redraw), ret
+    a.label('x114_dc_copied')                                # (bx = the field: lost)
+    a.near(0xe8, 'pot_slots'); a.short(0x72, 'x114_dc_no')
+    a.label('x114_dc_used')
+    a.b(0x8a, 0xca, 0x32, 0xed); a.near(0xe8, 'gem_remove')   # the gem out of its place
+    a.label('x114_dc_out')
+    a.b(0x8a, 0xc2, 0x02, 0xc0, 0x04, GEM_ITEM, 0x32, 0xe4, 0xa3, 0x78, 0xf3)   # [0F378h] = its item (17h + 2 x place)
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0x3a, 0xc0); a.near(0xe9, 'rules_flags')   # pop es di si dx cx ax / ZF = 1: CFE3
+    a.label('x114_dc_spec')                                  # the specials (odd items): potions 9-0Dh, rings 11h-13h, gems 17h-1Bh
+    a.b(0x83, 0xfb, GEM_CHEST_ITEM); a.short(0x73, 'x114_dc_no')
+    a.b(0x8a, 0xc3, 0x2c, POT_ITEM); a.short(0x72, 'x114_dc_no')
+    a.b(0xbe); a.word('pot_k'); a.b(0xb1, POT_SLOTS, 0x3c, 2 * POT_SLOTS); a.short(0x73, 'x114_dc_ring')
+    a.near(0xe8, 'pot_slots'); a.short(0xeb, 'x114_dc_kind')
+    a.label('x114_dc_ring')
+    a.b(0x2c, RING_ITEM - POT_ITEM); a.short(0x72, 'x114_dc_no')
+    a.b(0xbe); a.word('ring_k'); a.b(0xb1, RING_SLOTS, 0x3c, 2 * RING_SLOTS); a.short(0x73, 'x114_dc_gem')
+    a.near(0xe8, 'ring_slots')
+    a.label('x114_dc_kind')                                  # a potion or a ring: into a free place of its kind
+    a.short(0x72, 'x114_dc_no'); a.near(0xe8, 'x114_dc_one'); a.short(0x74, 'x114_dc_no')
+    a.near(0xe8, 'x114_dc_add'); a.short(0x72, 'x114_dc_no')
+    a.near(0xe8, 'pot_slots'); a.near(0xe9, 'x114_dc_used')
+    a.label('x114_dc_gem')                                   # a gem but Duplication: into the place the gem leaves
+    a.b(0x2c, GEM_ITEM - RING_ITEM); a.short(0x72, 'x114_dc_no')
+    a.b(0xbe); a.word('gem_k'); a.near(0xe8, 'pot_slots'); a.short(0x72, 'x114_dc_no')
+    a.near(0xe8, 'x114_dc_one'); a.short(0x74, 'x114_dc_no'); a.b(0x3c, GM_DUP); a.short(0x74, 'x114_dc_no')
+    a.b(0x50, 0x8a, 0xca, 0x32, 0xed); a.near(0xe8, 'gem_remove'); a.b(0x58, 0xb1, GEM_SLOTS); a.near(0xe8, 'x114_dc_add')
+    a.near(0xe9, 'x114_dc_out')
+    # x114_dc_one (al = 2 x the place clicked, bx = the knight's places, si = the kind's table): al = its special, ZF = 1 none
+    a.label('x114_dc_one')
+    a.b(0x53, 0xd0, 0xe8, 0x98, 0x03, 0xd8, 0x2e, 0x8a, 0x00, 0x5b, 0x0a, 0xc0, 0xc3)   # push bx / shr al, 1 / cbw / add bx, ax / mov al, cs:[bx+si] / pop bx / or al, al
+    # x114_dc_add (al = a special, bx = the knight's places, si = the kind's table, cl = its places): into the first free
+    # place; CF = 1 none free
+    a.label('x114_dc_add')
+    a.b(0x53, 0x32, 0xed)                                    # push bx / xor ch, ch
+    a.label('x114_da_loop')
+    a.b(0x2e, 0x80, 0x38, 0x00); a.short(0x74, 'x114_da_put'); a.b(0x43); a.short(0xe2, 'x114_da_loop')
+    a.b(0x5b, 0xf9, 0xc3)
+    a.label('x114_da_put')
+    a.b(0x2e, 0x88, 0x00, 0x5b, 0xf8, 0xc3)
+    a.label('x114_dup_name'); a.b(DUP_NAME + b'\0')
+    a.ovl_end()
+    # greed_map (D115; 1000:A4C0, call A405 in the map's redraw, after the lairs (A445), before the other knights, both
+    # into the clean page [80B9h]): with the Gem of Greed used this turn, each lair's gold under it (greed_draw, group
+    # OVL_GEM_MAP); then the game's call. Every redraw also ends greed_map: the item screen opened from the map (A57D)
+    # has closed
+    a.label('rules_greed_map')
+    a.b(0x2e, 0xc6, 0x06); a.word('greed_map'); a.b(0x00)
+    a.b(0x2e, 0x80, 0x3e); a.word('greed_shown'); a.b(0x00); a.short(0x74, 'x115_gm_go')
+    a.near(0xe8, 'greed_draw')
+    a.label('x115_gm_go')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x05, 0xa4)   # A405: DisplayOtherKnights, then on at A4C3
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xc3, 0xa4)
+    a.near(0xe9, 'call_game')
+    # items_map (D115; 1000:A57D, mov ax,9: the map's I key opens the item screen): greed_map = 1 (the Gem of Greed
+    # can be used: the turn goes on after the screen; the game's other item screens in mode 9 end the turn)
+    a.label('rules_items_map')
+    a.b(0xb8, 0x09, 0x00, 0x2e, 0xc6, 0x06); a.word('greed_map'); a.b(0x01); a.near(0xe9, 'rules_done')
+
+    # --- D116: the aim (the aimed gems: Banish Monsters, Frog; D117: Change Places, Slow) ---
+    # The use (gem_use) starts the game's seeing mode ([0CCA0h] = 1, the place saved in [0CCA4h], [0CCA6h]) with gem_aim
+    # = the gem: the knight is the crystal ball and moves freely (the game's code: no budget, no slowing, no dragon).
+    # Banish uses the game's fire on a lair (B000 -> 0574: the chest shown; lair_hawk banishes it, banish_hit); a knight
+    # gem skips the lair scan (aim_scan) and takes the fire itself (aim_fire -> aim_shot). Space or E cancels (aim_keys,
+    # from turn_moves), the turn's end too (turn_end); the gem goes only at a hit. Every end is aim_end: back in place,
+    # the turn's movement left ([0CC98h]) and Haste ([0CCA2h], which the game's AB29 clears) untouched
+    # aim_any / aim_knight: CF = 1 while an aimed gem aims (any / a knight gem: gem_aim in AIM_KNIGHT) in the seeing
+    # mode; keeps all but the flags
+    a.label('aim_knight')
+    a.b(0x50, 0xb4, AIM_KNIGHT[0]); a.short(0xeb, 'x116_aa_go')
+    a.label('aim_any')
+    a.b(0x50, 0xb4, GM_BANISH)
+    a.label('x116_aa_go')
+    a.b(0x83, 0x3e, 0xa0, 0xcc, 0x00); a.short(0x74, 'x116_aa_no')   # cmp word [0CCA0h], 0
+    a.b(0x2e, 0x38, 0x26); a.word('gem_aim'); a.short(0x72, 'x116_aa_no')   # cmp cs:[gem_aim], ah / jb: below the range
+    a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(AIM_KNIGHT[1]); a.short(0x77, 'x116_aa_no')
+    a.b(0x58, 0xf9, 0xc3)                                    # pop ax / stc / ret
+    a.label('x116_aa_no')
+    a.b(0x58, 0xf8, 0xc3)                                    # pop ax / clc / ret
+    # aim_end (ds = MAIN's data): the knight back where it stood (knight_move: its cells, out of the dragon's list),
+    # the seeing mode and the Hawk off as AB29, but Haste kept; gem_aim 0; map_hold: the keys let go first; keeps all
+    a.label('aim_end')
+    a.b(0x50, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77, 0xa1, 0xa4, 0xcc, 0x8b, 0x16, 0xa6, 0xcc)   # push ax dx di / di = the knight / ax, dx = its place
+    a.near(0xe8, 'knight_move')
+    a.b(0x33, 0xc0, 0xa3, 0xa0, 0xcc, 0xa3, 0x9e, 0xcc, 0x2e, 0xa2); a.word('gem_aim')   # [0CCA0h], [0CC9Eh], gem_aim = 0
+    a.b(0x2e, 0xc6, 0x06); a.word('map_hold'); a.b(0x01)
+    a.b(0x5f, 0x5a, 0x58, 0xc3)
+    # aim_keys (from turn_moves, the handler's frame: [bp+4] = MAIN's cs): CF = 1 when Space (the item key) and E (the
+    # turn's end) are not for the game in this pass: one was pressed while an aim is on (the aim ends: aim_end, the gem
+    # kept), or is still held since; keeps all but the flags
+    a.label('aim_keys')
+    a.b(0x50, 0x06, 0x8e, 0x46, 0x04)                        # push ax es / mov es, [bp+4]
+    a.b(0x26, 0xa0, (KEY_TABLE + KEY_SPACE) & 0xff, (KEY_TABLE + KEY_SPACE) >> 8)   # mov al, es:[Space]
+    a.b(0x26, 0x22, 0x06, (KEY_TABLE + KEY_E) & 0xff, (KEY_TABLE + KEY_E) >> 8)     # and al, es:[E]
+    a.b(0x3c, 0xff); a.short(0x75, 'x116_ak_held')
+    a.b(0x2e, 0xc6, 0x06); a.word('aim_hold'); a.b(0x00, 0xf8); a.short(0xeb, 'x116_ak_end')   # both let go / clc
+    a.label('x116_ak_held')
+    a.b(0x2e, 0x80, 0x3e); a.word('aim_hold'); a.b(0x00); a.short(0x75, 'x116_ak_yes')
+    a.near(0xe8, 'aim_any'); a.short(0x73, 'x116_ak_end')
+    a.near(0xe8, 'aim_end'); a.b(0x2e, 0xc6, 0x06); a.word('aim_hold'); a.b(0x01)
+    a.label('x116_ak_yes')
+    a.b(0xf9)
+    a.label('x116_ak_end')
+    a.b(0x07, 0x58, 0xc3)                                    # pop es ax / ret
+    # banish_here (the lair [6962h]): CF = 1 when it is banished; keeps all but the flags
+    a.label('banish_here')
+    a.b(0x53); a.near(0xe8, 'lair_slot'); a.b(0xf5); a.short(0x73, 'x116_bh_end')   # push bx / ... / cmc / jnc: not a lair
+    a.b(0x2e, 0x80, 0xbf, BANISH_HOLDER_OFF, 0x00, 0x01, 0xf5)   # cmp byte cs:[bx+off], 1 / cmc   (1: CF = 1)
+    a.label('x116_bh_end')
+    a.b(0x5b, 0xc3)
+    # aim_scan (1000:06F9, cmp word [0CCA0h],0 in the encounter scan; the flags back, ZF = 0: the seeing mode's lairs
+    # only (085A)): a knight gem's aim scans nothing (no lair highlight, no chest): on at 08CC (ret) with ax = 0
+    a.label('rules_aim_scan')
+    a.near(0xe8, 'aim_knight'); a.short(0x73, 'x116_as_game')
+    a.b(0x33, 0xc0, 0xc7, 0x46, 0x02, 0xcc, 0x08); a.near(0xe9, 'rules_done')   # xor ax, ax / mov word [bp+2], 08CCh
+    a.label('x116_as_game')
+    a.b(0x83, 0x3e, 0xa0, 0xcc, 0x00); a.near(0xe9, 'rules_flags')   # (replaced)
+    # aim_fire (1000:A5A7, cmp word [0CC9Eh],0 after fire is pressed on the map; the flags back): a knight gem's aim
+    # takes the fire itself (aim_shot, group OVL_GEM_MAP)
+    a.label('rules_aim_fire')
+    a.near(0xe8, 'aim_knight'); a.short(0x73, 'x116_af_game')
+    a.near(0xe9, 'aim_shot')
+    a.label('x116_af_game')
+    a.b(0x83, 0x3e, 0x9e, 0xcc, 0x00); a.near(0xe9, 'rules_flags')   # (replaced)
+    # aim_back (1000:05D6, call AB29 after a lair's chest in the seeing mode): after a Banish hit (gem_aim AIM_BACK)
+    # aim_end (Haste kept); else the game's AB29 (the Gem of Seeing as the game)
+    a.label('rules_aim_back')
+    a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(AIM_BACK); a.short(0x75, 'x116_ab_game')
+    a.near(0xe8, 'aim_end'); a.near(0xe9, 'rules_done')
+    a.label('x116_ab_game')
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x29, 0xab)   # AB29, then on at 05D9
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xd9, 0x05)
+    a.near(0xe9, 'call_game')
+
+    # --- group OVL_GEM_MAP (D115): the special gems' map effects ---
+    # greed_draw (from greed_map; ds = MAIN's data; keeps all): each lair still on the map (x >= 0; not the hoard, not a
+    # grave) gets its gold (+6, 0 for one with items only) in 3x5 digits (GREED_FONT) centred under its icon (x + 5 -
+    # 2 x digits, y + 6), map colour GREED_COLOUR with a black shadow one pixel down and right, plotted into the page
+    # through vga_run and hint_plot, clipped at the screen's edges (x 0-319, y 0-199)
+    a.ovl_begin(OVL_GEM_MAP); a.ovl_entry('greed_draw', 'call')
+    a.b(0x2e, 0xc7, 0x06); a.word('vga_fn'); a.word('x115_greed_all'); a.near(0xe9, 'vga_run')
+    a.label('x115_greed_all')                                # es = the page; keeps bp
+    a.b(0x55, 0xbe, LAIR_FIRST & 0xff, LAIR_FIRST >> 8, 0xb9, LAIR_COUNT, 0x00)   # push bp / mov si, lairs / mov cx, 24
+    a.label('x115_ga_lair')
+    a.b(0x51, 0x8b, 0x5c, 0x0a, 0x0b, 0xdb); a.short(0x78, 'x115_ga_next')   # push cx / mov bx, [si+0Ah] (x) / js: gone
+    a.b(0x8b, 0x44, 0x06, 0x33, 0xed, 0xb9, 0x0a, 0x00)      # mov ax, [si+6] (its gold) / xor bp, bp / mov cx, 10
+    a.label('x115_ga_dec')
+    a.b(0x33, 0xd2, 0xf7, 0xf1, 0x52, 0x45, 0x0b, 0xc0); a.short(0x75, 'x115_ga_dec')   # the digits on the stack, bp of them
+    a.b(0x83, 0xc3, 0x05, 0x2b, 0xdd, 0x2b, 0xdd)            # bx = x + 5 - 2 x bp
+    a.b(0x8b, 0x7c, 0x0c, 0x83, 0xc7, 0x06)                  # di = y + 6
+    a.label('x115_ga_put')
+    a.b(0x58); a.near(0xe8, 'x115_greed_digit'); a.b(0x83, 0xc3, 0x04, 0x4d); a.short(0x75, 'x115_ga_put')
+    a.label('x115_ga_next')
+    a.b(0x59, 0x83, 0xc6, LAIR_SIZE); a.short(0xe2, 'x115_ga_lair')
+    a.b(0x5d, 0xc3)
+    # x115_greed_digit (ax = a digit, bx = x, di = y, es = the page; keeps all): its shadow, then the digit
+    a.label('x115_greed_digit')
+    a.b(0x50, 0x52, 0x56, 0x8b, 0xf0, 0xd1, 0xe6, 0x2e, 0x8b, 0x94); a.word('x115_greed_font')   # mov dx, cs:[si+font]
+    a.b(0x43, 0x47, 0xb4, GREED_SHADOW); a.near(0xe8, 'x115_greed_pass')   # inc bx / inc di / the shadow
+    a.b(0x4b, 0x4f, 0xb4, GREED_COLOUR); a.near(0xe8, 'x115_greed_pass')
+    a.b(0x5e, 0x5a, 0x58, 0xc3)
+    # x115_greed_pass (dx = the digit's 15 bits, row by row from bit 14, bx = x, di = y, ah = the colour; keeps all)
+    a.label('x115_greed_pass')
+    a.b(0x53, 0x51, 0x52, 0x57, 0xd1, 0xe2, 0xb5, 0x05)      # push bx cx dx di / shl dx, 1 / mov ch, 5
+    a.label('x115_gp_row')
+    a.b(0x53, 0xb1, 0x03)                                    # push bx / mov cl, 3
+    a.label('x115_gp_col')
+    a.b(0xd1, 0xe2); a.short(0x73, 'x115_gp_skip')           # shl dx, 1 / jnc
+    a.b(0x81, 0xfb, 0x3f, 0x01); a.short(0x77, 'x115_gp_skip')   # cmp bx, 319 / ja (left of 0 too)
+    a.b(0x81, 0xff, 0xc7, 0x00); a.short(0x77, 'x115_gp_skip')   # cmp di, 199 / ja
+    a.near(0xe8, 'hint_plot')
+    a.label('x115_gp_skip')
+    a.b(0x43, 0xfe, 0xc9); a.short(0x75, 'x115_gp_col')      # inc bx / dec cl / jnz
+    a.b(0x5b, 0x47, 0xfe, 0xcd); a.short(0x75, 'x115_gp_row')   # pop bx / inc di / dec ch / jnz
+    a.b(0x5f, 0x5a, 0x59, 0x5b, 0xc3)
+    a.label('x115_greed_font'); a.b(struct.pack('<10H', *GREED_FONT))
+    # aim_shot (D116; from aim_fire, a knight gem's fire; the handler's frame, ds = MAIN's data): the target is the
+    # nearest knight (|dx| + |dy|, the first of equals) within AIM_REACH pixels in x and y of the ball: not the aiming
+    # knight, not one with no lives (a grave, a record left out of the game), not one map_hidden hides (invisible or
+    # concealed); D118: for the Gem of Frog not one with Spellproof (arm_of, as the scrolls' arm_target: a computer's
+    # knight's armour does not count). None: nothing (on at A5BB, as the game's fire on nothing; the aim goes on, the gem
+    # kept). Hit: the gem's effect, the gem used
+    # (aim_used), aim_end, the map drawn again (A4B0). Frog: a frog for its next turn only: [3Ah] = 1 when its turn
+    # comes later this day, 2 when after the day's end (which takes one day off, 11BB), a longer frog time kept
+    a.ovl_entry('aim_shot', 'jump', 'x116_af_game')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55)            # push ax bx cx dx si di bp
+    a.b(0x8b, 0x3e, 0xe8, 0x77, 0x8b, 0x45, 0x5c, 0x8b, 0x55, 0x5e)   # di = the knight / ax, dx = the ball
+    a.b(0xbd, 0xff, 0xff, 0x33, 0xdb, 0xbe, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8, 0xb9, 0x04, 0x00)   # bp = best so far / bx = none / si, cx
+    a.label('x116_ash_loop')
+    a.b(0x3b, 0xf7); a.short(0x74, 'x116_ash_next')          # cmp si, di
+    a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7e, 'x116_ash_next')   # no lives
+    a.near(0xe8, 'map_hidden'); a.short(0x72, 'x116_ash_next')
+    a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(GM_FROG); a.short(0x75, 'x118_ash_spell')   # D118: Frog: cmp byte cs:[gem_aim], 9 / jne
+    a.b(0x50); a.near(0xe8, 'arm_of'); a.b(0x3c, A_SPELL, 0x58); a.short(0x74, 'x116_ash_next')   # push ax / Spellproof: passed over
+    a.label('x118_ash_spell')
+    a.b(0x51, 0x50, 0x8b, 0x4c, 0x5c, 0x2b, 0xc8); a.short(0x79, 'x116_ash_x'); a.b(0xf7, 0xd9)   # push cx ax / cx = |x - ball|
+    a.label('x116_ash_x')
+    a.b(0x83, 0xf9, AIM_REACH); a.short(0x77, 'x116_ash_far')
+    a.b(0x8b, 0x44, 0x5e, 0x2b, 0xc2); a.short(0x79, 'x116_ash_y'); a.b(0xf7, 0xd8)   # ax = |y - ball|
+    a.label('x116_ash_y')
+    a.b(0x83, 0xf8, AIM_REACH); a.short(0x77, 'x116_ash_far')
+    a.b(0x03, 0xc1, 0x3b, 0xc5); a.short(0x73, 'x116_ash_far')   # add ax, cx / cmp ax, bp / jae
+    a.b(0x8b, 0xe8, 0x8b, 0xde)                              # bp = its distance / bx = it
+    a.label('x116_ash_far')
+    a.b(0x58, 0x59)                                          # pop ax cx
+    a.label('x116_ash_next')
+    a.b(0x83, 0xc6, SLOT_SIZE); a.short(0xe2, 'x116_ash_loop')
+    a.b(0x5d, 0x8b, 0xf3, 0x0b, 0xf6); a.short(0x75, 'x116_ash_hit')   # pop bp / mov si, bx / or si, si
+    a.b(0xc7, 0x46, 0x02, 0xbb, 0xa5); a.short(0xeb, 'x116_ash_end')   # none: on at A5BB
+    a.label('x116_ash_hit')                                  # si = the target, di = the aiming knight
+    # D117: Change Places: the target to the aiming knight's place ([0CCA4h], [0CCA6h], knight_move), the target's old
+    # place written there for aim_end, which then puts the aiming knight on it (the swap kept; its movement left and
+    # Haste untouched: the turn goes on). Slow: slow_k set for the target (its next turn with a budget is cut)
+    a.b(0x2e, 0xa0); a.word('gem_aim'); a.b(0x3c, GM_PLACES); a.short(0x75, 'x117_ash_slow')   # mov al, cs:[gem_aim] / cmp al, 8
+    a.b(0x8b, 0x44, 0x5c, 0x8b, 0x54, 0x5e, 0x87, 0x06, 0xa4, 0xcc, 0x87, 0x16, 0xa6, 0xcc)   # ax, dx = its place / xchg [0CCA4h], [0CCA6h]
+    a.b(0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_move'); a.b(0x5f); a.short(0xeb, 'x116_ash_used')   # push di / mov di, si / ... / pop di
+    a.label('x117_ash_slow')
+    a.b(0x3c, GM_SLOW); a.short(0x75, 'x117_ash_frog')
+    a.b(0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'x117_ash_sl'); a.b(0x2e, 0xc6, 0x87); a.word('slow_k'); a.b(0x01)
+    a.label('x117_ash_sl')
+    a.b(0x5f); a.short(0xeb, 'x116_ash_used')
+    a.label('x117_ash_frog')
+    a.b(0x3c, GM_FROG); a.short(0x75, 'x116_ash_used')
+    a.b(0xb0, 0x01, 0x3b, 0xf7); a.short(0x77, 'x116_ash_frog'); a.b(0xfe, 0xc0)   # mov al, 1 / cmp si, di / ja / inc al
+    a.label('x116_ash_frog')
+    a.b(0x38, 0x44, 0x3a); a.short(0x7d, 'x116_ash_used'); a.b(0x88, 0x44, 0x3a)   # cmp [si+3Ah], al / jge: as long or longer kept / mov [si+3Ah], al
+    a.label('x116_ash_used')
+    a.near(0xe8, 'aim_used'); a.near(0xe8, 'aim_end')
+    a.b(0xc7, 0x46, 0x02, 0xb0, 0xa4)                        # on at A4B0: the map drawn again
+    a.label('x116_ash_end')
+    a.b(0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58); a.near(0xe9, 'rules_done')
+    # aim_used (di = the aiming knight): the aimed gem out of its place (aim_place, if it still holds gem_aim); keeps all
+    a.label('aim_used')
+    a.b(0x50, 0x53, 0x51); a.near(0xe8, 'pot_slots'); a.short(0x72, 'x116_au_end')
+    a.b(0x2e, 0x8a, 0x0e); a.word('aim_place'); a.b(0x32, 0xed, 0x53, 0x03, 0xd9, 0x2e, 0x8a, 0x87); a.word('gem_k')   # cx = its place / al = the gem there
+    a.b(0x5b, 0x2e, 0x3a, 0x06); a.word('gem_aim'); a.short(0x75, 'x116_au_end')
+    a.near(0xe8, 'gem_remove')
+    a.label('x116_au_end')
+    a.b(0x59, 0x5b, 0x58, 0xc3)
+    # banish_hit (D116; lair_hawk at 0581 in the seeing mode with gem_aim = Banish; ds = MAIN's data): the lair
+    # [6962h] banished for the rest of the game (lair_banish), the gem used, gem_aim AIM_BACK (aim_back at 05D6
+    # puts the knight back with Haste kept); the chest is then shown as the Gem of Seeing's (the game's path)
+    a.ovl_entry('banish_hit', 'call')
+    a.b(0x53, 0x57); a.near(0xe8, 'lair_slot'); a.short(0x72, 'x116_bh_none')
+    a.b(0x2e, 0xc6, 0x87, BANISH_HOLDER_OFF, 0x00, 0x01)     # mov byte cs:[bx+off], 1
+    a.b(0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'aim_used')
+    a.b(0x2e, 0xc6, 0x06); a.word('gem_aim'); a.b(AIM_BACK)
+    a.label('x116_bh_none')
+    a.b(0x5f, 0x5b, 0xc3)
+    # banish_coop (D116; lair_hawk at 0581: a banished lair entered with co-op partners, no fight): what the fight's
+    # set-up and end leave for coop_loot: lair_list (the visit's knight, then its partners) and coop_alive (all stand),
+    # so the chest is shared as after a won fight; keeps all
+    a.ovl_entry('banish_coop', 'call')
+    a.b(0x50, 0x51, 0xa1, 0xe8, 0x77, 0x2e, 0xa3); a.word('lair_list')
+    for p in range(COOP_PARTNERS):
+        a.b(0x2e, 0xa1); a.word('coop_partners', 2 * p); a.b(0x2e, 0xa3); a.word('lair_list', 2 + 2 * p)
+    a.b(0x2e, 0x8a, 0x0e); a.word('coop_pn'); a.b(0xb0, 0x02, 0xd2, 0xe0, 0xfe, 0xc8, 0x2e, 0xa2); a.word('coop_alive')   # (2 << pn) - 1
+    a.b(0x59, 0x58, 0xc3)
+    a.ovl_end()
+
+
+def kind_code(a, K):
+    """D108: a special kind's row, chest, roll and clicks, from its descriptor K (RING_KIND; written for the gems too:
+    each kind gets its own group from this code, so the window does not grow). The row's state (kr_*) is shared: one
+    row is drawn at a time. Resident: the kind's places (K['places']), its slots routine (bx = places per knight x the
+    knight's number), the row hook's stub and the click route in rules_sell."""
+    u = lambda v: (v & 0xff, v >> 8)
+    P, N, PL = K['p'], K['n'], K['places']
+    X = lambda name: f'x_{P}_{name}'
+    a.ovl_begin(K['g']); a.ovl_entry(P + '_row', 'jump', K['fallback'])
+    # P_row: called again after each special's PlaceIcons (kr_n: the next); then the game's items, capped at the places
+    # left, by the game's code from K['cont'] (none: K['skip'])
+    a.b(0x50, 0x51, 0x52, 0x56, 0x57, 0x06)                  # push ax cx dx si di es
+    a.b(0x2e, 0x80, 0x3e); a.word('kr_n'); a.b(0x00); a.short(0x75, X('next'))
+    a.near(0xe8, P + '_panel')                               # this panel's specials
+    a.label(X('next'))
+    a.b(0x2e, 0xa0); a.word('kr_n'); a.b(0x2e, 0x3a, 0x06); a.word('kr_cnt'); a.short(0x72, X('one'))
+    a.near(0xe9, X('game'))
+    a.label(X('one'))                                        # al = the special (0 first)
+    a.b(0x2e, 0xfe, 0x06); a.word('kr_n')
+    a.b(0x32, 0xe4, 0x8b, 0xf0, 0x2e, 0x02, 0x06); a.word('kr_at')   # xor ah, ah / mov si, ax / add al, cs:[kr_at]: its place
+    a.b(0xb2, K['step'], 0xf6, 0xe2, 0x05, *u(K['x']), 0xa3, 0x9c, 0xe4)   # [0E49Ch] = x of the place
+    a.b(0x8b, 0xc6, 0xd1, 0xe0, 0x2e, 0x02, 0x06); a.word('kr_item'); a.b(0xa3, 0xa6, 0xe4)   # [0E4A6h] = the item
+    for addr, value in ((0xe49a, K['frame']), (0xe49e, K['y']), (0xe4a0, K['step']), (0xe4a2, K['flags'])):
+        a.b(0xc7, 0x06, *u(addr), *u(value))
+    a.b(0x2e, 0xa0); a.word('kr_pan'); a.b(0xb2, N, 0xf6, 0xe2, 0x03, 0xc6, 0x8b, 0xd8)   # bx = j = N x panel + index
+    a.b(0xb2, 0x0a, 0xf6, 0xe2, 0x05, *u(K['desc']), 0x8b, 0xf8)   # di = its descriptor (desc + 10 j)
+    a.b(0x56, 0x8b, 0x36, 0xa8, 0xe4, 0x81, 0xc6, *u(10 * K['game_desc']))   # push si / si = the game's descriptor (this panel's)
+    a.b(0x57, 0x1e, 0x07, 0xfc, 0xb9, 0x05, 0x00, 0xf3, 0xa5, 0x5f)   # push di / push ds / pop es / cld / mov cx, 5 / rep movsw / pop di
+    a.b(0xd1, 0xe3, 0x2e, 0x8b, 0x97); a.word(P + '_texts'); a.b(0x89, 0x15)   # its text: [di] = texts[j]
+    if K.get('armed'):                                       # D114: the own panel's armed special (1 + its place): its armed text
+        a.b(0x2e, 0xa0); a.word(K['armed']); a.b(0x02, 0xc0, 0x2c, 0x02, 0x3a, 0xc3); a.short(0x75, X('narm'))   # al = 2 x place (0FEh: none) / cmp al, bl
+        a.b(0xc7, 0x05, *u(K['armed_text']))
+        a.label(X('narm'))
+    a.b(0x8b, 0xc7, 0x2b, 0x06, 0xa8, 0xe4, 0x33, 0xd2, 0xb9, 0x05, 0x00, 0xf7, 0xf1, 0xa3, 0xa4, 0xe4)   # [0E4A4h] = (di - [0E4A8h]) / 5 = 2 k
+    a.b(0x5e, 0x2e, 0x8a, 0x84); a.word('kr_list'); a.b(0x32, 0xe4)   # pop si / ax = the special (1-n)
+    a.b(0x8b, 0x3d, 0x50, 0xbe); a.word(P + '_of'); a.near(0xe8, 'ench_put')   # mov di, [di] / push ax / "Ring of "
+    a.b(0x58, 0x50, 0x48, 0xd1, 0xe0, 0x8b, 0xd8, 0x2e, 0x8b, 0xb7); a.word(P + '_names')   # its name
+    a.near(0xe8, 'ench_put')
+    if K.get('armed'):                                       # D114: written into the armed text: its own end kept (": pick an item")
+        a.b(0x81, 0xff, *u(K['armed_end'])); a.short(0x74, X('narm2'))
+    a.b(0xc6, 0x05, 0x00)                                    # ... and the end
+    if K.get('armed'):
+        a.label(X('narm2'))
+    a.b(0x58, 0x48, 0xb1, 0x03, 0xd3, 0xe0, 0x05); a.word(P + '_looks'); a.b(0x8b, 0xf0)   # si = its look's 8 values
+    a.b(0xbb); a.word(P + '_pixels'); a.b(0xb9, len(K['pixels']), 0x00); a.near(0xe8, 'look_put')
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xb9, 0x01, 0x00)   # pop es di si dx cx ax / mov cx, 1
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0x5d, 0xcb)   # PlaceIcons, then this site again
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(*u(K['site']))
+    a.near(0xe9, 'call_game')
+    a.label(X('game'))                                       # the game's items: as many as the places left
+    a.b(0x2e, 0xc6, 0x06); a.word('kr_n'); a.b(0x00)
+    a.b(0x8b, 0x36, 0x90, 0xe4, 0x33, 0xc9, 0x8a, 0x4c, K['count'])   # mov si, [0E490h] / xor cx, cx / mov cl, [si+count]
+    a.b(0xb0, K['icons'], 0x2e, 0x2a, 0x06); a.word('kr_cnt'); a.b(0x32, 0xe4)   # ax = icons - the specials
+    a.b(0x3b, 0xc8); a.short(0x76, X('cap')); a.b(0x8b, 0xc8)   # cmp cx, ax / jbe / mov cx, ax
+    a.label(X('cap'))
+    a.b(0x2e, 0xa0); a.word('kr_at'); a.b(0x0a, 0xc0, 0xb0, 0x00); a.short(0x75, X('gx'))   # specials after them: from place 0
+    a.b(0x2e, 0xa0); a.word('kr_cnt')                        # else after the specials
+    a.label(X('gx'))
+    a.b(0xb2, K['step'], 0xf6, 0xe2, 0x05, *u(K['x']), 0xa3, 0x9c, 0xe4)   # [0E49Ch] = x of that place
+    a.b(0xc7, 0x06, 0x9a, 0xe4, *u(K['frame']))              # [0E49Ah] = the frame (as the game)
+    a.b(0xc7, 0x46, 0x02, *u(K['cont']), 0x0b, 0xc9); a.short(0x75, X('pop'))   # on at cont (cx = their number, si = the table)
+    a.b(0xc7, 0x46, 0x02, *u(K['skip']))                     # none: on at skip
+    a.label(X('pop'))
+    a.b(0x07, 0x5f, 0x83, 0xc4, 0x02, 0x5a, 0x83, 0xc4, 0x02, 0x58)   # pop es di / (si) / pop dx / (cx) / pop ax
+    a.near(0xe9, 'rules_done')
+    # P_panel: kr_cnt, kr_list = this panel's specials ([0E4A8h] 0EF40h the first panel: [0ED88h]'s; the second:
+    # [0ED8Ch]'s in modes 1, 8, 0Bh, the chest's in 2 (a lair) and 0Ah (the hoard), none else: the Temple's stock),
+    # kr_item = the first's item, kr_pan = the panel (0, 1), kr_at = the first special's place
+    a.label(P + '_panel')
+    for var, value in (('kr_cnt', 0), ('kr_item', K['item']), ('kr_pan', 0), ('kr_at', 0)):
+        a.b(0x2e, 0xc6, 0x06); a.word(var); a.b(value)
+    a.b(0x8b, 0x3e, 0x88, 0xed)                              # di = the first panel's knight
+    a.b(0x81, 0x3e, 0xa8, 0xe4, 0x40, 0xef); a.short(0x74, X('knight'))
+    a.b(0x2e, 0xfe, 0x06); a.word('kr_pan'); a.b(0xa1, 0x92, 0xed)   # the second panel / mov ax, [0ED92h]
+    a.b(0x3d, 0x02, 0x00); a.short(0x74, X('chest')); a.b(0x3d, 0x0a, 0x00); a.short(0x74, X('chest'))
+    a.b(0x8b, 0x3e, 0x8c, 0xed)                              # di = the other knight
+    for mode in (0x01, 0x08):
+        a.b(0x3d, mode, 0x00); a.short(0x74, X('knight'))
+    a.b(0x3d, 0x0b, 0x00); a.short(0x75, X('pend'))
+    a.label(X('knight'))
+    a.b(0x8b, 0x45, 0x44, 0x3b, 0x06, 0x90, 0xe4); a.short(0x75, X('pend'))   # its own table drawn
+    a.near(0xe8, K['slots']); a.short(0x72, X('pend'))
+    a.b(0x33, 0xf6)                                          # xor si, si
+    a.label(X('copy'))
+    a.b(0x2e, 0x8a, 0x87); a.word(PL); a.b(0x0a, 0xc0); a.short(0x74, X('pend'))
+    a.b(0x2e, 0x88, 0x84); a.word('kr_list'); a.b(0x2e, 0xfe, 0x06); a.word('kr_cnt')
+    a.b(0x43, 0x46, 0x83, 0xfe, N); a.short(0x72, X('copy'))
+    a.label(X('pend'))
+    a.b(0xc3)
+    a.label(X('chest'))
+    a.b(0x2e, 0xc6, 0x06); a.word('kr_item'); a.b(K['chest_item'])
+    a.near(0xe8, P + '_chest'); a.b(0x0a, 0xc0); a.short(0x74, X('pend'))
+    a.b(0x2e, 0xa2); a.word('kr_list'); a.b(0x2e, 0xc6, 0x06); a.word('kr_cnt'); a.b(0x01)
+    if K['chest_after']:                                     # after the chest's own: at place min(their count, icons - 1)
+        a.b(0x8b, 0x36, 0x90, 0xe4, 0x8a, 0x44, K['count'], 0x3c, K['icons'] - 1); a.short(0x76, X('cat'))
+        a.b(0xb0, K['icons'] - 1)
+        a.label(X('cat'))
+        a.b(0x2e, 0xa2); a.word('kr_at')
+    a.b(0xc3)
+    # P_chest (the item screen in mode 2 or 0Ah): al = the chest's special shown, 0 none; bx = its byte in the kind's
+    # holder table when al > 0. Decided the first time it is looked at by a knight ([0ED88h]) with a free place, at
+    # the kind's chance % (none in a practice); a decided one is not shown to a knight with no free place (it stays)
+    a.label(P + '_chest')
+    a.b(0x32, 0xc0, 0x83, 0x3e, *u(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, X('cend'))
+    a.near(0xe8, 'holder_slot'); a.short(0x72, X('cend'))
+    a.b(0x83, 0xc3, K['holder_off'], 0x8b, 0x3e, 0x88, 0xed)   # add bx, the kind's table - lair_ench / di = the knight
+    a.b(0x2e, 0x8a, 0x07, 0x0a, 0xc0); a.short(0x75, X('have'))
+    a.near(0xe8, P + '_free'); a.short(0x72, X('cend'))      # no free place: left undecided
+    a.b(0x2e, 0xc6, 0x07, 0x01, 0x51, 0x52)                  # decided: none / push cx dx
+    a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xb9, 100, 0x00, 0xf7, 0xf1)   # dx = 0-99
+    a.b(0x2e, 0x3a, 0x16); a.word('rules_table', K['chance']); a.short(0x73, X('cpop'))
+    a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xb9, len(K['roll']), 0x00, 0xf7, 0xf1)   # one of those built, each as likely
+    a.b(0x8b, 0xf2, 0x2e, 0x8a, 0x84); a.word(P + '_roll'); a.b(0xfe, 0xc0, 0x2e, 0x88, 0x07)   # cs:[bx] = 1 + it
+    a.label(X('cpop'))
+    a.b(0x5a, 0x59, 0x2e, 0x8a, 0x07)                        # pop dx cx / mov al, cs:[bx]
+    a.label(X('have'))
+    a.b(0xfe, 0xc8); a.short(0x74, X('cend'))                # dec al / jz   none
+    a.near(0xe8, P + '_free'); a.short(0x73, X('cend'))      # shown to a knight with a free place
+    a.b(0x32, 0xc0)
+    a.label(X('cend'))
+    a.b(0xc3)
+    # P_free (di = a record): CF = 0 when it is a human's knight with a free place; keeps all
+    a.label(P + '_free')
+    a.b(0x50, 0x53, 0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, X('full'))
+    a.near(0xe8, K['slots']); a.short(0x72, X('full'))
+    a.b(0x2e, 0x80, 0xbf); a.word(PL, N - 1); a.b(0x00); a.short(0x75, X('full'))
+    a.b(0x5b, 0x58, 0xf8, 0xc3)
+    a.label(X('full'))
+    a.b(0x5b, 0x58, 0xf9, 0xc3)
+    # P_add (di = a knight's record, al = a special): into its first free place; CF = 1 none free; keeps all
+    a.label(P + '_add')
+    a.b(0x53, 0x51); a.near(0xe8, K['slots']); a.short(0x72, X('aend'))
+    a.b(0xb9, N, 0x00)
+    a.label(X('aloop'))
+    a.b(0x2e, 0x80, 0xbf); a.word(PL); a.b(0x00); a.short(0x74, X('put'))
+    a.b(0x43); a.short(0xe2, X('aloop')); a.b(0xf9); a.short(0xeb, X('aend'))
+    a.label(X('put'))
+    a.b(0x2e, 0x88, 0x87); a.word(PL); a.b(0xf8)
+    a.label(X('aend'))
+    a.b(0x59, 0x5b, 0xc3)
+    # P_remove (bx = a knight's places (slots), cx = one of them): emptied, the ones after it moved up. D113: resident
+    # with K['remove_resident'] (its effects' groups use it too)
+    def remove():
+        a.label(P + '_remove')
+        a.b(0x50, 0x53, 0x51, 0x03, 0xd9)                    # push ax bx cx / add bx, cx
+        a.label(X('mloop'))
+        a.b(0x83, 0xf9, N - 1); a.short(0x73, X('mlast'))
+        a.b(0x2e, 0x8a, 0x87); a.word(PL, 1); a.b(0x2e, 0x88, 0x87); a.word(PL)
+        a.b(0x43, 0x41); a.short(0xeb, X('mloop'))
+        a.label(X('mlast'))
+        a.b(0x2e, 0xc6, 0x87); a.word(PL); a.b(0x00, 0x59, 0x5b, 0x58, 0xc3)
+    if not K.get('remove_resident'):
+        remove()
+    # P_click (from rules_sell, a click on one of the kind's items; di = its descriptor, ax = its flags): the first
+    # panel's own at Stonehenge (mode 3) or the High Temple (6): given up (spec_give); the second panel's (flags 20h: to
+    # take): the chest's into a free place, another knight's into a free place or by the swap rule. Then the sound and
+    # the screen again (CFE3), as the game; anything else: nothing (CC4D)
+    a.ovl_entry(P + '_click', 'jump', 'x101_sl_none')
+    a.b(0x50, 0x51, 0x52, 0x56, 0x57, 0x06, 0x8b, 0xd0)      # push ax cx dx si di es / mov dx, ax   the flags
+    a.b(0x8b, 0xc7, 0x2d, *u(K['desc'])); a.short(0x72, X('none'))   # j = (di - desc) / 10
+    a.b(0x3d, *u(10 * K['descs'])); a.short(0x73, X('none'))
+    a.b(0xb1, 0x0a, 0xf6, 0xf1, 0x0a, 0xe4); a.short(0x75, X('none'))
+    a.b(0x32, 0xed, 0x3c, N); a.short(0x73, X('other'))
+    for mode in (0x03, 0x06):                                # the knight's own: given up at Stonehenge or the Temple
+        a.b(0x83, 0x3e, 0x92, 0xed, mode); a.short(0x74, X('give'))
+    if K.get('use'):                                         # D113: elsewhere used where the game lets its item be used (flags 10h)
+        a.b(0xf6, 0xc2, 0x10); a.short(0x74, X('none')); a.b(0xb4, 0x01)   # mov ah, 1: to use (else ah = 0, the remainder)
+    else:
+        a.short(0xeb, X('none'))
+    a.label(X('give'))
+    a.b(0x8a, 0xc8, 0x8b, 0x3e, 0x88, 0xed); a.near(0xe8, K['slots']); a.short(0x72, X('none'))   # cx = its place / di = the knight
+    a.b(0x8b, 0xf3, 0x03, 0xf1, 0x2e, 0x8a, 0x84); a.word(PL); a.b(0x0a, 0xc0); a.short(0x74, X('none'))
+    if K.get('use'):
+        a.b(0x0a, 0xe4); a.short(0x75, X('use'))             # or ah, ah
+    a.near(0xe8, P + '_remove'); a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xb0, K['kind']); a.near(0xe9, 'spec_give')   # group OVL_SPEC
+    a.label(X('none'))
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58); a.near(0xe9, 'x101_sl_none')
+    if K.get('use'):                                         # al = the special, ah = its place: on in its effects' group
+        a.label(X('use'))
+        a.b(0x8a, 0xe1, 0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x83, 0xc4, 0x02); a.near(0xe9, K['use'])   # mov ah, cl / pop es di si dx cx / (ax)
+    a.label(X('other'))
+    a.b(0xf6, 0xc2, 0x20); a.short(0x74, X('none'))          # one to take
+    a.b(0x2c, N, 0x8a, 0xc8, 0x8b, 0x3e, 0x88, 0xed)         # cx = its place / di = the taker
+    a.b(0x83, 0x7e, 0xfe, K['chest_item']); a.short(0x75, X('kn'))
+    a.near(0xe8, P + '_chest'); a.b(0x0a, 0xc0); a.short(0x74, X('none'))   # the chest's (shown: a free place)
+    a.b(0x2e, 0xc6, 0x07, 0x01); a.near(0xe8, P + '_add'); a.short(0xeb, X('taken'))   # the chest's: none
+    a.label(X('kn'))
+    a.b(0x57, 0x8b, 0x3e, 0x8c, 0xed); a.near(0xe8, K['slots']); a.b(0x5f); a.short(0x72, X('none'))   # bx = the giver's places
+    a.b(0x8b, 0xf3, 0x03, 0xf1, 0x2e, 0x8a, 0x84); a.word(PL); a.b(0x0a, 0xc0); a.short(0x74, X('none'))
+    a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, X('none'))
+    a.near(0xe8, P + '_add'); a.short(0x72, X('swap'))       # into a free place, the giver's emptied
+    a.near(0xe8, P + '_remove'); a.short(0xeb, X('taken'))
+    a.label(X('swap'))                                       # full: each place to the next, the new one first, the last to the giver
+    a.b(0x53, 0x8a, 0xe0); a.near(0xe8, K['slots'])          # push bx / mov ah, al / bx = the taker's places
+    a.b(0x2e, 0x8a, 0x87); a.word(PL, N - 1); a.b(0x2e, 0x88, 0x84); a.word(PL)
+    for k in range(N - 1, 0, -1):
+        a.b(0x2e, 0x8a, 0x87); a.word(PL, k - 1); a.b(0x2e, 0x88, 0x87); a.word(PL, k)
+    a.b(0x2e, 0x88, 0xa7); a.word(PL); a.b(0x5b)
+    a.label(X('taken'))
+    a.b(0xff, 0x06, 0xaa, 0xe4)                              # inc word [0E4AAh]   one taken (as the game)
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0x3a, 0xc0)      # pop es di si dx cx ax / ZF = 1: the sound, the screen again
+    a.near(0xe9, 'rules_flags')
+    # the look data and the texts
+    a.label(P + '_pixels'); a.b(bytes(K['pixels']))
+    a.label(P + '_looks')
+    for n in range(1, len(K['names']) + 1):
+        a.b(bytes(K['looks'][n]))
+    a.label(P + '_roll'); a.b(bytes(K['roll']))
+    a.label(P + '_texts')
+    for t in K['texts']:
+        a.b(*u(t))
+    a.label(P + '_of'); a.b(K['of'] + b'\0')
+    a.label(P + '_names')
+    for n in range(len(K['names'])):
+        a.word(f'{P}_name{n}')
+    for n, name in enumerate(K['names']):
+        a.label(f'{P}_name{n}'); a.b(name.encode() + b'\0')
+    a.ovl_end()
+    if K.get('remove_resident'):
+        remove()
+
 
 def rules_data(a, table):
     """The int 63h tables: the sites (return address, job) and the settings from rules.py."""
@@ -12105,6 +14501,13 @@ def rules_data(a, table):
     a.label('lair_ench'); a.b(bytes(LAIR_COUNT))             # D35: each lair's chest: 0 not decided, 1 none, 1 + one
     a.label('hoard_ench'); a.b(0)                            # D35: the dragon's hoard (right after lair_ench)
     a.label('arm_lair'); a.b(bytes(LAIR_COUNT + 1))          # D37: the same for armour enchantments (25 bytes after lair_ench, hoard last)
+    a.label('lair_potion'); a.b(bytes(LAIR_COUNT + 1))       # D101: the same for special potions (POT_HOLDER_OFF after lair_ench)
+    a.label('lair_ring'); a.b(bytes(LAIR_COUNT + 1))         # D108: the same for special rings (RING_HOLDER_OFF after lair_ench)
+    a.label('lair_gem'); a.b(bytes(LAIR_COUNT + 1))          # D113: the same for special gems (GEM_HOLDER_OFF after lair_ench)
+    a.label('lair_banish'); a.b(bytes(LAIR_COUNT))           # D116: 1 = the lair's monsters banished (the Gem of Banish Monsters)
+    a.label('gem_aim'); a.b(0)                               # D116: the aimed gem while it aims (0 none, AIM_BACK after a Banish hit)
+    a.label('aim_place'); a.b(0)                             # D116: ... its place (0-2)
+    a.label('slow_k'); a.b(bytes(4))                         # D117: 1 = the knight's next turn with a budget is cut (the Gem of Slow)
     a.label('arm_k'); a.b(bytes(4))                          # D37: each knight's armour's enchantment (0 none)
     a.label('arm_w'); a.b(bytes(4))                          # D37: ... the armour (+42h) it is on
     a.label('arm_tp'); a.b(0, 0)                             # D37: the text arm_desc points to
@@ -12120,7 +14523,43 @@ def rules_data(a, table):
     a.label('gv_start'); a.b(0, 0)                           # D79: the knight's gold as the town was entered
     a.label('hp_back'); a.b(0)                               # D40: 1 while PlaceIcons draws the panel's horse
     a.label('hi_state'); a.b(0)                              # D38: the next shop slot to place
-    a.label('ai_back'); a.b(0)                               # D37: arm_icon: back from PlaceIcons
+    a.label('ai_back'); a.b(0)                               # D37: arm_icon (D97: and arm_lair): back from PlaceIcons
+    a.label('icon_look'); a.b(0)                             # D98: the next blit's look (0 none, LOOK_ENCH enchanted, 2+ later)
+    a.label('look_xlat')                                     # D98: each look's table for pixels 0-31 (look n at + 32 (n - 1))
+    a.b(bytes(ENCH_LOOK_MAP.get(k, k) for k in range(32)))
+    a.label('look_pot'); a.b(bytes(range(32)))               # D101: look 2 (LOOK_POT): look_put's table for the next icon
+    a.label('spec_kinds')                                    # each kind (5 bytes): its places (cs), the places per knight
+    a.word('pot_k'); a.b(POT_SLOTS); a.word('lair_potion', LAIR_COUNT)   # D106: and the dragon's hoard place (0 not
+    a.word('ring_k'); a.b(RING_SLOTS); a.word('lair_ring', LAIR_COUNT)   # decided, 1 none, 1 + the item); D108: the rings
+    a.word('gem_k'); a.b(GEM_SLOTS); a.word('lair_gem', LAIR_COUNT)   # D113: the gems
+    a.b(0, 0, 0)                                             # places 0: the end
+    a.label('spec_as'); a.b(0x00, 0x06, 0x02)                # each kind: the game's item it counts as (0: Potion of Healing, 6: Ring of Protection, 2: Gem of Seeing)
+    # (D107: resident, not in group OVL_SPEC: the map's grave reads spec_kinds every frame)
+    a.label('cross_pix'); a.b(2, 3)                          # D107: the grave's frame (MI.C 21h): its pixels in the gold look
+    a.label('cross_gold'); a.b(*CROSS_GOLD)                  # ... and their map palette entries
+    a.label('pot_k'); a.b(bytes(4 * POT_SLOTS))              # D101: each knight's special potions, places 1-3 (0 none, 1-12; packed)
+    a.label('pot_fx'); a.b(bytes(4))                         # D101: each knight's potion effects (POT_OVER: HP above max kept)
+    a.label('spd_n'); a.b(bytes(4))                          # D104: Speed: each knight's frames since its last extra step
+    a.label('spd_skip'); a.b(0)                              # D104: 1 while 99CB runs Speed's extra step (nothing drawn)
+    a.label('kb_n'); a.b(bytes(4))                           # D102: Might's push by each knight: frames left (0 = none)
+    a.label('kb_dir'); a.b(bytes(4))                         # ... its pixels a frame (signed)
+    a.label('kb_obj'); a.b(bytes(8))                         # ... the object pushed
+    a.label('life_k'); a.b(bytes(4))                         # D101: each knight's Potions of Life drunk
+    a.label('pot_pr'); a.b(0)                                # D103: PR_OPEN, PR_CANCEL, PR_LAIR
+    a.label('pot_n'); a.b(0)                                 # D101: pot_row: the next special to place (0: the row starts)
+    a.label('pot_cnt'); a.b(0)                               # D101: ... the panel's specials
+    a.label('pot_item'); a.b(0)                              # D101: ... the first one's item
+    a.label('pot_pan'); a.b(0)                               # D101: ... the panel (0 first, 1 second)
+    a.label('pot_list'); a.b(bytes(POT_SLOTS))               # D101: ... its specials
+    a.label('ring_k'); a.b(bytes(4 * RING_SLOTS))            # D108: each knight's special rings, places 1-2 (0 none, 1-12; packed)
+    a.label('gem_k'); a.b(bytes(4 * GEM_SLOTS))              # D113: each knight's special gems, places 1-3 (0 none, 1-10; packed)
+    a.label('dup_armed'); a.b(0)                             # D114: the Gem of Duplication armed: 1 + its place, 0 = not
+    a.label('kr_n'); a.b(0)                                  # D108: kind_code's row (rings, D113 gems): the next special to place
+    a.label('kr_cnt'); a.b(0)                                # ... the panel's specials
+    a.label('kr_item'); a.b(0)                               # ... the first one's item
+    a.label('kr_pan'); a.b(0)                                # ... the panel (0 first, 1 second)
+    a.label('kr_at'); a.b(0)                                 # ... the first one's place (0, or after a chest's own items)
+    a.label('kr_list'); a.b(bytes(3))                        # ... its specials
     a.label('sp_tries'); a.b(0)                              # D37: arm_target: knights passed
     a.label('arm_names')
     for n, name in enumerate(ARM_NAMES):
@@ -12158,6 +14597,8 @@ def rules_data(a, table):
     a.label('cheat_ctx'); a.b(0)
     a.label('cheat_pending'); a.b(0)
     a.label('dice_loaded'); a.b(0)                           # D80: LOADEDDICE, until a tavern is left
+    a.label('luck_used'); a.b(0)                             # D111: the Ring of Luck's throw used in this town visit
+    a.label('plain_ctr'); a.b(0)                             # D111: Plainswalking's steps to the next free one (0: this one)
     a.label('cheat_last'); a.b(0, 0)
     a.label('code_t'); a.b(0x00, 0x80)                       # D55: the tick of the last key a code went on with
     a.label('cheat_flags'); a.b(0)
@@ -12734,6 +15175,10 @@ def _build_savehook(rules_table, plan):
     a.label('map_flags'); a.b(0)                             # SIRWALKSALOT, SIRPICKSALOT (on until typed again)
     a.label('key_show'); a.b(0)                              # IDROPPEDMYKEY: the screen's stage, 0 = none
     a.label('keys_shown'); a.b(0)                            # ... 1 = the lairs with keys glow
+    a.label('greed_shown'); a.b(0)                           # D115: the Gem of Greed used: each lair's gold on the map until the turn ends
+    a.label('greed_map'); a.b(0)                             # D115: 1 = this item screen was opened from the map (A57D)
+    a.label('aim_hold'); a.b(0)                              # D116: 1 = Space or E cancelled an aim and is not yet let go
+    a.label('vga_fn'); a.b(0, 0)                             # D115: vga_run's drawing routine
     a.label('heal_given'); a.b(0, 0)                         # healer: the donation made
     a.label('ds_have'); a.b(0)                               # dragon_scroll: 1 = the offer has been made
     a.label('ds_old'); a.b(bytes(4))                         # ... [8979h], [897Bh] as they were
@@ -12850,6 +15295,13 @@ def _build_savehook(rules_table, plan):
 
     a.ovl_link(a.labels['ovl_window'])                       # SR4: the groups at the window's address
     code = bytearray(a.build())
+    if a.labels['lair_potion'] - a.labels['lair_ench'] != POT_HOLDER_OFF or a.labels['look_pot'] != a.labels['look_xlat'] + 32 * (LOOK_POT - 1):
+        raise ValueError('D101: lair_potion or look_pot is not where the code expects it')
+    if (a.labels['lair_ring'] - a.labels['lair_ench'] != RING_HOLDER_OFF or a.labels['lair_gem'] - a.labels['lair_ench'] != GEM_HOLDER_OFF):
+        raise ValueError('D113: lair_ring or lair_gem is not where the code expects it (knight_reset clears them with lair_ench)')
+    if (a.labels['lair_banish'] - a.labels['lair_ench'] != BANISH_HOLDER_OFF or a.labels['gem_aim'] != a.labels['lair_banish'] + LAIR_COUNT
+            or a.labels['aim_place'] != a.labels['gem_aim'] + 1):
+        raise ValueError('D116: lair_banish, gem_aim, aim_place are not where the code expects them (knight_reset clears them)')
     paras = (a.labels['resident_end'] + 15) // 16           # offsets count from the PSP, so this includes it
     tail = bytearray(a.ovl_code[INST_TAIL])
     for name in ('resident_paras_1', 'resident_paras_2'):

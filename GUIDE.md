@@ -194,6 +194,10 @@ Terrain slows the knight down *(code `1000:A901`)*:
 | Forest, swamp, rocks | ½ |
 | Mountains | ¼ |
 
+[Rebuilt, custom rules: the terrain comes from `tools/terrain_zones.csv` (`[Map] custom_terrain = on`, D110): open
+ground, forest, swamp and water, rocks (all ½ but open ground) and mountains with the map's edges (¼). The special Rings
+of Mountainwalk, Waterwalk, Forestwalk and Plainswalking change it for their wearer (D111).]
+
 [The manual says forest, mountains and swamp also make wandering monsters more likely. The DOS version has no
 wandering monsters at all: fights happen only at lairs, against the dragon, Black Knights and other knights, and in
 the Valley.]
@@ -434,6 +438,22 @@ Hit points and damage to a knight per hit, from the code *(descriptions: manual 
   so you can take everything, as the manual says.
 * Carry Talismans of the Wyrm before you fight it.
 
+**The dead knight's cross** [Rebuilt, custom rules, `dead_knights_cross = on`; D106, D107]. A knight that loses its
+last life in permadeath leaves its grave on the map, and the grave keeps everything nobody has taken.
+
+* **What the winner takes:** with lives left, one item, as in the game (it can be the first special potion). At the
+  last life a computer knight takes all the gold up to the limit, daggers up to 10, the better sword and armour (its
+  own worse ones are left), every magic item, the keys and Moonstones, and the special potions it has room for. The
+  dragon takes half the gold and the rest into its hoard (with the Sword of Sharpness, if the hoard has none); the
+  swords, armour and daggers stay. Monsters, the Guardian and the disease take nothing.
+* **What stays at the grave:** everything else, to the end of the game.
+* **The gold cross:** a grave that still holds gold, daggers, a magic item, a key, a Moonstone, a special potion or the
+  Sword of Sharpness is drawn in gold; one that holds only a sword, armour or the horse is the game's grey grave.
+* **Fetching it:** walk onto the grave and choose it: the loot screen opens with no fight and no one-pick limit, so
+  take what you want and leave the rest. Computer knights may come and take it too. IDROPPEDMYKEY names a key there
+  as "<knight>'s grave".
+* Not with respawn (the knight comes back with the leftovers) or reincarnation (start values), not in speedrun mode.
+
 **The Guardian** *(manual p. 11)*:
 
 * Beat it for a Moonstone and 3 experience points.
@@ -470,6 +490,124 @@ scroll in advance: there is a random chance each time a scroll is read *(`1000:C
 | Protection | your controls are reversed in the fight | yes: about 1 read in 12; the next fight only |
 | Haste | half movement instead of double | [original: never. Custom rules: 1 read in 8] |
 | Wyrm | the dragon attacks you | [original: never. Custom rules: 1 read in 8] |
+
+### Special potions
+
+[Moonstone Rebuilt, custom rules: `rare_potions = on` (the default), D101-D105. Not in the original game.]
+
+* **Where:** a lair's chest or the dragon's hoard may hold one besides its other treasure (`rare_potion_chance`, 10 %).
+  Each has its own colours, and pointing at it names it. Not in practice fights.
+* **How many:** a knight carries up to three, in the first places of its potion row; its Potions of Healing follow
+  (one place is always kept for them). A knight with three sees none in a chest: the chest keeps it.
+* **Drinking:** click it on your own item screen (the map's item key). A knight holding Invisibility or Recall gets the
+  attack prompt when another knight or the dragon attacks it, as with the Scroll of Protection: drinking either there
+  avoids the fight (the others, except Levitation, can be drunk there too).
+* **Taking:** click a chest's, or another knight's on a loot screen. With three already, each click puts the new one
+  first and gives your third away, so you choose which three to keep.
+* **Selling and offering:** the High Temple buys one for what a Potion of Healing sells for (it never sells them);
+  Stonehenge takes one as an offering, as a Potion of Healing.
+* **Losing them:** a computer knight or the dragon that beats the knight may take one as its one item (the first, if it
+  has room: a computer knight carries three, the dragon's hoard one). With the last life the winner takes those it has
+  room for and the rest stay at the knight's grave, where any knight can take them (`dead_knights_cross`, D106). A
+  computer knight never drinks them, so you can win them back from it. With reincarnation they are gone.
+
+| Potion | Effect |
+|---|---|
+| Danu | Hit points + the maximum (up to twice the maximum; the extra stays until damage takes it), a life point, cures the disease. |
+| Full Restoration | Full hit points, life points to the maximum, cures the disease. |
+| Strength, Endurance, Constitution | +1 to that ability for good, also above 5. |
+| Life | +20 maximum hit points for good, and as many hit points at once. |
+| Might | Next fight: your blows hit as with Strength 7 and push the one struck back a little (not the dragon or the Guardian). |
+| Fire Resistance | Next fight: the dragon's fire does 1 damage. |
+| Speed | Next fight: you walk half again as fast and attack about a fifth faster (blocks as usual). |
+| Recall | Home to your village with full hit points; the turn ends. |
+| Invisibility | The others do not see you on the map; the next lair you enter alone opens its chest without a fight, and an attack on you does not happen. Either ends it. |
+| Levitation | From the first slow ground you step on, no ground slows you to the end of that turn. |
+
+The next-fight potions wait for a real fight (a practice fight neither uses nor ends them), and a second of the same
+kind cannot be drunk while one waits.
+
+### Special rings
+
+[Moonstone Rebuilt, custom rules: `rare_rings = on` (the default), D108-D112. Not in the original game.]
+
+* **Where:** a lair's chest or the dragon's hoard may hold one besides its other treasure (`rare_ring_chance`, 10 %),
+  any of the thirteen as likely. Not in practice fights.
+* **How many:** a knight carries up to two, in the first two places of its ring row; its Rings of Protection follow.
+  A knight with two sees none in a chest: the chest keeps it. The band's colour tells the group (silver the abilities,
+  violet Regeneration, Luck and Charisma, iron Undying, Vampirism and Absorb Soul, green the walking rings), the stone
+  the ring; pointing at it names it.
+* **Taking:** click a chest's, or another knight's on a loot screen; with two already the new one comes first and your
+  second goes to the other.
+* **Selling and offering:** the High Temple buys one for what a Ring of Protection sells for (it never sells them);
+  Stonehenge takes one as an offering, as a Ring of Protection.
+* **Losing them:** as the special potions: a computer knight or the dragon that beats the knight may take one as its one
+  item; with the last life the rest can stay at the knight's grave. Computer knights carry them but get nothing from
+  them, so you can win them back.
+* **Two of a kind:** the ability rings, Vampirism and Charisma count twice; a second Undying saves once more; the others
+  give nothing more.
+
+| Ring | Effect |
+|---|---|
+| Strength, Constitution, Endurance | That ability counts one higher while carried (also above 5). Math and Mythral see the real value. |
+| Regeneration | Full hit points at the end of each day (the disease stays). |
+| Luck | The first dice throw of each town visit wins; 0-9 more gold from a lair chest or the hoard (`luck_chest_gold`). |
+| Undying | Instead of dying: home with 1 life point and full hit points; the ring is used up. |
+| Charisma | 5 gp off everything you buy at the merchant (horses too), the High Temple and the healer, never below 1 gp; the prices shown are yours. Mythral counts a donation as 5 gp more. Math turns you into a frog half as often (two rings: a quarter). |
+| Mountainwalk | Mountains, the map's edges and rocks do not slow you. |
+| Waterwalk | Swamp and water do not slow you. |
+| Forestwalk | Forest does not slow you. |
+| Plainswalking | Open ground takes two thirds of the movement: half as far again. |
+| Vampirism | +1 hit point for each blow or thrown dagger that wounds a knight or a monster, up to the maximum. |
+| Absorb Soul | +1 life point when you take another knight's last life. |
+
+The walking rings work on foot and on horseback. Whatever a knight sells always pays less than that knight would pay
+to buy it back, so the Ring of Charisma gives no buy-and-sell profit (`charisma_discount`, `charisma_math`).
+
+### Special gems
+
+[Moonstone Rebuilt, custom rules: `rare_gems = on` (the default), D113-D117. Not in the original game.]
+
+* **Where:** a lair's chest or the dragon's hoard may hold one besides its other treasure (`rare_gem_chance`, 10 %),
+  any of the ten as likely. Not in practice fights.
+* **How many:** a knight carries up to three, in the first three places of its gem row; its Gems of Seeing follow (four
+  gems shown in all). A knight with three sees none in a chest: the chest keeps it. The stand's colour tells the group
+  (gold: knowledge, green: oneself, silver: aimed at another knight or a lair), the ball the gem; pointing at it names
+  it.
+* **Using:** click your own gem on the item screen, where a Gem of Seeing could be used. Greed and the aimed gems work
+  only on the item screen you open on the map (I): in a town, a village or after a fight the turn ends there, so they
+  stay. A gem is used up when its effect happens, and only then (an aimed gem when it hits, Duplication when it makes a
+  copy); one that cannot work now stays. Concealment is never used up: it works while carried.
+* **Taking, selling, offering, losing them:** as the special rings; the High Temple pays what a Gem of Seeing sells for
+  (16 gp), Stonehenge takes one as a Gem of Seeing. Computer knights carry them but never use them, so you can win them
+  back.
+* **Two of a kind:** allowed; each is used on its own. A second Concealment adds nothing, nor does a second Slow on the
+  same knight; a second Fury waits until the first one's fight is over.
+* **Spellproof** armour protects from the Gem of Frog only (it cannot hit you); the other gems are not spells.
+
+| Gem | Stand, ball | Effect |
+|---|---|---|
+| Spying | gold, green | Another knight's whole panel, as with the Scroll of the Wyrm but without the Wyrm; the arrow button shows the next. Only knights still in the game (none that are dead); with nobody to spy on, the gem stays. Nothing can be taken. Exit goes back to the map. |
+| Duplication | green, white | Click it, then an item on your own panel: one more of it. A dagger (up to `max_daggers`), a Potion of Healing, a Gem of Seeing, a Ring of Protection (with its hit points at once), the Talisman or a scroll (up to 9 of each), a special potion or ring (into a free place), a special gem (not another Gem of Duplication; the gem's own place counts as free). Anything else, or Exit, keeps the gem. |
+| Fury | green, red | Your next fight: your blows hit as with Strength 5 (or your own if higher). Any fight counts: a knight, a lair, the dragon. |
+| Concealment | green, smoke grey | Works while you carry it: the other players do not see your knight on the map in their turns, and computer knights never go after you, send a scroll or the dragon at you, or attack you. A human player can still walk onto you and fight; the dragon still finds you. An aimed gem cannot hit you. |
+| Greed | gold, gold | For the rest of your turn the map shows each lair's gold under it (0 for a lair with only items). |
+| Keyfinding | gold, white | A screen names who holds each key (a knight, a grave, the dragon, the High Temple, a lair); the lairs holding one glow on the map until the turn ends. As the IDROPPEDMYKEY code, with no cheat codes needed. |
+| Banish Monsters | silver, gold | Aimed: fire the ball on a lair: you see its chest as with a Gem of Seeing, and its monsters are gone for the rest of the game. Any knight who enters it later (also with co-op partners) gets the chest without a fight and without the first win's experience; the lair goes from the map when it is empty, as usual. |
+| Change Places | silver, green and orange | Aimed: fire the ball on another knight: the two of you swap places, and your turn goes on from there with the movement and Haste you had left. Nothing opens by itself where you land: a lair, a town or a knight there is met only if you press fire, as after walking there. |
+| Frog | silver, green | Aimed: fire the ball on another knight: it is a frog for its next turn only (that turn is skipped), then a knight again. A knight already a frog for longer stays one for its own time. A player's knight in Spellproof armour cannot be hit: fire on it does nothing and the gem stays. |
+| Slow | silver, smoke grey | Aimed: fire the ball on another knight: the next turn it plays has a third of its movement (`slow_gem_percent`, 33 %), after Haste, the horse, Mithril and the Rings of Endurance, at least one movement point; its move bar shows the cut. A frog's skipped turn does not count: the slow turn waits for the next one it plays. The turn after is normal. |
+
+* **Aimed gems** (Banish Monsters, Change Places, Frog, Slow): your knight becomes a crystal ball, as with a Gem of
+  Seeing, and moves without using up your movement. Fire on a lair (Banish Monsters) or with the ball on a knight
+  within 8 pixels (the others: the nearest; a player's or a computer's knight, a frog too; never a dead knight, a
+  grave, or one hidden by Concealment or a Potion of Invisibility; for Frog never a player's knight in Spellproof
+  armour). Fire on nothing does nothing. Space or E puts your
+  knight back and keeps the gem; so does the end of the turn. After a hit your knight is back where it stood (Change
+  Places: where the other knight stood) with the movement it had left and its Haste.
+* **Settings** (`[Treasure]`): `rare_gems` (on/off), `rare_gem_chance` (0-100, 10), `slow_gem_percent` (0-100, 33:
+  0 leaves one movement point, 100 no cut). Without XMS memory the special gems are off, as the special potions and
+  rings are.
 
 ## 12. Prices
 
@@ -514,6 +652,9 @@ time has not been checked.]
 | Key | 12 gp | 6 gp |
 
 **Healer:** a full heal costs 10 gp; a life point costs 15 gp.
+
+[Rebuilt, custom rules: a Ring of Charisma lowers these prices for its knight (see 11), and selling never pays as much as
+buying the same thing back costs that knight.]
 
 ## 13. Tips
 

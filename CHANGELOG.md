@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+* **Special gems** (D113; custom rules, `rare_gems = on`, `rare_gem_chance = 10`): a lair chest or the dragon's hoard
+  may hold a special gem, shown after its Gems of Seeing in its own colours (the stand tells the group, the ball the
+  gem). A knight carries three in its gem row's first places, its Gems of Seeing after them; take, swap, sell (the
+  High Temple pays a Gem of Seeing's price) and offer them as the special rings, and the loot rules and the gold cross
+  cover them. Click your own on the item screen to use it. First two: the **Gem of Fury** (your blows hit as with
+  Strength 5 or more in your next fight) and the **Gem of Keyfinding** (IDROPPEDMYKEY's key screen and glowing lairs,
+  no cheat codes needed). The Gem of Concealment can already be found (its effect: D115); the other gems follow.
+* **Gem of Spying and Gem of Duplication** (D114; with `rare_gems`): the **Gem of Spying** opens the Scroll of the
+  Wyrm's view without the Wyrm: another knight's whole panel (its specials and enchantments too), the arrow button
+  shows the next one, nothing can be taken, Exit goes back to the map. The **Gem of Duplication**: click it, then an
+  item on your panel: one more of it (a dagger up to `max_daggers`; a Potion of Healing, a Gem of Seeing, a Ring of
+  Protection, the Talisman or a scroll up to 9; a special potion, ring or gem into a free place, the gem's own place
+  counting as free). An item that cannot be copied (gold, weapons, armour, the Sword of Sharpness, keys, Moonstones,
+  the horse, another Gem of Duplication, a full kind) or Exit keeps the gem. Both can be found in chests now.
+* **Fix:** switching your own horse off on an item screen with a second panel (loot, Scroll of Acquisition, Scroll of
+  the Wyrm) switched the other knight's horse instead (D114).
+* **Gem of Greed and Gem of Concealment** (D115; with `rare_gems`): the **Gem of Greed**, used on the item screen you
+  open on the map, shows each lair's gold under it on the map for the rest of your turn (0 for a lair with only items);
+  in a town or a village it is not used up, as the turn ends there. The **Gem of Concealment** works while you carry it:
+  the other players do not see your knight on the map in their turns, and computer knights never go after you, never
+  send a scroll or the dragon at you and never attack you; a human player can still walk onto you and fight, and the
+  dragon still finds you. The **Gem of Spying** now shows only the knights still in the game (none that are dead), sees
+  a Spellproof knight (a gem is not a scroll), and stays in your row when there is nobody to spy on. Both new gems can
+  be found in chests now.
+* **Fix:** in a campaign without computer knights the arrow button of the Scroll of the Wyrm and the Scroll of
+  Acquisition also offered the computer knights left out of the game (with their starting kit): the Wyrm could be sent
+  after a knight not on the map, and Acquisition could take items from one. They are passed over now (D115).
+* **Gem of Banish Monsters and Gem of Frog** (D116; with `rare_gems`), the first aimed gems: used on the item screen
+  you open on the map, they turn your knight into a crystal ball as the Gem of Seeing does. **Banish Monsters:** fire
+  on a lair: you see its chest, and its monsters are gone for the rest of the game; anyone who enters it later (also
+  with co-op partners) takes the chest without a fight and without the first win's experience. **Frog:** fire with the
+  ball on another knight (within 8 pixels; not a dead or a hidden one): it is a frog for its next turn only. Fire on
+  nothing does nothing; Space or E cancels and keeps the gem; after a hit your knight is back in place with the
+  movement it had left and its Haste. Both can be found in chests now.
+* **Gem of Change Places and Gem of Slow** (D117; with `rare_gems`, new `slow_gem_percent = 33`), the last two aimed gems:
+  used on the item screen you open on the map, they turn your knight into the crystal ball; fire with the ball on another
+  knight (not a dead or a hidden one; a frog or a computer's knight too). **Change Places:** the two knights swap places
+  and your turn goes on with the movement and Haste you had left; a lair or town under your new place opens only if you
+  press fire there, as after walking there. **Slow:** that knight's next turn it plays has `slow_gem_percent` (33) % of
+  its movement (after Haste, the horse, Mithril and the Rings of Endurance; at least one movement point); a frog's
+  skipped turn does not count, and a second Slow adds nothing. All ten special gems can now be found in chests.
+* **Spellproof armour protects from the Gem of Frog** (D118; custom rules): the Gem of Frog cannot hit a player's
+  knight in Spellproof armour, as scrolls cannot target it; fire on it does nothing and the gem is kept. The other
+  gems are unchanged (Spying still shows that knight; Change Places and Slow still work on it).
+
+* The **Ring of Charisma**, the thirteenth and last special ring (D112; custom rules, `rare_rings = on`): each one takes
+  `charisma_discount` (5) gp off what its knight pays at the merchant (weapons, armours, daggers, horses), the High
+  Temple and the healer, never below 1 gp, and the shop's hover shows the knight's own prices; Mythral counts a donation
+  as 5 gp more for each ring; each ring calms Math with `charisma_math` (50) % when he would turn the knight into a frog.
+  Two rings stack. Whatever a knight sells now always pays less than the knight's own buying price, so there is no
+  buy-and-sell loop.
+
+* Special rings: the walk rings, Regeneration and Luck (D111; custom rules, `rare_rings = on`): the **Rings of Mountainwalk**
+  (mountains, the map's edges and rocks), **Waterwalk** (swamp and water) and **Forestwalk** (forest) take away the
+  slowing of their terrain, on foot or mounted; the **Ring of Plainswalking** makes a step on open ground cost two thirds,
+  so a knight goes 50 % farther over it; the **Ring of Regeneration** heals to full HP at the end of each day; the **Ring
+  of Luck** wins the first dice throw of each town visit and finds 0 to `luck_chest_gold` (9) more gold in chests and
+  the dragon's hoard. Twelve special rings now.
+* The map's terrain zones (D110; custom rules, `[Map] custom_terrain = on`): the terrain that slows a knight now comes
+  from `tools/terrain_zones.csv`, painted with the terrain editor: open ground, forest, swamp and water, mountains and
+  the map's edges, rocks (slowing as swamp). Off: the game's own map.
+* Special rings, more of them (D109; custom rules, `rare_rings = on`): the **Ring of Undying** saves a knight from death once: when it would lose its last life (a fight, the Guardian, the disease) it wakes in its home village with 1 life and full HP and the ring is gone (a second ring saves once more; Rebirth armour acts first). The **Ring of Vampirism** gives 1 HP (two rings 2) for each sword blow or thrown dagger that hurts a knight or a monster, never above max HP. The **Ring of Absorb Soul** gives a life (up to `max_lives`) for each knight its bearer kills in a fight. They now turn up in chests too.
+* Special rings (D108; custom rules, `rare_rings = on`): a lair chest or the dragon's hoard may hold one (`rare_ring_chance`, 10 %), each in its own colours (the band tells the group, the stone the ring), named on hover. A knight carries up to two in its ring row's first two places, its Rings of Protection after them; take them from chests and from other knights (with two already each click swaps). The High Temple buys one for a Ring of Protection's price, Stonehenge takes one as an offering, and a computer knight or the dragon may take them by the loot rules (they do nothing for a computer knight; win them back). Built so far: the Rings of Strength, Constitution and Endurance: the ability counts one higher while the ring is carried, also over 5 (two of a kind +2, at most 9); Math and Mythral still see the real value. More rings follow.
+* The loot rules and the dead knight's cross (D106; custom rules, `dead_knights_cross = on`): a computer knight or the dragon that beats a knight with lives left still takes one item, the first in the game's order, but that item can now be a special potion (the one in the first place, just before the Potion of Healing in the order) if the winner has room for it (a computer knight carries three, the dragon's hoard one). At the last life a computer knight takes everything that fits: all the gold up to `max_gold`, daggers up to 10, the better sword and the better armour with their enchantments (its own worse ones stay with the dead knight), every magic item, the keys and Moonstones and the special potions it has room for. The dragon takes half the gold as before and everything else into its hoard except the swords, armour and daggers (their enchantments and one special potion go into the hoard if its place is free). What is not taken stays at the dead knight's grave, as the original game already allowed: walk onto it with another knight and take everything you want on the loot screen; a computer knight may come and take it too. A computer knight's sword or armour enchantment taken this way has no effect for it, but shows on its panel and goes with the item to the knight who beats it. Reincarnation now also clears the knight's special potions, their effects, its enchantments and its horse (they were kept by mistake); respawn keeps the leftovers as before. Off in speedrun mode. **Run Setup.bat again.**
+* The dead knight's cross on the map (D107; custom rules, `dead_knights_cross = on`): a dead knight's grave is drawn as a gold cross while it still holds something worth fetching: gold, daggers, a magic item, a key, a Moonstone, a special potion or the Sword of Sharpness. A sword, armour (also enchanted) and the horse alone do not count; when nothing else is left the game's grey grave is drawn. Standing on it shows the pink outline as before. Not with respawn or reincarnation (no cross), not in speedrun mode. The dragon that takes a knight's last life takes the Sword of Sharpness into its hoard again, as in the original game (D106 had left it at the grave), unless the hoard already has one. IDROPPEDMYKEY names a key at a grave as "<knight>'s grave".
+* Special potions (D101-D105; custom rules, `rare_potions = on`): a lair chest or the dragon's hoard may hold one (`rare_potion_chance`, 10 %), each in its own colours. A knight carries up to three in the first places of its potion row, its Potions of Healing after them; click one on the knight's own item screen to drink it. All twelve: Danu (HP + the max HP, up to twice the max, and a life), Full Restoration (full HP and lives), Strength, Endurance and Constitution (+1 each for good, also above 5) and Life (+20 max HP for good, `life_potion_hp`, and as much HP at once). HP above the max after Danu stays until damage brings it down. Might and Fire Resistance (D102) work in the knight's next fight: Might makes its blows as strong as Strength 7 and pushes the one struck back a little (not the dragon or the Guardian), Fire Resistance lets the dragon's fire do only 1 damage, and Speed (D104) makes the knight walk half again as fast and its attacks about a fifth faster (not its blocks); a practice fight neither uses nor ends them, and a second of the same kind cannot be drunk while one waits. The map potions (D103): Recall takes the knight home to its village with full HP and lives as the village gives them, and its turn ends; Levitation, from the first forest, hill or other slowing ground the knight steps on, lets it walk at full speed to the end of that turn; Invisibility hides the knight's map icon from the others' turns until it enters a lair alone: then the lair's chest opens with no fight (as after the Hawk) and the invisibility ends. An invisible knight attacked by another knight or the dragon is not fought (and is visible again), and a knight holding Invisibility or Recall gets the attack prompt, as with the Scroll of Protection, to drink one and avoid the fight (Recall takes it home). Take one from another knight with three already and they cycle. The High Temple buys one for what a Potion of Healing sells for (it never sells them), and Stonehenge takes one as an offering, as a Potion of Healing (D105). They are lost with the knight's last life, unless a computer knight wins that fight: it takes up to three, never drinks them, and a human who beats it can take them back (D105); the dragon takes none. Without XMS memory they are off, as the cheat codes are.
+* Enchanted swords and armours are violet (D98; custom rules): an enchantment in a lair's chest or the dragon's hoard shows as your own sword or armour in violet, and an enchanted sword or armour is violet on every knight's panel of the item screen, so you can see at once which gear is enchanted. Plain gear, fights and the map look as before.
+* Armour enchantments now appear in lair chests (D97; custom rules, `armour_enchantments = on`): because of a bug they came only in the dragon's hoard. A lair already opened in a running game rolls for one the first time it is shown again.
+* Mithril also gives movement (D99; custom rules): besides the armour never costing movement, the knight moves as if its Endurance were 2 higher (+4 a turn), on any armour, padded armour too, with or without a horse.
+* Enchanted starting gear after a won fight (D100; custom rules): a loser's long sword or padded armour is still never taken, but if it is enchanted and the winner has the same starting item, the winner can click it on the loot screen and the two change places, each with its enchantment. Computer winners are as before.
 * Cheat codes (D96): the map code ONEMORETURN is now SIRNEVERTIRED; IDKFA gives a full set of magic items (4 healing potions, 4 Gems of Seeing, 3 Rings of Protection, 4 Talismans of the Wyrm, 2 of every scroll); WEPL also works in the item screen. With 99 daggers or lives the potions and scrolls on the item screen could not be clicked; now they can (the daggers still run off the screen's edge). See CHEATS.md.
 * The Amiga sound effects: the tavern's dice rattle and the thunder of the offering at Stonehenge (D95; with the optional Amiga sound effects): the DOS game played a thud for the dice and had lost the thunder. Both also play without the Amiga disk images: the thunder then is a sound of our own, cut from a public-domain (CC0) recording of a thunder blast (`sounds/thunder.wav`). The wind the Amiga's sound files hold is never played by the Amiga game either, so it stays out. **Run Setup.bat again.**
 * The troll and the troggs give a fallen knight the finishing blow (D90): as the troggs did in the original game, but now every time, and the troll too (it went idle as soon as the knight fell): the troll crushes the knight with its club from above, the troggs behead it or split it, and the spear trogg runs its spear through it (the long thrust, also with vanilla deaths). Not with Gore Less or Off. In co-op, once no knight stands, the monsters go for each fallen knight still waiting for its blow; a fallen knight waits up to 5 seconds, then the monsters stand or walk off as before. **Run Setup.bat again.**

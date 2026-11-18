@@ -7,7 +7,7 @@ sword as a KN4.OB piece (push_scripts). Pure Python: no numpy.
 Usage: python -I tools/death_frames.py <game dir> [preview.png]   (the preview needs Pillow and msfmt.py)"""
 import os, random, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, MARKER_SCRIPT, MARKER_SIZE, DF_PIC, BALL_PIC, BALL_W
+from make_savehook import D20, D20_BASE, D20_END, D20_NAMES, D20_SIZE, D20_KEEP, MARKER_SCRIPT, MARKER_SIZE, DF_PIC, BALL_PIC, BALL_W
 from make_savehook import PUSH_TAIL, PUSH_TAIL_SIZE, STANDING
 
 BANK = 8                                  # KN3.OB in the knights' bank table (DS:8933, loaded at 1000:8B10)
@@ -471,8 +471,8 @@ def install(game, exe):
     for name in D20_NAMES:
         if name not in deaths: continue                   # a reserved slot (up_forward): left empty
         code = script(deaths[name])
-        if len(code) > D20_SIZE[name]:
-            raise ValueError(f'the death script {name} needs {len(code)} bytes, its area has {D20_SIZE[name]}')
+        if len(code) > D20_KEEP.get(name, D20_SIZE[name]):   # D101: the special potions' texts after some
+            raise ValueError(f'the death script {name} needs {len(code)} bytes, its area has {D20_KEEP.get(name, D20_SIZE[name])}')
         at = image + D20[name]
         if any(exe[at:at + D20_SIZE[name]]) and exe[at:at + len(code)] != code:
             raise ValueError(f'MAIN.EXE: DS:{D20[name]:04X} is not free')
