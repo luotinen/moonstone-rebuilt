@@ -303,6 +303,68 @@ PATCHES = {
                  'reach is 149, so it steps in to 145 and chops. Needs SAVEHOOK.COM resident',
         'bytes': [((0x1000, 0x5745), bytes.fromhex('8b6c52'), bytes.fromhex('cd6390'))],
     },
+    'D123': {
+        'title': "Math and Mythral never raise an ability at 5 or more (Moonstone Rebuilt; the user's change of 19 Nov "
+                 '2026). Their gift picks an ability through CheckMaxAbility (1000:B9A6, none when all three are at 5 or '
+                 'more) and the pick at B9CD, which picked again only for an ability of exactly 5 (B9EC): one raised above '
+                 '5 by the Potions of Strength, Endurance or Constitution or by custom_rules.ini could be raised again, also '
+                 'past 9. cmp byte [bx+di],5 / je B9C2 becomes int 63h + nop x3: SAVEHOOK.COM picks again for an ability '
+                 'at 5 or more when the caller is Math (B969) or Mythral (BB77), and only for exactly 5 for the other '
+                 "callers (the computer knights' XP level-up, the Guardian's penalty), as the game (D126: the computer "
+                 "knights' level-up too; D130: the Guardian has its own draw). Needs SAVEHOOK.COM resident",
+        'bytes': [((0x1000, 0xb9ec), bytes.fromhex('803905' '74d1'), bytes.fromhex('cd63' '909090'))],
+    },
+    'D126': {
+        'title': "No write outside the abilities when every ability is at 5 or more (Moonstone Rebuilt; the user's "
+                 "decision of 19 Nov 2026). The pick after CheckMaxAbility gives bx = 0 then, and two of its callers "
+                 "lowered a byte that is not an ability: the Guardian's penalty (1000:1003, [si+bx], the record's first "
+                 "byte) and Mythral's loss (BBAC, [bx+di]). The Guardian's lowering now skips bx = 0 (in place: test "
+                 "bx,bx / je 1013, then the game's cmp 1 / sub 1 at [bx+si]); Mythral's cmp byte [bx+di],1 / je BBF6 "
+                 "becomes int 63h + nop x3: SAVEHOOK.COM takes bx = 0 as an ability of 1 (nothing lowered, Mythral's "
+                 "weak-powers line, DS:DDF0). Needs SAVEHOOK.COM resident",
+        'bytes': [((0x1000, 0x1003), bytes.fromhex('5603f3803c015e7407' '5603f3802c015e'),
+                   bytes.fromhex('85db740c' '8038017407' '802801' '90909090')),
+                  ((0x1000, 0xbbac), bytes.fromhex('803901' '7445'), bytes.fromhex('cd63' '909090'))],
+    },
+    'D130': {
+        'title': "The Guardian may lower any ability, never below 1 (Moonstone Rebuilt; the user's rule of 19 Nov 2026). "
+                 "After a lost fight with the Guardian the game lowered one ability by 1 (1000:1003), drawn by the pick "
+                 "Math, Mythral and the computer knights' level-up use (B9C2): never one of exactly 5, and none when all "
+                 "three were at 5 or more. call B9C2 (0FF8) becomes int 63h + nop: SAVEHOOK.COM draws one of the "
+                 "abilities above 1, each as likely; none only when all three are 1 (D126's 1003 then lowers nothing). "
+                 "Needs SAVEHOOK.COM resident",
+        'bytes': [((0x1000, 0x0ff8), bytes.fromhex('e8c7a9'), bytes.fromhex('cd6390'))],
+    },
+    'D131': {
+        'title': "The troll's blow from above hits where its club is drawn (user report and decision, 19 Nov 2026). The "
+                 "blow frame's club pieces (script 5C7C: TROLL2.CEL frame 2, TROLL1.CEL 24h and 2Fh) had a thin line of "
+                 "26 collision points (COLLIDE.HIT), so at some distances the club passed through gaps in the knight's "
+                 "picture. collide.hit (DS:9D82) becomes COLLFIX.HIT (collide_fix.py): the game's points and 14 more "
+                 "on the club's drawn pixels, in the room of TROLL2.CEL frame 0Dh's 14 points, which no script tests; "
+                 "the file keeps its size (MAIN.EXE keeps it whole at DS:A1DE-C282). Data only",
+        'bytes': [(('DS', 0x9d82), b'COLLIDE.HIT', b'COLLFIX.HIT')],
+    },
+    'D142': {
+        'title': "The ratmen fight: up + hit is the straight upward thrust, back + down + hit the block (Moonstone "
+                 "Rebuilt; the user's decision of 19 Nov 2026, work queue item 10). The fight's set-up "
+                 "(InitKnightvsRatmen) wrote the straight thrust 115E into the knight's move 8 (back + down, the block "
+                 "elsewhere) at 2339; it now writes it into move 10h (up, the overhead chop elsewhere), so move 8 keeps "
+                 "the block 11E8. RatmanStruck (3483) killed a ratman on the ground at once with move 8 or Eh (the "
+                 "downward stab 10BA, 233E, unchanged); now with move 10h or Eh. The thrust takes move 10h's damage "
+                 "(doubled at 2DA4) against a leaping ratman (34C7). The block does not stop a ratman's bite or claw "
+                 "(4298 has no block test, 4219), as in the game",
+        'bytes': [((0x1000, 0x2339), bytes.fromhex('c744085e11'), bytes.fromhex('c744105e11')),
+                  ((0x1000, 0x3483), bytes.fromhex('837c2808'), bytes.fromhex('837c2810'))],
+    },
+    'D145': {
+        'title': "The block stops a ratman's bite and claw (Moonstone Rebuilt; the user's decision of 20 Nov 2026, "
+                 "work queue item 10). The ratman's hit on a knight (1000:4298) never tested a defence. cmp word "
+                 "[si+28h],2 becomes int 63h + nop nop: SAVEHOOK.COM's ratman_block stops the bite (move 2) and the "
+                 "claw (move 4) when the knight is alive, its move is 8 (the block) and it faces the ratman, and goes "
+                 "on at 2D5E with [783Ah] = FFFFh (the block plays on); with timed defence (custom rules) only within "
+                 "the trogg window. The ratman is not staggered, as a trogg. Needs SAVEHOOK.COM resident",
+        'bytes': [((0x1000, 0x4298), bytes.fromhex('837c2802'), bytes.fromhex('cd639090'))],
+    },
     'D90': {
         'title': 'The finishing blow (Moonstone Rebuilt; user request, 15 Nov 2026). The troll and the troggs strike a '
                  'fallen knight down every time, as the game\'s troggs did, except with Gore Less or Off. The troll went '

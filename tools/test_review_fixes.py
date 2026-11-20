@@ -356,7 +356,7 @@ class SetupFlow(unittest.TestCase):
         sys.path.insert(0, str(ROOT / 'setup'))
         self.addCleanup(sys.path.remove, str(ROOT / 'setup'))
         import setup as installer
-        import death_frames, gold_frames, horse_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
+        import collide_fix, death_frames, gold_frames, horse_frames, make_gm_tunes, make_intr_exe, make_main_exe, make_voc_rates
         with patch.object(installer, 'HERE', str(game)), patch.object(installer, 'check_gog', lambda g: []), \
                 patch.object(installer, 'find_gog', lambda a: str(game)), patch.object(make_voc_rates, 'FILES', []), \
                 patch.object(make_main_exe, 'make_main_exe', main_exe), \
@@ -364,6 +364,7 @@ class SetupFlow(unittest.TestCase):
                 patch.object(death_frames, 'install', lambda here, exe: exe), \
                 patch.object(horse_frames, 'install', lambda here: None), \
                 patch.object(gold_frames, 'install', lambda here: None), \
+                patch.object(collide_fix, 'install', lambda here: None), \
                 patch.object(make_gm_tunes, 'main', lambda *args: None), \
                 patch.object(hook, 'make_savehook', lambda table=None: b'DEFAULT_HOOK'), \
                 patch('rules.build', lambda g, r: (b'RULES_MAIN', b'RULES_HOOK')), \
@@ -1034,6 +1035,113 @@ class SwordTints(unittest.TestCase):
         for _, colours in hook.SWORD_TINTS + hook.ARMOUR_TINTS:
             self.assertTrue(all(0 <= v <= 63 for rgb in colours for v in rgb))
 
+    def test_item_violets_after_the_gear(self):
+        # D119: the item screen's violets (D98) are DAC entries of their own after the gear's, written with them;
+        # the item palette's 17-19 (the pointer's, MI.C) stay the game's, and no item-screen look uses them
+        self.assertEqual(hook.VIOLET, tuple(range(hook.SWORD_FIRST + hook.GEAR_ENTRIES, hook.SWORD_FIRST + hook.GEAR_ENTRIES + 3)))
+        self.assertLessEqual(max(hook.VIOLET), 255)
+        self.assertEqual(hook.ITEM_PALETTE_GAME, (0x0fff, 0x0777, 0x0000))
+        looks = [list(hook.ENCH_LOOK_MAP.values())] + [list(v) for t in (hook.POT_LOOKS, hook.RING_LOOKS, hook.GEM_LOOKS) for v in t.values()]
+        self.assertFalse([v for look in looks for v in look if v in (17, 18, 19)])
+
+    def test_stat_ring_number_shown(self):
+        # D121: the item screen's ability number (_ablloop, C3EB) counts the stat rings; D108's gadget-count hooks
+        # (C2BD, C2F3, C329) are gone
+        sites = {site: name for site, old, name in rules.HOOKS}
+        self.assertEqual(sites.get(0xc3eb), 'ring_abl')
+        self.assertFalse([s for s in (0xc2bd, 0xc2f3, 0xc329) if s in sites])
+
+    def test_math_mythral_ability_cap(self):
+        # D123: the fixed game's pick test (B9EC) is int 63h, a PRACTICE_HOOKS job, and the patch is in setup.py's list
+        from patches import PATCHES
+        self.assertEqual(PATCHES['D123']['bytes'], [((0x1000, 0xb9ec), bytes.fromhex('80390574d1'), bytes.fromhex('cd63909090'))])
+        self.assertIn((0xb9ee, 'ability_pick'), hook.PRACTICE_HOOKS)
+        line = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8').split('MAIN_FIXES = ')[1].split('\n')[0]
+        self.assertIn("'D123'", line)
+
+    def test_no_write_outside_the_abilities(self):
+        # D126: with every ability at 5 or more the pick gives bx = 0: the Guardian's lowering (1003) skips it in
+        # place, Mythral's loss (BBAC) is int 63h (mythral_loss); the patch is in setup.py's list
+        from patches import PATCHES
+        self.assertEqual(PATCHES['D126']['bytes'],
+                         [((0x1000, 0x1003), bytes.fromhex('5603f3803c015e74075603f3802c015e'),
+                           bytes.fromhex('85db740c803801740780280190909090')),
+                          ((0x1000, 0xbbac), bytes.fromhex('8039017445'), bytes.fromhex('cd63909090'))])
+        self.assertIn((0xbbae, 'mythral_loss'), hook.PRACTICE_HOOKS)
+        line = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8').split('MAIN_FIXES = ')[1].split('\n')[0]
+        self.assertIn("'D126'", line)
+
+    def test_guardian_lowers_any_ability(self):
+        # D130: the Guardian's penalty draws its own ability (0FF8: call B9C2 -> int 63h + nop, guardian_pick)
+        from patches import PATCHES
+        self.assertEqual(PATCHES['D130']['bytes'], [((0x1000, 0x0ff8), bytes.fromhex('e8c7a9'), bytes.fromhex('cd6390'))])
+        self.assertIn((0x0ffa, 'guardian_pick'), hook.PRACTICE_HOOKS)
+        line = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8').split('MAIN_FIXES = ')[1].split('\n')[0]
+        self.assertIn("'D130'", line)
+
+    def test_troll_club_points(self):
+        # D131: the fixed MAIN.EXE loads COLLFIX.HIT (DS:9D82), the game's COLLIDE.HIT with more points on the troll
+        # blow's club pieces in the room of TROLL2.CEL frame 0Dh's; the file keeps within MAIN.EXE's room (DS:A1DE-C282)
+        import collide_fix
+        from patches import PATCHES
+        self.assertEqual(PATCHES['D131']['bytes'], [(('DS', 0x9d82), b'COLLIDE.HIT', b'COLLFIX.HIT')])
+        text = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8')
+        self.assertIn("'D131'", text.split('MAIN_FIXES = ')[1].split('\n')[0])
+        self.assertIn('install_collide(HERE)', text)
+        self.assertEqual(collide_fix.ROOM, 8356)
+        self.assertEqual(set(collide_fix.ADDED), {('troll2.cel', 2), ('troll1.cel', 0x24)})
+        self.assertEqual(sum(len(v) for v in collide_fix.ADDED.values()), 14)
+        game = ROOT / 'DISKB' / 'COLLIDE.HIT'
+        if game.exists():                                 # a set-up checkout: the real file
+            data = game.read_bytes()
+            out = collide_fix.make(data)
+            self.assertLessEqual(len(out), collide_fix.ROOM)
+            self.assertEqual(out.count(b'\n'), data.count(b'\n') - 2)   # frame 0Dh's flag and points lines gone
+
+    def test_skipcombat_code(self):
+        # D122: SKIPCOMBAT is a map code (ids 60-79) with its own map_flags bit; its skips sit in the lair visit (0581),
+        # LairWon's first-win mark (05B6) and the dragon's attack (0D15); its work is in group OVL_COLD, and group 1
+        # (the map codes) still fits the window it had
+        self.assertIn('SKIPCOMBAT', hook.CHEAT_MAP_CODES)
+        self.assertTrue(60 <= hook.CHEAT_ID['SKIPCOMBAT'] < 80)
+        self.assertEqual(hook.MAP_SKIP & (hook.MAP_WALK | hook.MAP_ANY_KEYS), 0)
+        sites = {site: name for site, old, name in rules.HOOKS}
+        self.assertEqual((sites.get(0x0581), sites.get(0x05b6), sites.get(0x0d15)), ('lair_hawk', 'lair_loot', 'dragon_scroll'))
+        a, _ = hook._build_savehook(None, None)
+        self.assertEqual({hook.OVL_COLD}, {a.entries[n][0] for n in ('skip_lair', 'skip_dragon', 'cm_bd')})
+        self.assertLessEqual(len(a.groups[hook.OVL_CHEATS][0]), 1360)
+
+    def test_spear_trogg_pause_and_riposte_tie(self):
+        # D124: the spear trogg's waits from [Monsters] spear_trogg_attack_pause (130 % in both ini files): TroggHit's
+        # hook at 2F61 and the immediate at 2ED1; D125: td_tie, called from hit_pair (A14C), is in the resident code
+        sites = {site: name for site, old, name in rules.HOOKS}
+        self.assertEqual(sites.get(0x2f61), 'spear_pause')
+        for name in ('custom_rules-default.ini', 'custom_rules.ini'):
+            self.assertEqual(rules.read_ini(str(ROOT / name))['spear_pause'], 130)
+        self.assertEqual((rules.spear_pause(10, 130), rules.spear_pause(20, 130), rules.spear_pause(20, 100)), (13, 26, 20))
+        a, _ = hook._build_savehook(None, None)
+        self.assertIn('td_tie', a.labels)
+        self.assertNotIn('td_tie', {n for n in a.entries})
+
+    def test_fight_safety_timer(self):
+        # D127, D132: [Combat] fight_idle_exit (30 s in both ini files, as BIOS ticks in the table, off without custom
+        # rules; D127's fight_safety_timer gone from the files); the frame test is resident (the fight loop's test),
+        # the leaving's work, the knights watched and the hint in group OVL_MAP
+        for name in ('custom_rules-default.ini', 'custom_rules.ini'):
+            r = rules.read_ini(str(ROOT / name))
+            self.assertEqual(r['safety'], 30)
+            self.assertEqual(struct.unpack_from('<H', rules.table(r), rules.G_SAFETY)[0], 546)
+            self.assertNotIn('fight_safety_timer', (ROOT / name).read_text(encoding='utf-8'))
+        self.assertEqual(struct.unpack_from('<H', rules.table(None), rules.G_SAFETY)[0], 0)
+        self.assertEqual(rules.safety_ticks(3600), 0xffff)
+        a, _ = hook._build_savehook(None, None)
+        self.assertIn('safety_frame', a.labels)
+        self.assertNotIn('safety_frame', a.entries)
+        self.assertEqual({hook.OVL_MAP}, {a.entries[n][0] for n in ('safety_leave', 'safety_end', 'safety_start', 'safety_hint')})
+        self.assertLessEqual(len(a.groups[hook.OVL_MAP][0]), 1268)
+        self.assertEqual(len(hook.hint_rows(hook.SH_TEXT)[0]), hook.SH_W)
+        self.assertTrue(104 <= hook.SH_X and hook.SH_X + hook.SH_W + 1 <= 104 + 112 and 2 <= hook.SH_Y and hook.SH_Y + 6 <= 2 + 11)   # in score_box
+
 
 class InputSettings(unittest.TestCase):
     def test_chord_and_log_settings(self):
@@ -1087,6 +1195,135 @@ class InputSettings(unittest.TestCase):
         self.assertIn('overhead chop, 110 ms after fire', text)
         self.assertIn('held back (input_chord)', text)
         self.assertIn('fire+up+left facing left = upward thrust', text)
+
+
+class SpecialItems(unittest.TestCase):
+    """D137: [Special_items] and its master switch; D139: the lairs way (special_items = lairs, the default file's;
+    D140: special_item_lairs = 8 by default).
+    The fixtures: the default ini of D136 (the keys still in [Rules] and [Treasure]), a copy of an older user's
+    custom_rules.ini (all five chances 100), and their tables as built before D137 (the map tool's places left out,
+    so the bytes do not depend on tools/places.csv). Those tables end before D139's bytes (G_SPEC_MODE on)."""
+    FIX = Path(__file__).resolve().parent / 'fixtures'
+    OLD = 'custom_rules-d136-default.ini'
+    USER = 'custom_rules-older-user.ini'
+    LAIRS = '\nspecial_items = lairs '                # the key's line (the comments name it too)
+    CHANCES = ('G_ENCH_CHANCE', 'G_ARM_CHANCE', 'G_POT_CHANCE', 'G_RING_CHANCE', 'G_GEM_CHANCE')
+
+    def setUp(self):
+        import json
+        self.want = json.loads((self.FIX / 'special_items_tables.json').read_text(encoding='utf-8'))
+        p = patch.object(rules, 'places_layout', lambda *a, **k: None)
+        p.start()
+        self.addCleanup(p.stop)
+        self.source = (ROOT / 'custom_rules-default.ini').read_text(encoding='utf-8')
+        self.chances = [getattr(rules, n) for n in self.CHANCES]
+
+    def table(self, path):
+        return rules.table(rules.read_ini(str(path)))
+
+    def write(self, folder, text, name='custom_rules.ini'):
+        ini = Path(folder) / name
+        ini.write_text(text, encoding='utf-8')
+        return ini
+
+    def spec(self, t):                                  # D139's bytes: the mode, N, the five weights
+        return t[rules.G_SPEC_MODE], t[rules.G_SPEC_LAIRS], list(t[rules.G_SPEC_W:rules.G_SPEC_W + 5])
+
+    def test_old_and_new_files_give_the_same_bytes(self):
+        n = rules.G_SPEC_MODE
+        self.assertEqual(n * 2, len(self.want[self.OLD]))
+        self.assertEqual(rules.G_DUCK, n + 7)                # D144's two bytes after D139's seven
+        self.assertEqual(rules.TABLE_SIZE, n + 9)
+        old, user = self.table(self.FIX / self.OLD), self.table(self.FIX / self.USER)
+        self.assertEqual((old[rules.G_DUCK], old[rules.G_DUCK_WINDOW]), (1, 6))   # D144: an older ini: on, 6 ticks
+        self.assertEqual(old[:n].hex(), self.want[self.OLD])
+        self.assertEqual(user[:n].hex(), self.want[self.USER])
+        self.assertEqual(self.spec(old), (rules.SPEC_CHANCE, 8, [10] * 5))       # no special_items: the chance way
+        self.assertEqual(self.spec(user), (rules.SPEC_CHANCE, 8, [100] * 5))
+        self.assertEqual([user[at] for at in self.chances], [100] * 5)
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:          # the new file set to chance: the old bytes
+            t = self.table(self.write(folder, self.source.replace(self.LAIRS, '\nspecial_items = chance ')))
+            self.assertEqual(t[:n].hex(), self.want[self.OLD])
+        base = bytes.fromhex(self.want[self.OLD])
+        for name in ('custom_rules-default.ini', 'custom_rules.ini'):   # the lairs way: the chance bytes 100
+            t = self.table(ROOT / name)
+            self.assertEqual({i for i in range(n) if t[i] != base[i]}, set(self.chances), name)
+            self.assertEqual([t[at] for at in self.chances], [100] * 5)
+            self.assertEqual(self.spec(t), (rules.SPEC_LAIRS, 8, [10] * 5))
+
+    def test_the_section_is_after_treasure_with_every_key(self):
+        import configparser
+        cp = configparser.ConfigParser(inline_comment_prefixes=(';',))
+        cp.read_string(self.source)
+        names = cp.sections()
+        self.assertEqual(names.index('Special_items'), names.index('Treasure') + 1)
+        self.assertEqual(set(cp.options('Special_items')), {'special_items', 'special_item_lairs', *rules.SPECIAL_KEYS})
+        self.assertEqual((cp.get('Special_items', 'special_items'), cp.get('Special_items', 'special_item_lairs')), ('lairs', '8'))
+        for key, old in rules.SPECIAL_KEYS.items():
+            self.assertFalse(cp.has_option(old, key), key)
+        self.assertEqual((ROOT / 'custom_rules.ini').read_text(encoding='utf-8'), self.source)
+
+    def test_a_key_in_both_places_the_new_section_wins(self):
+        text = self.source.replace('[Treasure]\n', '[Treasure]\nrare_gem_chance = 55\n').replace(
+            '[Rules]\n', '[Rules]\nsword_enchantment_chance = 66\n')
+        w = rules.G_SPEC_W
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            t = self.table(self.write(folder, text))
+            self.assertEqual((t[w + 4], t[w]), (10, 10))
+            t = self.table(self.write(folder, text.replace('rare_gem_chance = 10 ', 'rare_gem_chance = 20 ')))
+            self.assertEqual(t[w + 4], 20)
+            older = text.replace('rare_gem_chance = 10 ', ';').replace('sword_enchantment_chance = 10 ', ';')
+            t = self.table(self.write(folder, older))     # only in the old place: read there
+            self.assertEqual((t[w + 4], t[w]), (55, 66))
+            t = self.table(self.write(folder, older.replace(self.LAIRS, '\nspecial_items = chance ')))
+            self.assertEqual((t[rules.G_GEM_CHANCE], t[rules.G_ENCH_CHANCE]), (55, 66))
+
+    def test_unknown_key_and_bad_value_are_errors(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            text = self.source.replace(self.LAIRS, '\nrare_horse_chance = 5' + self.LAIRS)
+            with self.assertRaisesRegex(rules.RulesError, r'\[Special_items\] rare_horse_chance: unknown setting'):
+                rules.read_ini(self.write(folder, text))
+            for bad in ('yes', 'none', '1'):
+                text = self.source.replace(self.LAIRS, '\nspecial_items = ' + bad + ' ')
+                with self.assertRaisesRegex(rules.RulesError, 'special_items'):
+                    rules.read_ini(self.write(folder, text))
+            for bad in ('25', '-1', 'six'):                # D139
+                text = self.source.replace('special_item_lairs = 8 ', 'special_item_lairs = ' + bad + ' ')
+                with self.assertRaisesRegex(rules.RulesError, 'special_item_lairs'):
+                    rules.read_ini(self.write(folder, text))
+            text = self.source.replace('rare_ring_chance = 10 ', 'rare_ring_chance = 101 ')
+            with self.assertRaisesRegex(rules.RulesError, r'\[Special_items\] rare_ring_chance'):
+                rules.read_ini(self.write(folder, text))
+
+    def test_off_clears_exactly_the_five_on_bytes(self):
+        n = rules.G_SPEC_MODE
+        base = bytes.fromhex(self.want[self.OLD])
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            t = self.table(self.write(folder, self.source.replace(self.LAIRS, '\nspecial_items = off ')))
+            self.assertEqual({i for i in range(n) if t[i] != base[i]}, set(rules.G_SPECIAL_ON))
+            self.assertEqual([t[at] for at in rules.G_SPECIAL_ON], [0] * 5)
+            self.assertEqual(self.spec(t), (0, 8, [10] * 5))
+            lairs = self.table(self.write(folder, self.source))
+            for mode in ('on', 'LAIRS'):                   # D139: on is lairs
+                t = self.table(self.write(folder, self.source.replace(self.LAIRS, '\nspecial_items = ' + mode + ' ')))
+                self.assertEqual(t, lairs, mode)
+            t = self.table(self.write(folder, self.source.replace(self.LAIRS, '\n; ').replace('special_item_lairs = 8 ', ';')))
+            self.assertEqual((t[:n], self.spec(t)), (base, (rules.SPEC_CHANCE, 8, [10] * 5)))   # no keys: chance, N 8
+            t = self.table(self.write(folder, self.source.replace('special_item_lairs = 8 ', 'special_item_lairs = 0 ')
+                                      .replace('rare_ring_chance = 10 ', 'rare_ring_chance = 0 ')))
+            self.assertEqual((self.spec(t), t[rules.G_RING_CHANCE]), ((rules.SPEC_LAIRS, 0, [10, 10, 10, 0, 10]), 100))
+
+    def test_speedrun_mode_has_no_special_items(self):
+        before = bytes.fromhex(self.want['speedrun'])
+        n = rules.G_SPEC_MODE
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            self.write(folder, self.source, 'custom_rules-default.ini')
+            text = self.source.replace('speedrun_mode = off', 'speedrun_mode = on')
+            self.assertNotEqual(text, self.source)
+            t = self.table(self.write(folder, text))
+        self.assertEqual([t[at] for at in rules.G_SPECIAL_ON], [0] * 5)
+        self.assertEqual(t[rules.G_SPEC_MODE], 0)           # off, whatever the default file says (lairs)
+        self.assertEqual({i for i in range(n) if t[i] != before[i]}, set(rules.G_SPECIAL_ON))
 
 
 class ReviewFixes(unittest.TestCase):
@@ -1979,6 +2216,47 @@ class AmigaTuneSwitches(unittest.TestCase):
         self.assertEqual(sorted(make_amiga_music.remove_d8(str(out))),
                          ['adlib/', 'ending.mod', 'ending.wav', 'gm/', 'gm_amiga/', 'intro.mod', 'intro.wav', 'mt32/'])
         self.assertEqual(sorted(p.name for p in out.iterdir()), ['amiga.sf2', 'amiga.tunes', 'font'])
+
+
+class WalkFrames(unittest.TestCase):
+    """D143: tools/walk_frames.py without the game's files (the pictures are tested against the approved sample in the
+    development suites, which have the game)."""
+
+    def test_no_game_pieces_no_file(self):
+        import walk_frames
+        game = Path(tempfile.mkdtemp(dir=ROOT))
+        self.addCleanup(shutil.rmtree, game, True)
+        (game / walk_frames.INB_NAME).write_bytes(b'an older file')
+        self.assertIsNone(walk_frames.install(str(game)))        # no DISKB/KN1.OB
+        self.assertFalse((game / walk_frames.INB_NAME).exists())
+        (game / 'DISKB').mkdir()
+        for name in walk_frames.BANKS:
+            (game / 'DISKB' / name).write_bytes(b'not a bank')
+        self.assertIsNone(walk_frames.install(str(game)))
+        self.assertFalse((game / walk_frames.INB_NAME).exists())
+
+    def test_slots_and_the_place(self):
+        import walk_frames
+        slots = sorted(walk_frames.slot_number(look, facing, fa, j) for look in (0, 1) for facing in (0, 1)
+                       for fa in hook.WK_LOOP for j in range(1, 6))
+        self.assertEqual(slots, list(range(1, hook.WK_SLOTS)))
+        self.assertEqual(hook.WK_SLOT * hook.WK_SLOTS, 129600)
+        # the legs piece from 10 to 13: the picture a sixth, a half and five sixths of the way, to the nearest
+        # pixel; an exact half to the even pixel when the slot's word says its constant is whole, else up
+        zero = 6 * hook.WK_BIAS + 3
+        entry = (None, zero | hook.WK_WHOLE, zero)
+        self.assertEqual([walk_frames.place(entry, j, 10, 10, 13, 13) for j in (1, 3, 5)], [(10, 11), (12, 12), (12, 13)])
+        self.assertEqual(walk_frames.place(entry, 2, 13, 13, 10, 10), (12, 12))
+        # a constant of a third of a pixel: never a half
+        third = (None, zero + 2, zero + 2)
+        self.assertEqual(walk_frames.place(third, 3, 10, 10, 13, 13), (12, 12))
+
+    def test_the_overlay_group_and_the_room(self):
+        code, labels = labelled_hook()
+        self.assertIn('walk_match', labels)
+        self.assertIn('wk_h', labels)
+        self.assertEqual(code[labels['wk_h'] - 0x100:labels['wk_h'] - 0x100 + 2], bytes(2))   # no file until the installer finds it
+        self.assertEqual(hook.BUF_ILOG - hook.BUF_WALK, hook.WK_SLOT)
 
 
 if __name__ == '__main__':

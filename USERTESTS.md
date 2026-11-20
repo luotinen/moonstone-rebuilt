@@ -11,6 +11,9 @@ Each task has its own section, named by its task code (D = improvement or fix, K
 
 ## How to start a test
 
+Testing items found in lair chests? With `cheat_codes = yes`, type SKIPCOMBAT on the map: every lair your knight enters
+opens its chest at once, as after a won fight (D122). Type it again for real fights.
+
 1. Use the dev install `R:\Claude\Moonstone\rebuilt` and start it with `Start.bat`.
 2. Always start a **new game**. Never load an old save or a DOSBox-X state: they carry the old code and make a fixed
    thing look broken.
@@ -577,6 +580,9 @@ forest and rocks and not look like the pink outline or a lair's glow.
 
 ## D108 – Special rings: the base and the stat rings (Strength, Constitution, Endurance)
 
+(D121 changes this section's stat-ring line: the item screen's number now shows the ring, with no cap of 9. Test the
+shown value with the D121 section.)
+
 Custom rules on, `rare_rings = on`, `rare_ring_chance = 100` to find them quickly (only the three stat rings exist so far);
 for the loot tests a game with computer knights and `lives = 1` for the human knight, `mode = permadeath`.
 
@@ -838,3 +844,573 @@ eight of D113-D116).
 - [ ] Set `slow_gem_percent = 0`: the slowed knight can take only a step or two; 100: no cut.
 - [ ] Change Places or Slow at a knight hidden by a Gem of Concealment or a Potion of Invisibility, or at a grave:
       cannot be hit (nothing happens).
+
+## D119 – The item screen's pointer in its own colours
+
+Custom rules on, `armour_enchantments = on`, `sword_enchantment_chance = 100`, `rare_potions = on`, `rare_rings = on`,
+`rare_gems = on` (and their chances at 100), so enchanted and special items show up.
+
+- [ ] Your own item screen (I on the map) with no enchanted or special items: the pointer (the gauntlet) has a black
+      outline and its own light colours, as in the original game, not violet.
+- [ ] The same with an enchanted sword or armour and special potions, rings and gems on the panel: the pointer is the
+      same as above wherever it is (over a violet sword, beside it, over a plain item, over empty space, moving between
+      them); the items keep their colours (the violet sword and armour, the potions', rings' and gems' own looks).
+- [ ] A lair chest with an enchantment or a special item, the dragon's hoard, another knight's panel (loot, a grave),
+      the merchant and the High Temple: the pointer as in the original game on each.
+- [ ] Load a game saved during the first playtest (before this fix) and open an item screen: the pointer is already
+      right.
+- [ ] The item screen's fade in and out: the violet items fade with the rest of the screen (no item stays bright while
+      the screen goes dark). The map's pointer and the fights look as before.
+
+## D120 – The dragon's bite and the dragon after a won fight
+
+Custom rules on or off (both fixes are in the fixed game). `[Debug] dragon_debug_mode = 1` makes it quick: on the map
+the keys 1-4 make that knight the dragon's target, and Enter with the knight under the dragon starts its fight.
+
+- [ ] Lose a fight to the dragon (any way but being eaten): back on the map the dragon is no longer where it caught
+      you; it flies in again from the map's left edge. Your next turn does not start with a dragon fight.
+- [ ] The playtest's case: a game where only one knight is still alive (the other knights dead, or a one-player game):
+      lose to the dragon, and at your next turn you can walk away before the dragon reaches you.
+- [ ] Let the dragon eat your knight (it takes the knight in its jaws). Then fight the dragon
+      again at once (debug keys) without a lair or a knight fight between: your knight is there, can fight, and the
+      fight ends as usual when one side loses.
+- [ ] After being eaten, enter the Valley (all four keys) for the Guardian before any other fight: the Guardian fight
+      is normal.
+- [ ] Practice: the dragon practice, be eaten, then the dragon practice again: the second one is normal.
+- [ ] With two or more knights alive: lose to the dragon with one knight; the next knight's turn is as before, and the
+      dragon comes from the left edge. A computer's knight robbed by the dragon: the dragon flies off the same way.
+- [ ] Optional, your slot 3 game: slot 3 itself stays the stuck fight (a save keeps the program it was made with).
+      A repaired copy of its automatic save, `research/bugs/dragon-double-challenge-2026-11-18/100-repaired.sav` in the
+      dev folder, can be copied into a free save slot and loaded: the second dragon fight starts again with the blue
+      knight standing. That game still runs the build it was saved with (D118).
+
+## D121 – Stat rings: the +1 is shown, and never blocks raising the base
+
+Custom rules on, `rare_rings = on`, `rare_ring_chance = 100`. The item screen shows Strength, Constitution and Endurance
+as numbers beside their icons; the number is the base + 1 for each ring of that ability the knight carries. Use a new
+game (a save state keeps the build it was made with).
+
+- [ ] Take a Ring of Strength from a chest: your Strength number goes up by 1 at once (3 -> 4). A second Ring of
+      Strength: +2 in all (3 -> 5). The same for a Ring of Constitution (Constitution; max HP + 10 a ring) and a Ring of
+      Endurance (Endurance).
+- [ ] Lose a ring each way: sell it at the High Temple, offer it at Stonehenge, let another human knight take it (or
+      swap it away when you hold two), lose a fight with lives left to a computer knight or the dragon that takes it,
+      lose the last life. Each time the number goes back down by exactly 1 a ring, never below the base.
+- [ ] Strength 5 (the usual top) with one Ring of Strength: the screen shows 6; with two: 7. Gain experience: the
+      Strength icon is not offered for the XP click (the base is 5), the same as without the ring.
+- [ ] Strength 4 with a Ring of Strength (shown 5): the XP click on Strength is still offered and raises the base to
+      5, shown 6. Math's and Mythral's gifts can still raise Strength at base 4 although it shows 5.
+- [ ] Drink a Potion of Strength at base 5 with a ring (shown 6): shown 7. Then give the ring away: shown 6 (base 6).
+- [ ] Optional: base 9 (several Potions of Strength) with a ring shows 10, with two 11; the two digits are readable
+      and touch nothing beside them (the gold icon to the right).
+- [ ] Two knights on the item screen: the other knight's panel shows its own number with its rings; a computer's
+      knight's panel shows its base (rings do nothing for computer knights).
+
+## D122 – SKIPCOMBAT: fights skipped for testing (`cheat_codes = yes`)
+
+Custom rules on, `cheat_codes = yes`. Start a new game. Type the code on the map, during a human knight's turn.
+
+- [ ] Type SKIPCOMBAT: the cheat codes' sound (a sword clash). Walk into a lair: no fight, its chest opens at once with
+      its gold and items. Take what you want and leave: the map comes back and the turn ends (as after a fight).
+- [ ] With `rare_potions`, `rare_rings`, `rare_gems` and the enchantments on and their chances at 100: the chest of a lair
+      you have not yet won holds a special item, as after a won fight.
+- [ ] Your experience does not grow from a skipped fight (look at it on the item screen before and after).
+- [ ] Empty a chest completely: the lair goes off the map, as after a real win. A lair you left items in stays; enter
+      it again (a later turn): its chest opens again, no fight.
+- [ ] Type SKIPCOMBAT again (the same sound): the next lair is a real fight. A lair you emptied of monsters with the
+      code on has no monsters left when you come back with the code off (as after a real win).
+- [ ] Co-op lairs (`coop_lairs` on, two knights next to a lair, "Lair with"): with the code on, no fight; each knight
+      gets the chest as after a won co-op fight.
+- [ ] The dragon catches your knight with the code on: no fight and no Scroll of Protection offer; its hoard opens
+      at once, the dragon is dead (it flies again only with HEREBEDRAGONS), no experience gained.
+- [ ] With the code on, a knight duel (attack another knight, or a computer's knight attacks you) is fought as ever,
+      and so is the Guardian in the Valley. A computer's knight's own lair fights are as ever.
+- [ ] A drunk "next fight" potion (Might, Fire Resistance, Speed) or the Gem of Fury is still working in your next
+      real fight after skipped ones.
+- [ ] `cheat_codes = no`: typing SKIPCOMBAT does nothing, lairs are fought.
+
+## D123 – Math and Mythral never raise an ability at 5 or more
+
+Run Setup.bat again first (the fixed game changed). Custom rules on or off. To get an ability above 5 quickly: custom
+rules with a knight's start value (for example `strength = 6` in its `[Knight...]` section), or the Potions of
+Strength, Endurance and Constitution (`rare_potions = on`).
+
+- [ ] Strength 6 (or more), Constitution and Endurance below 5: visit Math and Mythral several times: when they raise
+      an ability it is always Constitution or Endurance, never Strength.
+- [ ] All three at 5 or more (for example 5, 6, 9): Math never raises one (he gives gold, an item or the frog instead);
+      Mythral never raises one (when his roll would raise, he says you have already learnt what he can teach).
+- [ ] Mythral's loss: with Strength 6 and the others below 5, a donation that goes wrong lowers Constitution or
+      Endurance, never Strength (the game already spared an ability of exactly 5).
+- [ ] With a Ring of Strength and base Strength 4 (shown 5): Math and Mythral can still raise Strength (to base 5,
+      shown 6).
+- [ ] The rest as before: experience still raises an ability only while it is below 5 (the item screen's click);
+      Math and Mythral still raise abilities below 5 as they did.
+
+
+## D124 – The spear trogg attacks a little slower
+
+Custom rules on, `spear_trogg_attack_pause = 130` (the default; an older `custom_rules.ini` without the line gets 130 too). Practice key 6 (lair 20, spear troggs) is the quickest way in.
+
+- [ ] Stand still in a spear trogg's reach: its thrusts come noticeably less often than before (about every 1.8 s instead of
+      every 1.4 s), and between two thrusts there is time to step in and strike.
+- [ ] The thrust itself looks as before (the same quick stab, the same reach and damage, 3).
+- [ ] `spear_trogg_attack_pause = 100` (then Custom_rules_on or Setup as usual): the old pace again. 200: about twice as slow.
+- [ ] Axe troggs, hammer troggs (Wastelands) and the war beasts attack at their old pace.
+
+## D125 – A riposte at the same moment as the troll's blow from above stops it
+
+Custom rules on, `timed_defence = on`. Practice key 9 (lair 18, trolls). The riposte: down + forward + fire (the lunge) while
+the troll's club is going up for its blow from above.
+
+- [ ] A late riposte, just before the club comes down: the quick thrust hits, the troll flinches and takes the damage, and its
+      blow does not land (before, the troll ignored the thrust and its blow still hit).
+- [ ] An early riposte: as before, the troll flinches and its blow never comes.
+- [ ] Too late (after the club has come down): the troll's blow hits as before; a blow that kills still crushes the knight (Gore
+      On or More).
+- [ ] The troll's push (close in, its club sideways): as before, no riposte against it.
+- [ ] Axe troggs (practice key 4) and hammer troggs (key 3): a riposte that lands as their blow from above lands: the trogg
+      flinches and its blow does not hurt the knight (before, both hit).
+- [ ] `timed_defence = off`: everything as the game (no riposte).
+
+## D126 – Computer knights' level-up capped at 5; nothing wrong written with every ability at 5 or more
+
+Run Setup.bat again first (the fixed game changed). Custom rules on or off; for abilities above 5 use start values in
+`custom_rules.ini` (for example `strength = 6` in a knight's section, the computer knights' own section for them) or
+the Potions of Strength, Endurance and Constitution (`rare_potions = on`).
+
+- [ ] A computer knight with Strength 6 (or more) and Constitution and Endurance below 5: over a few weeks its
+      level-ups raise Constitution or Endurance, never Strength (the knight's item screen, or the summary at the end).
+- [ ] A computer knight with every ability at 5 or more: its abilities stay as they are, however much experience it
+      gathers.
+- [ ] A knight with every ability at 5 or more (for example 5, 6, 9) loses to the Guardian: it loses its lives as
+      before and plays on normally (moves, fights, the item screen as before). Since D130 one of its abilities falls
+      by 1 there.
+- [ ] The same knight at Mythral: when the donation goes wrong he says his powers are weak and nothing changes; when it
+      goes well he says there is nothing left to teach. Afterwards the knight plays on normally.
+- [ ] The rest as before: Mythral's loss lowers only an ability below 5 (D123), and a human knight's experience raises
+      an ability only while it is below 5. (The Guardian's own rule changed again in D130: see there.)
+
+## D127 – Safety timer: Esc leaves a campaign fight after two minutes (replaced by D132)
+
+Replaced by D132 before it was released: the exit no longer opens by the fight's length. Do not test these rows; D132's
+section below tests the same leaving with the new rule.
+
+Custom rules on (`[Combat] fight_safety_timer = 120`, the default; for quicker tests set it to 10 and run
+Custom_rules_on.bat again). Start a new game. Watch a clock: the time counts from the fight's first frame.
+
+- [ ] A lair fight: press Esc before the time is up: nothing happens, the fight goes on. Press it again after the time:
+      the fight ends at once, the map comes back with no chest, and the turn is over. Your gold, items and experience
+      are as before the fight; the knight's hit points are what they were when you left (wounds stay).
+- [ ] Enter the same lair again (a later turn): it has all its monsters again (the ones you killed are back).
+- [ ] Hold Esc down when leaving and keep holding it a second or two: the game does not end on the map (no Game Over);
+      let go, then Esc on the map ends the game as before.
+- [ ] A knight duel (attack another knight, or a computer's knight attacks you): Esc after the time leaves it; neither
+      knight wins or takes anything, both keep their lives.
+- [ ] The dragon: Esc after the time leaves the fight, no hoard, no life lost, and the dragon has flown off (it comes
+      back later from the map's edge).
+- [ ] The Guardian: Esc after the time leaves the fight; the keys stay with the knight and nothing else changes.
+- [ ] Co-op lair ("Lair with", two knights): Esc after the time leaves the fight for both; no chest. A knight that was
+      already down when you pressed Esc loses its life as after a normal fight; the standing one does not.
+- [ ] A fight that is ending on its own (a knight just fell, or the last monster just died): Esc does not change it;
+      the result is the game's.
+- [ ] A computer's knight's own lair fight or duel that you watch: Esc after the time leaves it as well (its turn ends,
+      nothing gained).
+- [ ] Practice (from the first menu): Esc ends it at once, as before (the timer does not apply).
+- [ ] `fight_safety_timer = 0`: Esc never leaves a campaign fight.
+
+## D128 – Gem of Change Places: a teleport when there is nobody to change places with
+
+Custom rules on, `rare_gems = on`, `rare_gem_chance = 100`. Get a Gem of Change Places (silver stand, green and orange
+ball) from a lair chest. The teleport works only when no other knight on the map could be hit by the gem: play alone
+(one player, no computer knights), or let the other knights die out of the game, or have them hidden (Gem of
+Concealment, Potion of Invisibility).
+
+- [ ] Alone on the map: press I, click the gem, move the ball somewhere and fire: your knight is there, the gem is gone,
+      and your turn goes on with the movement you had left (the move bar as before the aim).
+- [ ] After a Scroll of Haste: the doubled movement is kept after the teleport.
+- [ ] Teleport onto a lair or a town: nothing opens by itself; press fire there and it opens as if you had walked there.
+- [ ] Fire with the ball on the Valley of the Gods (anywhere your knight would touch its picture): nothing happens, the
+      ball stays, the gem is kept. Just outside the Valley: the teleport works.
+- [ ] Fire without moving the ball: nothing happens, the gem is kept.
+- [ ] Space or E while aiming: your knight is back where it stood, the gem kept (as before).
+- [ ] With another knight alive and visible anywhere on the map (a player's or a computer's, a frog too): fire away
+      from it does nothing (the gem stays); fire on it swaps places as before (D117).
+- [ ] Two players, the other one carrying a Gem of Concealment: the teleport works (a hidden knight cannot be a
+      target); the hidden knight is not moved.
+- [ ] Teleport next to the dragon: the dragon catches you as if you had walked there.
+
+## D129 – The Players choice goes round
+
+In the first menu, on the Players line, step with right and left (keyboard or controller).
+
+- [ ] Right from *1 + CPU*: *2 + CPU*, *3 + CPU*, *4*, *3*, *2*, *1*, then *1 + CPU* again, and on round.
+- [ ] Left from *1 + CPU*: *1*, *2*, *3*, *4*, *3 + CPU*, *2 + CPU*, *1 + CPU*, and on round.
+- [ ] Hold right (or left): the choice keeps going round at the menu's repeat speed; one tap is one step.
+- [ ] The menu looks as before (the same texts in the same place).
+- [ ] Start a campaign with each of the seven: with *+ CPU* the knights nobody plays are computer knights; *4* has
+      four players; *3*, *2* and *1* have only the players' knights on the map.
+- [ ] Restart the game: the menu opens on the choice you left it on.
+- [ ] Custom rules on, `computer_knights = off`: right goes *4*, *3*, *2*, *1*, *4*, ...; left the other way; no
+      choice shows "+ CPU".
+
+## D130 – The Guardian may lower any ability, never below 1
+
+Run Setup.bat again first (the fixed game changed). Custom rules on or off. The Guardian fight needs all four keys; let the
+Guardian win. Look at the abilities on the item screen before and
+after; a save before the fight lets you try again.
+
+- [ ] Abilities 5, 5, 5 (or above 5, for example 5, 6, 9): after a lost fight one of them is 1 lower (also one of
+      exactly 5, which the game never lowered), and the lives go as before.
+- [ ] Over several tries each of the three can be the one that falls.
+- [ ] One ability at 1 (for example Strength 1, the others 4): that one never falls, one of the others does.
+- [ ] All three at 1: nothing falls; the lives go as before, and the knight plays on normally.
+- [ ] With a Ring of Strength (custom rules, `rare_rings = on`) and base Strength 1 (shown 2): Strength never falls.
+- [ ] Math, Mythral and the computer knights' level-up as before (D123, D126).
+
+
+## D131 – The troll's blow from above lands where its club is drawn
+
+Run Setup.bat again first (the fixed game changed, and Setup writes `DISKB\COLLFIX.HIT`). Custom rules on or off. Practice
+key 9 (lair 18, trolls), or the fight of your save slot 3.
+
+- [ ] Let the troll come to you and stand still where it stops: its blows from above (the club coming down) hit you every
+      time, from either side (before, from the left it could miss every blow at that spot).
+- [ ] Step back and forth a little at the edge of its reach: the blow hits wherever the club comes down on the knight, and
+      misses when the club comes down in front of the knight, as before (the reach is the same).
+- [ ] Each blow does the troll's damage as before (7), and a blow that kills still crushes the knight (Gore On or More).
+- [ ] Holding the block does not stop the blow from above (as before), and the knight is not missed while blocking.
+- [ ] The troll's push (close in, its club sideways): as before.
+- [ ] With `timed_defence = on`: a riposte as the club goes up still stops the blow (D125).
+- [ ] Axe, hammer and spear troggs, ratmen and the other monsters hit as before.
+- [ ] Fixes_Off.bat (the original game): the troll misses as in the original again; Fixes_On.bat: the fix is back.
+
+## D132 – Stuck fight exit: Esc leaves a campaign fight when nobody has acted for 30 seconds
+
+Custom rules on (`[Combat] fight_idle_exit = 30`, the default; an older custom_rules.ini without the line gets 30).
+Start a new game. "Nothing happens" below means: no key pressed or held on the keyboard, no joystick moved or button
+pressed, and your knight is not hit (its hit points do not change). Watch a clock.
+
+- [ ] A lair fight: stand still and touch nothing. After 30 seconds "ESC LEAVES THE FIGHT" appears in small cream
+      letters with a black shadow at the top centre of the screen. It does not flicker, and figures that pass under it
+      do not leave marks.
+- [ ] Before the hint is there, Esc does nothing (the fight goes on), and pressing Esc does not count as a key: the hint
+      still comes 30 seconds after your last other key.
+- [ ] With the hint showing, press any other key (or move the joystick): the hint disappears at once and cleanly (the
+      sky or wall behind it is as before), and the 30 seconds start again.
+- [ ] Hold a direction key down for more than 30 seconds without being hit: no hint (a held key counts as pressing).
+- [ ] Stand still where a monster hits you now and then: no hint while you are hit more often than every 30 seconds.
+- [ ] With the hint showing, press Esc: the fight ends at once, the map comes back with no chest, and the turn is over.
+      Gold, items and experience are as before the fight; the knight keeps the hit points it had (wounds stay).
+- [ ] Enter the same lair again (a later turn): it has all its monsters again.
+- [ ] Hold Esc down when leaving and keep holding it a second or two: no Game Over on the map; let go, then Esc on the
+      map ends the game as before.
+- [ ] A knight duel against another player's knight: neither player touches anything for 30 seconds: the hint, Esc
+      leaves it; neither knight wins or takes anything. If either player presses a key, the hint goes away.
+- [ ] The dragon: the hint after 30 quiet seconds, Esc leaves the fight, no hoard, no life lost, and the dragon has
+      flown off.
+- [ ] The Guardian: the hint after 30 quiet seconds; Esc leaves; the keys stay with the knight.
+- [ ] Co-op lair ("Lair with", two knights): the hint only when neither player has pressed anything and neither knight
+      has been hit for 30 seconds. Esc leaves the fight for both; no chest. A knight that was already down loses its
+      life as after a normal fight.
+- [ ] A computer knight's own lair fight that you watch: no hint ever, Esc does nothing.
+- [ ] A fight ending on its own while the hint shows (the last monster dies): the hint disappears, the result is the
+      game's.
+- [ ] Practice (from the first menu): no hint; Esc ends it at once, as before.
+- [ ] `fight_idle_exit = 0` (run Custom_rules_on.bat again): no hint ever, Esc never leaves a campaign fight. With
+      `fight_idle_exit = 5`: the hint after 5 quiet seconds.
+
+## D133 – Terrain zones in 4 x 4 pixel cells, measured at the middle of the knight's icon
+
+Custom rules on, `[Map] custom_terrain = on` (your zones; `tools/terrain_zones.csv` is now 80 x 50, made exactly from
+your 40 x 25 drawing), `terrain_cells = 4x4` and `terrain_probe = centre` (the defaults; an older custom_rules.ini
+without the lines gets them too). Start a new game (or load a state saved after this build).
+
+- [ ] Walk a knight on foot into a forest, a swamp, rocks and mountains you drew: it slows where the middle of its
+      helmet icon reaches the painted zone (not about one cell later going down, earlier going up, as before).
+- [ ] Paint a narrow strip (one 4 x 4 cell wide) of mountains on open ground with the map tool (`Terrain_editor.bat`,
+      Ctrl+S), run `Custom_rules_on.bat`, restart DOSBox-X: crossing it slows the knight for the few steps on it only.
+- [ ] The same mounted: the horse's speeds in forest and swamp and in mountains are as before, now by the 4 x 4 cells.
+- [ ] A Ring of Mountainwalk, Waterwalk or Forestwalk frees its zone; Plainswalking works on open ground (all by the
+      new cells).
+- [ ] Set `terrain_probe = feet`, run `Custom_rules_on.bat`: the zone is measured at the icon's bottom edge again (the
+      original game's point): a border going down is reached a little later than with centre.
+- [ ] Set `terrain_cells = 2x2`: the zones work in 8 x 8 blocks again (a narrow 4-pixel strip then takes its whole
+      block or none of it, by what most of the block is).
+- [ ] Speedrun mode: the game's own map and terrain, exactly as the original.
+- [ ] A game state saved before this build still loads and plays (it keeps the terrain it was saved with until a
+      restart).
+
+## D134 – Places, starts and lairs where the map tool puts them
+
+Custom rules on, `[Map] custom_places = on` (the default; an older custom_rules.ini gets it too). Open the map tool
+(`Terrain_editor.bat`), choose *Move* (V) and drag some markers, Ctrl+S, run `Custom_rules_on.bat`, restart DOSBox-X,
+start a new game.
+
+- [ ] Without moving anything (or with `custom_places = off`): everything is where it always was.
+- [ ] Move a lair marker (a violet ring with its number) to open ground: the lair's icon is drawn there, entering it
+      starts its fight (the same monsters as before for that number), and the old spot is empty.
+- [ ] Move a town (HW or WD) and paint its picture there (Map menu, your own picture; or just try with the old picture):
+      the town is entered at the new place; computer knights walk to the moved town to shop.
+- [ ] Move home village 1 (blue box "1"): its start S1 moves along; knight 1 starts at the new S1, and its druid's
+      village works at the new place (only for its own knight, as before).
+- [ ] Move a Black Knight's start (B1-B4): the Black Knight appears there at the start.
+- [ ] Move the Valley (VY): with the keys the Valley is entered at its new place; a cursed Scroll of the Hawk never lands
+      a knight on it there.
+- [ ] Put a place on top of another in the tool: it is refused (red, with the reason) and jumps back.
+- [ ] Speedrun mode: the game's own places.
+
+## D135 – The map tool: your own map picture, Apply and Restore original
+
+Python 3 with Pillow (`py -3 -m pip install pillow` once). Make a copy of your game folder first if you want to be
+extra safe (the tool keeps the original map itself as `DISKB\MAP.CMP.orig` and `DISKC\MAP.CMP.orig`).
+
+- [ ] `Terrain_editor.bat` opens the map tool with your game's map, your zones and the markers.
+- [ ] Map > Export map picture: a 320 x 200 PNG of the map. Paint something on it in any paint program (keep the size),
+      Map > Import map picture: it shows in the tool; the message says how many pixels took a nearest colour and the
+      size as MAP.CMP.
+- [ ] Map > Free colours of the palette: "Fit the free colours to the picture" changes only the six numbered colours;
+      "The game's colours" puts them back.
+- [ ] Map > Apply to the game: the list of what it will do, then Yes: "Done". Restart DOSBox-X: the map is your
+      picture, the knights' icons, lairs and places look as before, and the zones and moved places work.
+- [ ] Apply with a picture full of noise (many single pixels of random colours): refused before anything is written if
+      it would be over 35,840 bytes.
+- [ ] Map > Restore original map: Yes: the game's own map, places and terrain are back after a restart (your
+      `custom_rules.ini` has `custom_places = off` and `custom_terrain = off`; set them on again to use your files).
+- [ ] File > Save project as, then Load project: zones, places and your picture come back; a project made with the
+      game's own map holds no map picture.
+- [ ] Map > Export sprites and Export template: PNG files of the game's map sprites and a 4x template with the markers.
+- [ ] `tools/map_palette.png`: open it in your paint program, paint a picture with colours picked from its squares
+      with the colour dropper, import it: the message says every pixel has a colour of the map's palette.
+
+## D136 – Smooth animation: in-between pictures in fights
+
+Custom rules on (run Custom_rules_on.bat after Setup or after changing the ini). `[Rules] smooth_animation = 6` is the
+default, also for an older custom_rules.ini without the line. The game's rules and pace do not change; only more
+pictures are shown between the game's own. Look for motion, not for new poses: a pose still changes about nine times a
+second (new in-between poses are a later stage).
+
+Changed after the playtest of 19 Nov 2026 (walking floaty, the dragon's breath in chunks): only an object whose picture
+stays the same now moves in the in-between pictures. A knight or monster whose pose changes is drawn exactly as in the
+original. Daggers, swings and attacks were fine in that playtest; please look at them once more with this build.
+
+- [ ] Practice, a knight against the trolls (first menu, key 9): walk left and right, up and down. The knight walks
+      exactly as in the original: no gliding, no bobbing, no sliding feet. The same for the troll's walk.
+- [ ] Throw daggers (yours, and in a knight duel the other knight's): a dagger flies in small steps, not 20 pixels at
+      a time, and it still hits when it did: the struck figure reacts as the dagger arrives.
+- [ ] The dragon fight: its body parts move smoothly. Its breath stays whole from mouth to tip in every picture: no
+      gaps, no chunks, no piece out of place; the fire on a burning knight too. Nothing is left behind on the screen
+      and no part flickers.
+- [ ] Pushes and knock-backs (a blow that throws a knight back, the troll's push): a figure that keeps its pose
+      while it is thrown slides back smoothly; it does not look floaty.
+- [ ] Standing figures, blocks and blows look as before: no flicker, no doubled figure, no trail, no missing piece
+      (shadows, blood, bodies on the ground, the score line and the HP bars at the top).
+- [ ] A knight turning round, a knight walking on to the screen, a mudman rising far from where it sank: they appear
+      in place, with no picture sliding across the screen.
+- [ ] The pace of fights. In the playtest of 19 Nov 2026 it was a little faster than before: fights now keep the
+      game's full 9.1 ticks a second, where at the old `fight_cycles` even a walking knight against the ratmen ran at
+      about 8.65 (measured). `draw_TPS = yes` shows it. Tell me whether the full pace is right or the old, slightly
+      slower feel should come back.
+- [ ] Sound effects and music in fights are as before (no crackle, no slowdown).
+- [ ] Your keys feel as before: blows start when you press, blocks work (timed defence too if you use it).
+- [ ] A 2-player duel, a co-op lair and a 3-4 player practice: the same checks; every knight keeps its colours in
+      every picture (no flash of a wrong colour).
+- [ ] A Potion of Speed, LIGHTSABER, MINEFIELD and BEATEMUP's bars still look right in a fight.
+- [ ] `[Debug] draw_FPS = yes` and `draw_TPS = yes`: two numbers in the top left corner in fights, pictures a second
+      and ticks a second: about 54.6 and 9.1. Write down what they show in a troll fight, the dragon fight and a
+      fight with 4 knights while everyone moves.
+- [ ] `smooth_animation = 3`, then `2`: fewer in-between pictures (27.3 and 18.2 a second). `1`: exactly the old look.
+- [ ] `smooth_fight_cycles = 3000` with `smooth_animation = 6` (too slow on purpose): the fight keeps its pace
+      (draw_TPS 9.1), draw_FPS falls, the motion gets coarser; nothing hangs.
+- [ ] A DOSBox-X save state made in the middle of a fight, then loaded: the fight goes on normally.
+- [ ] After a fight the map and the towns run at their old speed.
+- [ ] Speedrun mode: fights look as the original (one picture a tick).
+
+## D137 – The special items in one ini section, with a master switch
+
+Python only: no Setup.bat rerun. First reset your ini, so it has the new section: run `Custom_rules_reset.bat` (your
+own custom_rules.ini values are lost; keep a copy if you want them), then `Custom_rules_on.bat`, and restart DOSBox-X.
+After every ini change below run `Custom_rules_on.bat` again and start a **new** game.
+
+- [ ] The reset custom_rules.ini has `[Special_items]` right after `[Treasure]`, starting with
+      `special_items = lairs` (after D139; D137 alone wrote `chance`); `[Rules]` has no enchantment keys and `[Treasure]` no potion, ring or gem keys.
+- [ ] `special_items = off`, a new game: win or SKIPCOMBAT several lairs and meet the dragon: no enchantment, special
+      potion, ring or gem anywhere (chests and the hoard show only the game's own items).
+- [ ] Back to `special_items = chance` (with the chances at 100 to see it quickly): enchantments and special items
+      come again.
+- [ ] `special_items = lairs`: since D139 the lairs way (the D139 tests below).
+- [ ] `special_items = maybe`: `Custom_rules_on.bat` refuses with a message naming `special_items`.
+- [ ] Speedrun mode (`speedrun_mode = on`): no enchantments or special items in any chest or the hoard.
+- [ ] A save (DOSBox-X save state or RESUME GAME) made before the change with special items: loaded, it still has them.
+
+## D138 – Rebirth and the four-key goal at the real Stonehenge
+
+Run `Custom_rules_on.bat` (SAVEHOOK changed) and restart DOSBox-X; start a **new** game (a save keeps the old point).
+Armour enchantments on (`armour_enchantments = on`, the chance at 100 helps), `black_knight_ai = smart`.
+
+- [ ] A knight in Rebirth armour loses a fight: it wakes at Stonehenge (the stone circle in the lower left part of
+      the map), not in Water Deep; no life lost; the armour is plain.
+- [ ] On its next turn the Stonehenge icon is offered among the choices; nothing opens by itself. Click it: the
+      offering screen as usual. Walk away: the knight moves normally.
+- [ ] When a computer knight has all four keys (a long game; IDROPPEDMYKEY shows where the keys
+      are): it walks to Stonehenge and stays there turn after turn.
+- [ ] Walk your knight to it there: you are offered both Stonehenge and the attack; both work.
+- [ ] With the map tool, move Stonehenge (Places menu, then Apply to the game): Rebirth and the four-key knight go
+      to the new place. `custom_places = off` (then `Custom_rules_on.bat`): the game's own place again.
+- [ ] Speedrun mode: no Rebirth armour, the Black Knights are classic (nothing of this changes).
+
+## D139 – Special items in only some lairs (the lairs way)
+
+Custom rules only: no Setup.bat rerun. Reset your ini once, so it has the new default (`special_items = lairs`,
+`special_item_lairs = 8` since D140): run `Custom_rules_reset.bat` (your own custom_rules.ini values are lost; keep a copy if you
+want them), then `Custom_rules_on.bat`, and restart DOSBox-X. After every ini change below run `Custom_rules_on.bat`
+again, restart DOSBox-X and start a **new** game (a save keeps the rules it was started with). SKIPCOMBAT (cheat codes
+on) is the quick way through the lairs; IDROPPEDMYKEY or a Gem of Greed are not needed.
+
+- [ ] The reset file: `[Special_items]` starts with `special_items = lairs` and `special_item_lairs = 8`.
+- [ ] Default (8 lairs, all five at 10 %), a new game: SKIPCOMBAT through all 24 lairs (or win them) with a knight
+      that has free potion, ring and gem places: exactly eight chests hold a special item (an enchantment, a special
+      potion, ring or gem), each at least one; the other 16 none. Now and then one of the eight holds two.
+- [ ] `special_item_lairs = 3`, every chance 0 but one (for example `rare_ring_chance = 100`, the others 0): three
+      lairs, each with a special ring only, no other special item anywhere in the lairs.
+- [ ] Save (DOSBox-X save state, or quit and RESUME GAME) before entering a picked lair; load and enter it again:
+      the same lair still holds the same kinds (the exact ring or potion may differ if it was not looked at yet).
+- [ ] Co-op lairs `full`: two knights win a picked lair together: each special item is taken once, by the first who
+      clicks it.
+- [ ] The dragon's hoard still holds special items sometimes (about four games in ten at the defaults; set the chances
+      to 100 to see it every time).
+- [ ] `special_items = chance`: as before D139 (about 10 of the 24 lairs with something at 10 %); `special_items = off`:
+      none anywhere.
+- [ ] A save made before D139 (its game started in the chance way) still plays in the chance way after loading.
+- [ ] Only if you test without XMS (`xms = false` in the DOSBox-X config of a test copy): only enchantments come,
+      still in eight lairs.
+- [ ] `special_item_lairs = 25`: `Custom_rules_on.bat` refuses with a message naming it.
+
+## D140 – The lairs way: two picked lairs in each quarter; a lair stays while a special item is left
+
+Custom rules only: no Setup.bat rerun. If you reset your ini for D139 before D140 was built, reset it once more (or set
+`special_item_lairs = 8` by hand), then `Custom_rules_on.bat` and restart DOSBox-X. Start a **new** game for each test.
+The quarters are the game's four key regions: lower left, upper right, lower right and upper left of the map (six
+lairs each, one key in each).
+
+- [ ] Default (`special_item_lairs = 8`): SKIPCOMBAT through all 24 lairs: the eight lairs with special items are two
+      in each quarter.
+- [ ] `special_item_lairs = 6`: one quarter-share each and two quarters with one more (1, 1, 2, 2); a few new games
+      give the extra ones to different quarters. `= 4`: one in each quarter.
+- [ ] A knight with all three potion places full wins a picked lair with a special potion, takes the gold and all
+      the game's items, and leaves the potion: the lair stays on the map. Enter it again (a fight again, no
+      experience this time): the chest still shows the potion; with a free place now, take it: then the lair leaves
+      the map.
+- [ ] The same with `special_items = chance` (set the potion chance to 100 to see it quickly): the lair stays while
+      the potion is there.
+- [ ] A lair with nothing left at all (gold, items and specials taken) leaves the map as before.
+- [ ] Computer knights (`black_knight_ai = smart`) do not walk to a lair that holds only a special item.
+
+## D141 – Switching sides with down held turns the knight (the ratmen fight's lunge)
+
+SAVEHOOK.COM only: no Setup.bat rerun. Any fight mode; the ratmen fight shows it best. (D142 changed the ratmen fight:
+up + hit is now the straight upward thrust, back + down + hit the block, down + hit the downward stab.)
+
+- [ ] Ratmen fight: hold Down, lunge to the right a few times (Right + hit), then, still holding Down, press Left and
+      hit: the knight turns and lunges to the left (not the straight upward thrust to the right).
+- [ ] The same while mashing hit during the lunge: after the lunge the knight turns left, then lunges left.
+- [ ] Standing, facing right, press Down and Left together, then hit: the block (D142; before it, in the ratmen
+      fight, the straight upward thrust), and the knight still faces right.
+- [ ] Standing, facing right, Up and Left together + hit: the dagger thrown to the right (as before).
+- [ ] Walking up the screen (Up held), press Left, wait a moment and hit: the knight turns and does the upward thrust
+      to the left (Left + hit at once: the backward thrust, D142).
+- [ ] A knight facing right, Right + Down + hit: the lunge (as before).
+
+## D142 – The ratmen fight: up + hit the straight thrust, back + down + hit the block
+
+Run Setup.bat again first (the fixed game changed). Custom rules on or off. A ratmen fight (the Great Forest; practice
+or your own save). Facing right ("back" is Left; facing left the other way round).
+
+- [ ] Up + hit: the straight upward thrust (the sword straight up), not the overhead chop. It kills a ratman lying on
+      the ground at once.
+- [ ] Up + hit against a leaping ratman: it hurts it (often kills it); up + forward + hit still kills it at once.
+- [ ] Press Down and Left together, then hit (or all three together): the block, and the knight still faces right
+      (since D145 it also stops a ratman's bite and claw).
+- [ ] Down + hit: the downward stab (as before); it kills a ratman on the ground at once.
+- [ ] Walk down the screen (Down held), then press Left and hit at once: the quick backward thrust to the left, the
+      knight still facing right (not the block).
+- [ ] The same, but wait a moment after Left before hitting: the knight turns and lunges to the left (D141).
+- [ ] Walking up the screen (Up held), Left + hit at once: the backward thrust (not the dagger).
+- [ ] Hold Down, Right + hit: the lunge (as before).
+- [ ] Other fights: back + down + hit is the block, up + hit the overhead chop, as before.
+
+## D143 – Smooth animation: in-between poses for the knight's walk
+
+Run Setup.bat first (it makes `SAVEHOOK.INB`, the in-between poses, from your own game files), then
+Custom_rules_on.bat. `[Rules] smooth_animation = 6` as in D136. The dev install `rebuilt` already has the file.
+What to judge is the look in the real game: the walk was approved from the sample page, not yet in play. The poses
+are shown one step late (your decision of 19 Nov 2026): a walking knight's picture is at most about 12 pixels behind
+where the game has it. Starting from standing, stopping and turning round have no in-between poses yet.
+
+- [ ] Start the game: the DOSBox-X window shows no new error line before the game, and the cheat codes and special
+      items still work (the file reader of `SAVEHOOK.OVL` was rewritten to serve both files).
+- [ ] Practice, a knight against the trolls (first menu, key 9): walk left and right. The legs open and close
+      smoothly between the game's poses, the standing foot stays on the ground, the head keeps its height; no
+      gliding, no bobbing, no jump of 12 pixels with every pose.
+- [ ] The same walking up, down and diagonally, and facing both ways: the body, its shadow and the sword stay together
+      (the hilt may sit a pixel or two off the hands for one picture).
+- [ ] The walk-in at a fight's start: the knights walk on to the screen smoothly and stop where they did.
+- [ ] Start walking, stop, turn round: the first step, the stop and the turn appear at once, as before; nothing slides
+      across the screen and no doubled or missing body shows for a moment.
+- [ ] Walk, then strike or block without stopping: the blow starts when you press; the knight may move up to one step
+      in that one picture (it catches up with the game's place), nothing worse.
+- [ ] Does the one-step lag feel right while walking, for example when you walk up to a troll and strike, or step
+      back from a blow? If your knight seems to be hit "from too far", say so: looking ahead is the alternative.
+- [ ] A knight duel (two players or against a Black Knight): the second knight (the other look, the game's own second
+      colours) walks as smoothly, in its own colours in every picture.
+- [ ] A co-op lair and a 3-4 player practice: every knight walks smoothly in its own colours; computer knights too.
+- [ ] Sword and armour enchantments, LIGHTSABER: a walking knight keeps its sword's and armour's colours in every
+      picture.
+- [ ] A hit while walking, a fall, a death, a thrown dagger while walking: as before; no leftover body on the screen.
+- [ ] A Potion of Speed: the knight walks as in D136 (its poses skip one, so there is no in-between pose); nothing
+      looks broken.
+- [ ] `smooth_animation = 3`, then `2`: two, then one pose in between each step; `1`: exactly the original.
+- [ ] `[Debug] draw_FPS = yes`, `draw_TPS = yes` while everyone walks (a troll fight, 4 knights): write down the two
+      numbers (about 54.6 and 9.1).
+- [ ] Move `SAVEHOOK.INB` out of the game folder and start the game: the walk looks as in D136 (in place), everything
+      else works. Put it back.
+- [ ] A DOSBox-X save state made while a knight walks, then loaded: the fight goes on normally.
+
+## D144 – Ducking a thrown dagger
+
+Custom rules on (`Custom_rules_on.bat`), `[Combat] duck_dodge = on`, `duck_window = 6` (the defaults). No Setup rerun.
+A practice fight of two or three keyboard players (first menu: Players 2 or 3), or a duel against a computer knight.
+"Down" is each player's own down key (player 1 the Down arrow, player 2 S, the third set K). The duck is the low
+pose of the ratmen fight's downward stab without the sword, three frames (about a third of a second).
+
+- [ ] The second player throws a dagger (back + up + hit) at the first, both at the same depth. Just before it
+      reaches the first knight, tap Down: the knight ducks, the dagger flies over it and on off the screen, no hit
+      points lost; the knight stands up and can act at once.
+- [ ] The same with the thrower a little higher on the screen, and again a little lower (each up to about 10 pixels
+      of depth apart, so the dagger would still hit a standing knight): the duck works in both.
+- [ ] Press Down and keep it held just before the dagger arrives: the knight ducks, then walks on down after the duck.
+- [ ] Tap Down too early (about half a second or more before the dagger arrives): the dagger hits as before.
+- [ ] Walk down the screen with Down held from long before into the dagger's path: it hits (holding down from earlier
+      is a walk, not a duck).
+- [ ] Attack (any blow), block or dodge as the dagger comes, with Down pressed too: it hits as before.
+- [ ] Does the timing feel right? Too hard or too easy to hit: `duck_window` (2-18 ticks, 18 a second) changes it.
+- [ ] A computer knight (a duel or a Black Knight): throw many daggers at it while it stands or walks. Now and then
+      (about one dagger in four) it ducks and the dagger flies over it.
+- [ ] `duck_dodge = off`: tapping Down just before the dagger arrives does not duck; the dagger hits (or misses as the
+      game's geometry decides, as before).
+- [ ] The game's own dodge (down + hit) still shows the kneeling dodge, not the duck; the ratmen fight's down + hit is
+      still the downward stab.
+- [ ] With GUNSHOT on (a fight code), the ball cannot be ducked; DAGGERFALL's daggers from the sky cannot be ducked.
+- [ ] With a joystick knight: no duck (keyboard players only).
+- [ ] With `smooth_animation = 6` (the default): the duck shows cleanly, no slide or doubled knight.
+
+## D145 – The block stops a ratman's bite and claw
+
+Run Setup.bat again first (the fixed game changed). Custom rules on or off. A ratmen fight (the Great Forest).
+
+- [ ] Face a ratman and block (back + down + hit) as it bites or claws: the knight loses no hit points, and the block
+      goes on; the ratman just finishes its blow (it is not thrown back).
+- [ ] A ratman that jumps over you and bites from behind: the block does not stop it.
+- [ ] Without a block (standing, or with the downward stab or the straight thrust) the bite and claw hurt as before.
+- [ ] Custom rules on with `timed_defence = on`: a block started just before the bite stops it; a block held for a
+      while (started long before) does not, as against the troggs. With `timed_defence = off` a held block holds.
+

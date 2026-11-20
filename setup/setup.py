@@ -35,7 +35,7 @@ MANIFEST = os.path.join(HERE, 'setup', 'gog-dos-1.json')
 GOG_GAME_ID = '1854348302'
 COMMON_FOLDERS = [r'C:\GOG Games\Moonstone', r'C:\Program Files (x86)\GOG Galaxy\Games\Moonstone',
                   r'C:\Program Files\GOG Galaxy\Games\Moonstone', r'D:\GOG Games\Moonstone']
-MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'K41', 'K42', 'K43', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76', 'D81', 'D83', 'D85', 'D90', 'D91', 'D95']
+MAIN_FIXES = ['K1', 'K2', 'K4', 'K5', 'K6', 'K11', 'K16', 'K17', 'K18', 'K19', 'K20', 'K21', 'K22', 'K23', 'K24', 'K25', 'K26', 'K27', 'K28', 'K31', 'K32', 'K33', 'K34', 'K35', 'K36', 'K37', 'K38', 'K40', 'K41', 'K42', 'K43', 'D6', 'D7', 'D9', 'D11', 'D12', 'D13', 'D14', 'D15', 'D17', 'D19', 'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D38', 'D63', 'D65', 'D67', 'D70', 'D71', 'D78', 'D73', 'D74', 'D76', 'D81', 'D83', 'D85', 'D90', 'D91', 'D95', 'D123', 'D126', 'D130', 'D131', 'D142', 'D145']
 INTR_FIXES = ['K9']
 SAMPLE_FILES = None                      # set from make_voc_rates.FILES
 
@@ -171,6 +171,8 @@ def _main(arg=None):
     install_horses(HERE)                                      # D38: KH.CEL and MH.C, read only by the fixed MAIN.EXE
     from gold_frames import install as install_gold
     install_gold(HERE)                                        # D91: TV5.PIV and MY5.CEL, read only by the fixed MAIN.EXE
+    from collide_fix import install as install_collide
+    install_collide(HERE)                                     # D131: COLLFIX.HIT, read only by the fixed MAIN.EXE
     write(os.path.join(fixed, 'INTR.EXE'), make_intr_exe(gog, INTR_FIXES))
     for name in samples:
         write(os.path.join(fixed, name), fix_rate(open(os.path.join(gog, name), 'rb').read(), os.path.basename(name)))
@@ -196,6 +198,11 @@ def _main(arg=None):
     for folder in (HERE, fixed):                              # SR4: SAVEHOOK.OVL, its overlays, beside it
         write(os.path.join(folder, 'SAVEHOOK.COM'), hook)
         write(os.path.join(folder, 'SAVEHOOK.OVL'), overlay_of(hook))
+    from walk_frames import install as install_walk
+    # D143: SAVEHOOK.INB, the in-between poses of the knight's walk, made from the copied KN1.OB and HE1.OB (read by
+    # SAVEHOOK.COM into XMS; without it the walk is drawn as the game draws it)
+    if not install_walk(HERE):
+        say("  SAVEHOOK.INB not made (KN1.OB or HE1.OB is not the game's): the walk has no in-between poses")
     if not os.path.exists(os.path.join(HERE, 'MOON.CFG')):
         write(os.path.join(HERE, 'MOON.CFG'), b'SOUND=SOUNDBLASTER\r\nYGUARD=11234\r\n')
     music_conf = os.path.join(HERE, 'music.conf')

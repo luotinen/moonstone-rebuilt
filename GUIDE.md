@@ -52,7 +52,7 @@ The dragon flies over all of them, and Black Knights roam the land hunting the q
 
 The menu has these options *(manual p. 14)*:
 
-* **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer. [Moonstone Rebuilt, D81: the value goes *1 + CPU* (the start), *2 + CPU*, *3 + CPU*, *4*, *3*, *2*, *1* (right on, left back). With *+ CPU* the knights nobody plays are computer knights, as in the original; *3*, *2* and *1* alone have no computer knights at all. The last choice is remembered; with the custom rule `computer_knights = off` only *4*, *3*, *2* and *1* are offered.]
+* **Number of players:** 1 to 4 human players. Knights without a human player are played by the computer. [Moonstone Rebuilt, D81: the value goes *1 + CPU* (the start), *2 + CPU*, *3 + CPU*, *4*, *3*, *2*, *1* (right on, left back), and round again: right after *1* comes *1 + CPU*, left from *1 + CPU* goes to *1* (D129). With *+ CPU* the knights nobody plays are computer knights, as in the original; *3*, *2* and *1* alone have no computer knights at all. The last choice is remembered; with the custom rule `computer_knights = off` only *4*, *3*, *2* and *1* are offered, also round.]
 * **Gore:** turns the bloody deaths on or off. [Moonstone Rebuilt: four values, D76: Off, Less (blood, but no fatalities or special deaths), On (the game) and More (as the ABACABB cheat code); Enter and right go to the next, left to the one before. The last choice is remembered (at first On; custom rules: `gore`); the age rating limits the choice (K16: Off or Less, K12: Off), `death_animations = off` to Less.]
 * **Practice:** two players fight each other straight away, without the map. [Moonstone Rebuilt: with 1 player chosen, you fight a Black Knight played by the computer, D11; with 3 or 4 and game controllers, everyone against everyone (Enter on Practice) or two teams (Space anywhere in the first menu), D12-D14; with 1 player the keys 1-9 start a practice against the monsters of a lair (with 2-4 players all knights together, D15) and 0 against the Black Knight, D14.]
 * **Select knight:** pick a knight and type a name, then press Enter (or fire).
@@ -97,7 +97,9 @@ A joystick works too: player 1 on the first, player 2 on the second, fire = the 
 ### Abilities
 
 Each ability goes from 1 to 5. Experience, Math the Wizard and Mythral the Mystic can raise it to 5 at most. The
-manual does not give that limit. *(manual p. 5)*
+manual does not give that limit. *(manual p. 5)* [Rebuilt: an ability above 5 (from the Rebuilt potions or a start
+value in `custom_rules.ini`) is never raised by Math, Mythral or a computer knight's experience either; in the
+original only an ability of exactly 5 was left alone. D123, D126.]
 
 | Ability | What it does in the game |
 |---|---|
@@ -196,11 +198,34 @@ Terrain slows the knight down *(code `1000:A901`)*:
 
 [Rebuilt, custom rules: the terrain comes from `tools/terrain_zones.csv` (`[Map] custom_terrain = on`, D110): open
 ground, forest, swamp and water, rocks (all ½ but open ground) and mountains with the map's edges (¼). The special Rings
-of Mountainwalk, Waterwalk, Forestwalk and Plainswalking change it for their wearer (D111).]
+of Mountainwalk, Waterwalk, Forestwalk and Plainswalking change it for their wearer (D111). Since D133 the zones are
+cells of 4 x 4 pixels and a knight's zone is the one under the middle of its icon (`[Map] terrain_cells = 4x4`,
+`terrain_probe = centre`; `2x2` and `feet` give the original game's 8 x 8 cells and point).]
 
 [The manual says forest, mountains and swamp also make wandering monsters more likely. The DOS version has no
 wandering monsters at all: fights happen only at lairs, against the dragon, Black Knights and other knights, and in
 the Valley.]
+
+### The map tool (Rebuilt)
+
+`Terrain_editor.bat` in the game folder opens the map tool (Python 3 with tkinter and Pillow: `py -3 -m pip install
+pillow` once). It shows your own game's map; nothing of the game's art comes with the tool.
+
+* **Zones:** pick a kind (keys 0-4), paint with the brush (B; size 1-4 with + and -) or fill a connected area (F).
+  *Cells* 4x4 paints single 4 x 4 pixel cells, 2x2 the original game's 8 x 8 blocks. Right click picks up the kind
+  under the pointer; Ctrl+Z undoes. The yellow line is the edge the knights cannot pass (x 310, y 190).
+* **Places:** the *Move* tool (V) drags the home villages 1-4 (their knights' starts S1-S4 come along), the towns and
+  places HW, WD, SH, VY, MW, the 24 lairs and the Black Knights' starts B1-B4; the arrow keys move the chosen one a
+  pixel. A place cannot leave the map or lie on another place, nor a lair on another lair.
+* **Ctrl+S** saves `tools/terrain_zones.csv`, `tools/places.csv` and `tools/lairs.csv`; then run
+  `Custom_rules_on.bat` and restart DOSBox-X. `[Map] custom_places = off` keeps the game's own places.
+* **Your own map picture** (Map menu): import a 320 x 200 picture (colours become the nearest of the map's 32; six of
+  them are free to set, *Free colours of the palette*), export the map, the game's sprites (from your files) and a
+  painting template. `tools/map_palette.png` shows the map's 32 colours as squares: pick them with a colour dropper
+  in your paint program and the picture imports without any colour change (the six free ones are framed yellow;
+  *Export template* also writes `palette.png` with your own six). *Apply to the game* writes it as `DISKB\MAP.CMP` and `DISKC\MAP.CMP` after keeping the originals as
+  `MAP.CMP.orig`; *Restore original map* puts them back and switches the custom places and zones off.
+* **Projects** (File menu): a ZIP with the zones, places, lairs and your picture, to keep or share.
 
 ## 7. Places
 
@@ -338,6 +363,15 @@ Only a knight with all four keys can enter. Inside waits the Guardian; beat it t
 
 ## 8. Fighting
 
+[Moonstone Rebuilt, custom rules: when a campaign fight seems stuck, because for 30 seconds (`[Combat]
+fight_idle_exit`; 0 = off) no player in it has pressed a key or a joystick control and no player's knight in it has
+lost or gained hit points, "ESC LEAVES THE FIGHT" shows at the top of the screen and one press of Esc leaves the fight.
+Any key, control or hit takes the hint away and starts the 30 seconds again. Nobody wins: no loot, no experience, the
+lair keeps all its monsters, the knight keeps its wounds and its turn is over; a duel's other knight the same; the
+dragon flies off. A knight already down still loses its life, as the game would count it. A computer knight's own
+fight never offers it. Without the hint Esc does nothing in a fight, as in the original. Practice keeps its own Esc
+(it ends at once). D127, D132.]
+
 Hold fire and push a direction to attack; without fire the knight walks. The moves, for a knight facing right
 *(manual p. 15; base damage from the code, `1000:177D`)*:
 
@@ -353,6 +387,23 @@ Hold fire and push a direction to attack; without fire the knight walks. The mov
 | down | Special defence | – | the move against each monster's special attack |
 
 When the knight turns round, forward and back swap.
+
+[Moonstone Rebuilt, custom rules: **ducking a dagger.** Press down (alone, without fire) just before a thrown dagger
+reaches your knight, at most `duck_window` = 6 BIOS ticks (a third of a second) before it strikes, held or let go:
+the knight ducks for three frames and the dagger flies over it, at any depth. The knight must be standing or walking,
+not attacking, defending or staggered; down held from earlier (walking down) does not duck. Computer knights duck a
+dagger one time in four. Keyboard players only; not GUNSHOT's ball or DAGGERFALL's daggers. `[Combat] duck_dodge`,
+D144.]
+
+**Against the ratmen** the game changes moves because the ratmen are small *(not in the manual; code `1000:2329`,
+`1000:3471`)*. [Original: down + back + fire is a straight upward thrust and down + fire a downward stab into the
+ground; either kills a ratman lying on the ground at once, and up + forward kills a leaping ratman at once. There is no
+block in this fight.] [Moonstone Rebuilt: up + fire is the straight upward thrust, in place of the overhead chop (it
+kills a ratman on the ground at once and has the chop's damage against a leaping one), and down + back + fire is the
+block, as in the other fights; down + fire stays the downward stab. The block stops a ratman's bite and claw when
+the knight faces it (not from behind; the ratman finishes its blow, as a trogg); with timed defence it has to come
+in time, as against the troggs (D145). On the keyboard down + back counts only when down is pressed together with the
+back key (at most 5 ticks before it): walking with down held, back + fire is the backward thrust. D142.]
 
 **Damage** of a knight's attack *(not in the manual; `1000:2D73`)*:
 
@@ -373,14 +424,14 @@ Hit points and damage to a knight per hit, from the code *(descriptions: manual 
 
 | Monster | Where | Hit points | Damage | Notes |
 |---|---|---|---|---|
-| Spear trogg | Moors | 15 | 3 | |
+| Spear trogg | Moors | 15 | 3 | [Moonstone Rebuilt, custom rules: it waits 30 % longer between its thrusts, `spear_trogg_attack_pause`, D124.] |
 | Axe trogg | Moors, Forest | 20 | 3 | |
 | Trogg | Wastelands | 20 | 2 | |
 | War beast | Moors | 10 | 5 | the troggs' beasts |
 | Ratman | Forest | 5–12 | bite 3–8, claw 1–5 | changes with the moon, see below |
 | Mudman | Wetlands | 30 | 2 | rises out of the mud |
 | Balok | Wastelands | 30 | 5 | |
-| Troll | Wetlands | 40 | 7 | its overhead chop can kill outright |
+| Troll | Wetlands | 40 | 7 | its overhead chop can kill outright [Moonstone Rebuilt: the chop lands wherever its club comes down on the knight; in the original game its thin line of collision points could pass through gaps in the knight's picture, so at some distances, among them where the troll stops when it comes from the left, every chop missed, D131. With custom rules and `timed_defence = on`: a blow that lands before it or at the same moment stops the chop, D125.] |
 | Dragon | everywhere | 50 | 10, fire 20–30 | |
 | Guardian | Valley | 250 | 8–10 | |
 
@@ -401,6 +452,9 @@ Hit points and damage to a knight per hit, from the code *(descriptions: manual 
   * losing costs the usual life point plus two more;
   * one random ability drops by 1, but not below 1.
   * [Original: the random ability was picked with the same broken table as Math's gift. Rebuilt: fixed, K11.]
+  * [Original: an ability of exactly 5 never dropped, and none did when all three were at 5 or more. Rebuilt: any
+    ability above 1 can drop, each as likely; only a knight with all three at 1 loses none. The base drops, so a stat
+    ring's +1 does not count. D130.]
 
 ## 10. Other knights, the dragon and the Guardian
 
@@ -491,6 +545,60 @@ scroll in advance: there is a random chance each time a scroll is read *(`1000:C
 | Haste | half movement instead of double | [original: never. Custom rules: 1 read in 8] |
 | Wyrm | the dragon attacks you | [original: never. Custom rules: 1 read in 8] |
 
+### Special items: where their settings are
+
+[Moonstone Rebuilt, custom rules, D137, D139 and D140. Not in the original game.]
+
+* The special potions, rings and gems below, and the sword and armour enchantments, have all their settings in one
+  section of `custom_rules.ini`, `[Special_items]`, right after `[Treasure]`: each kind's on/off switch, its chance and
+  its own numbers.
+* `special_items` at the top of the section is the master switch, and it also chooses the way:
+  * `lairs` (the default; `on` is the same): only `special_item_lairs` of the 24 lairs (0-24, default 8) hold special
+    items, and each of them at least one. They are spread evenly over the map's four quarters, the game's four key
+    regions of six lairs each: with 8, two in each quarter; with a number that does not divide by four, each quarter
+    gets a quarter of it and the rest go one each to quarters drawn at random. In such a lair each kind is rolled at its chance; when none comes, one kind
+    is drawn, each kind once before any kind comes twice, the chances weighing the draw (a chance of 0: never). Which
+    lairs, and which kinds in them, is fixed when the game starts, so loading a save does not move them; the item
+    itself (which potion, which ring) is drawn the first time the chest is looked into. The other lairs hold no
+    special item at all. The dragon's hoard: each kind at its chance, as before.
+  * `chance`: each kind at its own chance, rolled for each lair chest and the dragon's hoard the first time it is
+    looked into. With all five at 10 % about 10 of the 24 lairs hold at least one (6 to 14 in nine games of ten).
+    An older `custom_rules.ini` without the key plays this way.
+  * `off`: none of them at all, whatever the switches below it say.
+* What the lairs way gives with all five kinds at the same chance (the hoard is the same in both ways):
+
+  | All five at | Lairs (`special_item_lairs`) | Special items in the lairs (mean) | A picked lair with 2 or more | Games with such a lair | The hoard holds one |
+  |---|---|---|---|---|---|
+  | **10 % (the default)** | **8** | **8.7** | **8 %** | 49 % | 41 % |
+  | 10 % | 3 | 3.3 | 8 % | 22 % | 41 % |
+  | 10 % | 6 | 6.5 | 8 % | 40 % | 41 % |
+  | 10 % | 10 | 10.9 | 8 % | 57 % | 41 % |
+  | 10 % | 24 | 26.2 | 8 % | 87 % | 41 % |
+  | 5 % | 8 | 8.2 | 2 % | 17 % | 23 % |
+  | 20 % | 8 | 10.6 | 26 % | 91 % | 67 % |
+  | 100 % | 8 | 40 | 100 % | 100 % | 100 % |
+
+  At the defaults a game has about 9.2 special items in all (8.7 in the lairs, 0.5 in the hoard); the chance way at
+  10 % has about 12.5. Exactly the set number of lairs hold one in every game. The sword's enchantment never comes
+  where the Sword of Sharpness lies, so that lair gets one of the other kinds.
+* Which number of lairs matches the chance way:
+
+  | Chance way, all five at | Lairs with at least one (mean) | Lairs way at 10 % each, about the same |
+  |---|---|---|
+  | 3 % | 3.4 (3.6 items) | `special_item_lairs = 3` (3.3 items) |
+  | 5 % | 5.4 (6.0 items) | 5 or 6 (5.5 or 6.5 items) |
+  | 10 % | 9.8 (12.0 items) | 10 (10.9 items) |
+
+* A lair leaves the map only when its gold, the game's own items and all its special items are taken (D140, both
+  ways). A lair kept for a special item plays as any lair with something left: entering it is a fight again (no
+  experience the second time), then the chest. A special item that has not been decided yet keeps the lair too while
+  its kind is on: in the lairs way it is one that will come; in the chance way the roll waited because the looking
+  knight had no free place. The smart computer knights (`black_knight_ai = smart`) never aim at a lair that holds
+  only special items; the classic ones choose lairs as the original game does.
+* A change counts from the next new game: a saved game keeps the rules it was started with.
+* An older `custom_rules.ini` with these keys still in `[Rules]` and `[Treasure]` works as before.
+* Speedrun mode has no enchantments or special items.
+
 ### Special potions
 
 [Moonstone Rebuilt, custom rules: `rare_potions = on` (the default), D101-D105. Not in the original game.]
@@ -549,7 +657,7 @@ kind cannot be drunk while one waits.
 
 | Ring | Effect |
 |---|---|
-| Strength, Constitution, Endurance | That ability counts one higher while carried (also above 5). Math and Mythral see the real value. |
+| Strength, Constitution, Endurance | That ability counts one higher while carried, and the item screen shows it (two of a kind +2, also above 5 and 9). The bonus is on top of the base: experience, Math, Mythral and the potions raise the base as for a knight without the ring (a knight at 5 with one Ring of Strength shows 6 and may raise its base Strength as far as any knight at 5). Lose the ring and the number goes back down by exactly its +1. |
 | Regeneration | Full hit points at the end of each day (the disease stays). |
 | Luck | The first dice throw of each town visit wins; 0-9 more gold from a lair chest or the hoard (`luck_chest_gold`). |
 | Undying | Instead of dying: home with 1 life point and full hit points; the ring is used up. |
@@ -594,7 +702,7 @@ to buy it back, so the Ring of Charisma gives no buy-and-sell profit (`charisma_
 | Greed | gold, gold | For the rest of your turn the map shows each lair's gold under it (0 for a lair with only items). |
 | Keyfinding | gold, white | A screen names who holds each key (a knight, a grave, the dragon, the High Temple, a lair); the lairs holding one glow on the map until the turn ends. As the IDROPPEDMYKEY code, with no cheat codes needed. |
 | Banish Monsters | silver, gold | Aimed: fire the ball on a lair: you see its chest as with a Gem of Seeing, and its monsters are gone for the rest of the game. Any knight who enters it later (also with co-op partners) gets the chest without a fight and without the first win's experience; the lair goes from the map when it is empty, as usual. |
-| Change Places | silver, green and orange | Aimed: fire the ball on another knight: the two of you swap places, and your turn goes on from there with the movement and Haste you had left. Nothing opens by itself where you land: a lair, a town or a knight there is met only if you press fire, as after walking there. |
+| Change Places | silver, green and orange | Aimed: fire the ball on another knight: the two of you swap places, and your turn goes on from there with the movement and Haste you had left. Nothing opens by itself where you land: a lair, a town or a knight there is met only if you press fire, as after walking there. **With nobody to change places with** (no other knight alive on the map that the gem could hit: the others dead, out of the game, or hidden by Concealment or Invisibility) fire anywhere teleports you to the ball, and your turn goes on from there in the same way; never into the Valley of the Gods (fire where your knight would touch it does nothing), and fire without moving the ball does nothing. While any knight could be hit, fire away from a knight does nothing, as before. |
 | Frog | silver, green | Aimed: fire the ball on another knight: it is a frog for its next turn only (that turn is skipped), then a knight again. A knight already a frog for longer stays one for its own time. A player's knight in Spellproof armour cannot be hit: fire on it does nothing and the gem stays. |
 | Slow | silver, smoke grey | Aimed: fire the ball on another knight: the next turn it plays has a third of its movement (`slow_gem_percent`, 33 %), after Haste, the horse, Mithril and the Rings of Endurance, at least one movement point; its move bar shows the cut. A frog's skipped turn does not count: the slow turn waits for the next one it plays. The turn after is normal. |
 
@@ -602,10 +710,10 @@ to buy it back, so the Ring of Charisma gives no buy-and-sell profit (`charisma_
   Seeing, and moves without using up your movement. Fire on a lair (Banish Monsters) or with the ball on a knight
   within 8 pixels (the others: the nearest; a player's or a computer's knight, a frog too; never a dead knight, a
   grave, or one hidden by Concealment or a Potion of Invisibility; for Frog never a player's knight in Spellproof
-  armour). Fire on nothing does nothing. Space or E puts your
+  armour). Fire on nothing does nothing (Change Places with nobody to change places with: a teleport, above). Space or E puts your
   knight back and keeps the gem; so does the end of the turn. After a hit your knight is back where it stood (Change
   Places: where the other knight stood) with the movement it had left and its Haste.
-* **Settings** (`[Treasure]`): `rare_gems` (on/off), `rare_gem_chance` (0-100, 10), `slow_gem_percent` (0-100, 33:
+* **Settings** (`[Special_items]`): `rare_gems` (on/off), `rare_gem_chance` (0-100, 10), `slow_gem_percent` (0-100, 33:
   0 leaves one movement point, 100 no cut). Without XMS memory the special gems are off, as the special potions and
   rings are.
 

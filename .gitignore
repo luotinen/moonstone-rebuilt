@@ -9,6 +9,7 @@
 /MOON.CFG
 /SAVEHOOK.COM
 /SAVEHOOK.OVL
+/SAVEHOOK.INB
 /SAVEHOOK.PLY
 /PARENTAL.LCK
 /music.conf
@@ -37,6 +38,14 @@
 !/soundfonts/GeneralUser-GS.sf2
 /moonstone.map
 /moonstone.map.bak
+# The map tool (D133-D135): the places you moved, a converted older zones file, the map's originals and your
+# projects and exports stay yours
+/tools/places.csv
+/tools/lairs.csv
+/tools/terrain_zones_40x25.csv
+/DISKB/MAP.CMP.orig
+/DISKC/MAP.CMP.orig
+/mockups/
 __pycache__/
 # Setup.bat: the Python package unicorn, when Python does not have it
 /_python/

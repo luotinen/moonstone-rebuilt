@@ -42,9 +42,9 @@ it in the title bar). A loaded automatic save resumes in the wait below and writ
 MAIN.EXE may use all free memory, so SAVEHOOK keeps a small block of its own (RESERVE_PARAS) and frees it for the
 child and the speed change's CONFIG.COM (D94: with CONFIG_ROOM free, else nothing runs).
 Usage: python -I tools/make_savehook.py <output SAVEHOOK.COM>   (the normal game; rules.py builds it with rules)"""
-import sys, os, struct
+import sys, os, struct, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rules import (G_CHOP_CHEESE, G_MOVE_BAR, G_SECONDARY, G_TD, G_TD_WINDOW, G_TD_FAST, G_TD_STAGGER, G_TD_PURPLE, G_TD_BLACK, G_TD_PAUSE, G_COMPUTER, G_BK_AI, G_BK_HEAL, G_TRADE_IN, G_HORSE_SELL, G_BUY, HOOKS, FATE_HOOKS, FATE_STREAMS, GLOW_SITES, SECTIONS, SECTION_SIZE, MODES, VILLAGE, SAVE_MODES, SPAWNS,
+from rules import (G_DUCK, G_DUCK_WINDOW, G_CHOP_CHEESE, G_MOVE_BAR, G_SECONDARY, G_TD, G_TD_WINDOW, G_TD_FAST, G_TD_STAGGER, G_TD_PURPLE, G_TD_BLACK, G_TD_PAUSE, G_COMPUTER, G_BK_AI, G_BK_HEAL, G_TRADE_IN, G_HORSE_SELL, G_BUY, HOOKS, FATE_HOOKS, FATE_STREAMS, GLOW_SITES, SECTIONS, SECTION_SIZE, MODES, VILLAGE, SAVE_MODES, SPAWNS,
                    G_ARMOUR_HP, G_SWORD, G_REST, G_VILLAGE, G_MAX_LIVES, G_RING, G_COLOURS, G_HOMES, G_VILLAGE_ANY,
                    G_SAVE_MODE, G_HARDCORE, G_POINTER_XY, G_FATE, G_SELLING, G_MAX_GOLD, G_SELL, G_HOARD, HOARD_MODES, MAX_HP, hook_bytes,
                    G_PRACTICE, G_PRACTICE_FLAGS, G_TARGET_MARGIN, COOP_KNIGHT_HITS, TEAM_KNIGHT_HITS,
@@ -54,7 +54,7 @@ from rules import (G_CHOP_CHEESE, G_MOVE_BAR, G_SECONDARY, G_TD, G_TD_WINDOW, G_
                    G_HASTE_CURSE, G_WYRM_CURSE, G_INPUT_CHORD, G_INPUT_LOG, G_INPUT_RECENT, G_COOP_LAIRS, G_COOP_EXTRA, COOP_MODES,
                    G_ENCHANT, G_ENCH_CHANCE, G_ARMOUR_MOVE, G_ARM_ENCH, G_ARM_CHANCE, G_DISEASE,
                    G_HORSES, G_HORSE_L4N, G_HORSE_HP, G_HORSE_STOCK, G_HORSE_L4, HORSE_N, G_HORSE_PRICE, G_HORSE_MOVE, G_HORSE_SOFT, G_HORSE_HARD, G_HORSE_TEXT, HORSE_TEXT_SIZE,
-                   G_GORE, GORE_LEVELS, G_POTIONS, G_POT_CHANCE, G_LIFE_HP, G_CROSS, G_RINGS, G_RING_CHANCE, G_GEMS, G_GEM_CHANCE, G_SLOW, G_LUCK_GOLD, G_CHARISMA, G_CHA_MATH, SHOP, SELL_ITEMS, TEMPLE, TEMPLE_SITES, PRICE_TEXTS, TERRAIN_ROCKS,
+                   G_TZ_PROBE, G_SPAWNS, G_VALLEY, G_SMOOTH, G_DRAW_OUT, G_SPEC_MODE, G_SPEC_LAIRS, G_SPEC_W, SPEC_LAIRS, G_GORE, GORE_LEVELS, G_POTIONS, G_POT_CHANCE, G_LIFE_HP, G_CROSS, G_RINGS, G_RING_CHANCE, G_GEMS, G_GEM_CHANCE, G_SLOW, G_SPEAR_HIT, G_SAFETY, G_LUCK_GOLD, G_CHARISMA, G_CHA_MATH, SHOP, SELL_ITEMS, TEMPLE, TEMPLE_SITES, PRICE_TEXTS, TERRAIN_ROCKS,
                    table as rules_default_table)
 from patches import (SOUND_RATES, SOUND_LAST_ID, SOUND_SLICES, SOUND_RATE_SITE, OWN_SOUND_IDS, SOUND_PLAY_SITE,
                      AMIGA_FIRST_KEY, AMIGA_PER_PRESET, amiga_program, AMIGA_FIXED, LOOP_RELEASE_SITE,
@@ -111,6 +111,14 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   (0xbdfb, 'donate_fire'), (0xbe4d, 'donate_less'), (0xbe68, 'donate_more'),
                   # D91: the gold sacks' numbers centred (tavern, donation screen)
                   (0xb33e, 'gold_centre'), (0xbddb, 'gold_centre'), (0xbdf2, 'gold_centre'),
+                  # D123: Math and Mythral never pick an ability at 5 or more (the pick's test at B9EC)
+                  (0xb9ee, 'ability_pick'),
+                  # D126: Mythral's loss with no ability to lower (BBAC: int 63h + nop x3)
+                  (0xbbae, 'mythral_loss'),
+                  # D130: the Guardian's penalty draws its own ability (0FF8: call B9C2 -> int 63h + nop)
+                  (0x0ffa, 'guardian_pick'),
+                  # D145: the block stops a ratman's bite and claw (4298: cmp word [si+28h],2 -> int 63h + nop nop)
+                  (0x429a, 'ratman_block'),
                   # D76: Less (and K16): the game's own gore checks where a death is chosen, and the draw's and the
                   # scripts' for a death on the screen
                   *((site + 2, 'gore_death') for site in (0x2f89, 0x434d, 0x4446)),
@@ -237,7 +245,7 @@ MARKER_SCRIPT, MARKER_SIZE, MARKER_TYPE, MARKER_GAP = 0xfe60, 0x40, 0x14, 3
 TURN_MOVES_SITE = 0xa568                             # cheat codes: the map loop's hook (turn_moves), to come back to
 # the hooks that run most often (every piece drawn: draw, recolour; every object: update; every hit test: hit_pair;
 # every palette write: dac_write): first in the table that rules_handler searches
-HOT = ('draw', 'convert', 'recolour', 'update', 'spd_step', 'hit_pair', 'key_check', 'dac_write', 'bk_collide', 'dragon_pass')
+HOT = ('draw', 'convert', 'recolour', 'sm_tick', 'update', 'spd_step', 'hit_pair', 'key_check', 'dac_write', 'bk_collide', 'dragon_pass')
 # D24: a key release this soon after its press (BIOS ticks; a frame is 2) waits, so every press is seen once; a fire
 # press this recent when a knight's move ends is its next attack (input_buffer); the players' keys as 1000:83C0
 # reads them (fire, then up 8, down 4, left 2, right 1): player 1 Enter and the arrows, player 2 Tab and W S A D (D9)
@@ -274,7 +282,7 @@ def _scans(name):
     return [CHEAT_LETTERS[c] for c in name]
 CHEAT_ITEM_CODES = ['IDKFA', 'KONAMI', 'HESOYAM', 'ROSEBUD', 'KLAPAUCIUS', 'MOTHERLODE', 'POINTTAKEN', 'TINMAN', 'SIRLOIN', 'HEADSROLL', 'WYRMPROOF', 'MINEALLMINE', 'KNIGHTRIDER', 'HASTALAVISTA', 'SPECIALDELIVERY', 'NOTTODAY', 'FLYBYKNIGHT', 'KEYMASTER', 'FULLMOONEY', 'DARKSIDE', 'COMINGSOON', 'GOINGGONE', 'FLESHWOUND', 'PEEPINGTOM', 'LIVEANDLEARN', 'SIRLIFTSALOT', 'BUILTTOLAST', 'AREWETHEREYET', 'DANUBLESS', 'PUTARINGONIT', 'MOONMAX']
 CHEAT_FIGHT_CODES = ['ROCKETMAN', 'JUSTFLESHWOUND', 'THERECANBEONLYONE', 'FAIRFIGHT', 'YOUANDWHATARMY', 'FORE', 'IDDQD', 'ABACABB', 'FINISHHIM', 'LUNAR', 'MINEFIELD', 'DARTS', 'DAGGERFALL', 'LIGHTSABER', 'BEATEMUP', 'GUNSHOT']
-CHEAT_MAP_CODES = ['WEPL', 'MOONWALK', 'HOMESICK', 'SIRNEVERTIRED', 'HEREBEDRAGONS', 'DRAGONSLAYER', 'FROGPRINCE', 'BACKFORSECONDS', 'BLACKDEATH', 'SIRWALKSALOT', 'IDROPPEDMYKEY', 'SIRPICKSALOT', 'LOADEDDICE']
+CHEAT_MAP_CODES = ['WEPL', 'MOONWALK', 'HOMESICK', 'SIRNEVERTIRED', 'HEREBEDRAGONS', 'DRAGONSLAYER', 'FROGPRINCE', 'BACKFORSECONDS', 'BLACKDEATH', 'SIRWALKSALOT', 'IDROPPEDMYKEY', 'SIRPICKSALOT', 'LOADEDDICE', 'SKIPCOMBAT']
 TAVERN_CODES = ('LOADEDDICE',)                         # D80: map codes also typed in the tavern
 ITEM_SCREEN_MAP_CODES = ('WEPL',)                      # D96: map codes also typed in the item screen (as KEYMASTER there)
 MAP_ALIASES = {'LOADEDDIE': 'LOADEDDICE'}            # D80: also accepted, as the map code they name
@@ -342,6 +350,8 @@ SCORE_Y, SCORE_WAIT, SCORE_SHADOW, SCORE_WHITE, SCORE_MAX = 2, 54, 5, 1, 99
 SCORE_FONT = ((7, 5, 5, 5, 7), (2, 6, 2, 2, 7), (7, 1, 7, 4, 7), (7, 1, 7, 1, 7), (5, 5, 7, 1, 1), (7, 4, 7, 1, 7),
               (7, 4, 7, 5, 7), (7, 1, 1, 1, 1), (7, 5, 7, 5, 7), (7, 5, 7, 1, 7), (0, 0, 7, 0, 0))   # 3 x 5: 0-9, the dash (10)
 SCORE_SPACE = 11                                     # a gap of 4 pixels
+SM_DOT = len(SCORE_FONT)                             # D136: the read-outs' decimal point, a glyph after the score's
+SCORE_FONT += ((0, 0, 0, 0, 2),)
 # D54 BEATEMUP (first menu or map, the next fight): HP bars at the top, below the score's line when the score shows
 # (BARS_Y_SCORE, else BARS_Y), BARS_H high, side by side over BARS_X..+BARS_SPAN with BARS_GAP between, drawn into
 # the background page when one changes: the computer's side (every monster and computer knight, the dragon, and
@@ -402,7 +412,6 @@ FIGHT_FLAGS = {'ROCKETMAN': CF_ROCKET, 'JUSTFLESHWOUND': CF_FLESH, 'THERECANBEON
                'IDDQD': CF_IDDQD, 'ABACABB': CF_ABACABB, 'FINISHHIM': CF_FINISH, 'LUNAR': CF_LUNAR}
 MON_LEAP_X, MON_LEAP_Z, RAT_LEAP_STEPS = 50, 25, 8  # DIRTYRAT: a leap's length and steps (the AI's: 2 a step)
 RAT_HANG_X, RAT_HANG_Z = 30, 25                      # DIRTYRAT: how near the knight it hangs from the tree
-VALLEY_X, VALLEY_Y = (145, 164), (88, 106)            # a knight at these touches the Valley's icon (measured, 1000:0653)
 # D61: the low-HP pulse of the knights in the new entries: groups of three words 32, 35, 38, 41, 44 (colour slots
 # 1, 3, 2, 4, 0, as colour_sites); a slot's group; the speeds (fight frames a step) of a group's words, the game's
 GLOW_GROUP_SLOTS = (1, 3, 2, 4, 0)
@@ -446,12 +455,17 @@ ARM_NAMES = ('Mithril', 'Adamantium', 'Danu', 'Wyrm', 'Fireproof', 'Venomproof',
 MITHRIL_END = 2                                      # D99: Mithril's movement: as this much more endurance
 A_MITHRIL, A_ADAMANT, A_DANU, A_WYRM, A_FIRE, A_VENOM, A_SPELL, A_REBIRTH, A_DAGGER = range(1, 10)
 ARM_ITEM, ARM_X, ARM_Y = 0x07, 0x1d, 0x70            # D37: an armour enchantment's item number and place on the chest's panel
-# D98: enchanted swords and armours on the item screen are drawn in violet: the item screen's palette (DS:ED46, 32
-# Amiga words) gets three new colours in its unused entries 17-19 as it opens, and the icon's pixels go through
-# ENCH_LOOK_MAP (greys and browns to the violets and 12, the dark slate; the reds, the grip's blues, black stay)
+# D98: enchanted swords and armours on the item screen are drawn in violet: the icon's pixels go through
+# ENCH_LOOK_MAP (greys and browns to the violets and 12, the dark slate; the reds, the grip's blues, black stay).
+# D119: the three violets are DAC entries VIOLET (72-74, after D31's gear entries 48-71, written with them at every
+# palette write and fade step), not the item palette's (DS:ED46) entries 17-19: those are the item screen's pointer's
+# (MI.C, its outline 19) and stay the game's ITEM_PALETTE_GAME (D98 had made the pointer violet). The special
+# potions', rings' and gems' looks use VIOLET for the same three colours
 LOOK_ENCH = 1
-ITEM_PALETTE, ENCH_LOOK_FIRST, ENCH_LOOK_RGB = 0xed46, 17, (0x0ecf, 0x0b7e, 0x0749)
-ENCH_LOOK_MAP = {1: 17, 2: 18, 3: 18, 4: 19, 5: 19, 6: 12, 8: 12, 9: 19, 10: 18, 11: 17}
+ITEM_PALETTE, ITEM_KEEP_FIRST, ENCH_LOOK_RGB = 0xed46, 17, (0x0ecf, 0x0b7e, 0x0749)   # D119: 17-19 kept the game's
+ITEM_PALETTE_GAME = (0x0fff, 0x0777, 0x0000)          # D119: the game's own words of entries 17-19 (put back as it opens)
+VIOLET = V_LIGHT, V_MID, V_DARK = 72, 73, 74          # D119: ENCH_LOOK_RGB's DAC entries (light, mid, dark)
+ENCH_LOOK_MAP = {1: V_LIGHT, 2: V_MID, 3: V_MID, 4: V_DARK, 5: V_DARK, 6: 12, 8: 12, 9: V_DARK, 10: V_MID, 11: V_LIGHT}
 # D101 special potions (docs/potions-plan-2026-11-10.md): twelve, found in lair chests and the dragon's hoard
 # (rare_potion_chance %, their own roll, decided at the first look by a knight with a free place; none in a practice).
 # A knight carries three in its potion row's places 1-3 (items POT_ITEM, +2, +4), the Potions of Healing after them in
@@ -464,10 +478,10 @@ POT_NAMES = ('Danu', 'Full Restoration', 'Might', 'Recall', 'Fire Resistance', '
 P_DANU, P_FULL, P_MIGHT, P_RECALL, P_FIRE, P_SPEED, P_INVIS, P_LEVIT, P_STR, P_END, P_CON, P_LIFE = range(1, 13)
 POT_ROLL = (P_DANU, P_FULL, P_MIGHT, P_RECALL, P_FIRE, P_SPEED, P_INVIS, P_LEVIT, P_STR, P_END, P_CON, P_LIFE)   # all twelve (D101-D104)
 POT_PIXELS = (1, 9, 10, 11, 12, 13, 14, 15)           # KH.CEL 4: the streak, the neck (dark to light), the body (dark to light)
-POT_LOOKS = {P_DANU: (1, 19, 18, 17, 18, 17, 15, 15), P_FULL: (1, 4, 2, 1, 6, 19, 13, 14), P_MIGHT: (6, 16, 6, 5, 27, 26, 7, 7),
+POT_LOOKS = {P_DANU: (1, V_DARK, V_MID, V_LIGHT, V_MID, V_LIGHT, 15, 15), P_FULL: (1, 4, 2, 1, 6, V_DARK, 13, 14), P_MIGHT: (6, 16, 6, 5, 27, 26, 7, 7),
              P_RECALL: (1, 9, 10, 11, 22, 21, 20, 20), P_FIRE: (1, 9, 10, 11, 26, 7, 24, 24), P_SPEED: (1, 9, 10, 11, 24, 10, 11, 1),
              P_INVIS: (1, 4, 2, 1, 1, 2, 5, 6), P_LEVIT: (1, 4, 2, 1, 6, 5, 2, 1), P_STR: (11, 25, 24, 11, 27, 26, 7, 7),
-             P_END: (11, 25, 24, 11, 6, 19, 13, 14), P_CON: (11, 25, 24, 11, 23, 22, 21, 21), P_LIFE: (7, 26, 7, 24, 22, 21, 20, 20)}
+             P_END: (11, 25, 24, 11, 6, V_DARK, 13, 14), P_CON: (11, 25, 24, 11, 23, 22, 21, 21), P_LIFE: (7, 26, 7, 24, 22, 21, 20, 20)}
 LOOK_POT = 2                                          # D98's look 2 (look_pot, after look 1's table)
 MODE_PERMADEATH = 0                                   # rules.MODES['permadeath']
 CROSS_GOLD = (20, 18)                                 # D107: the gold cross: the grave's pixels 2, 3 as map palette 20, 18 (look B)
@@ -501,8 +515,8 @@ RING_NAMES = ('Strength', 'Constitution', 'Endurance', 'Regeneration', 'Luck', '
  R_FOREST, R_PLAIN) = range(1, 14)
 RING_ROLL = (R_STR, R_CON, R_END, R_REGEN, R_LUCK, R_UNDYING, R_MOUNTAIN, R_WATER, R_VAMPIRE, R_SOUL, R_FOREST, R_PLAIN, R_CHARISMA)   # all thirteen (R1-R4), each as likely
 RING_PIXELS = (1, 2, 3, 7, 8, 9, 10, 11)              # KH.CEL 3: shine, band shine, shine, stone light, stone dark, band dark, band mid, band light
-_BANDS = {'silver': (1, 2, 4, 1), 'iron': (4, 5, 6, 3), 'green': (20, 21, 22, 20), 'violet': (17, 18, 19, 17)}   # light, mid, dark, shine
-_STONES = {'red': (7, 26), 'green': (20, 21), 'blue': (14, 13), 'ice': (15, 14), 'rock': (2, 4), 'lilac': (17, 18),
+_BANDS = {'silver': (1, 2, 4, 1), 'iron': (4, 5, 6, 3), 'green': (20, 21, 22, 20), 'violet': (V_LIGHT, V_MID, V_DARK, V_LIGHT)}   # light, mid, dark, shine
+_STONES = {'red': (7, 26), 'green': (20, 21), 'blue': (14, 13), 'ice': (15, 14), 'rock': (2, 4), 'lilac': (V_LIGHT, V_MID),
            'gold': (24, 25), 'forest': (20, 23), 'wheat': (11, 24)}
 def _ring_look(band, stone):
     light, mid, dark, shine = _BANDS[band]
@@ -584,10 +598,13 @@ if max(len(GEM_OF) + len(n) + 1 for n in GEM_NAMES) > GEM_TEXT_SIZE or sorted(GE
     raise ValueError('D113: a gem name too long for its text, or a gem without its look')
 ARMOUR_NAMES =((0x1b, b'Padded armour'), (0x1c, b'Chain mail'), (0x1d, b'Plate armour'), (0x1e, b'Battle armour'))
 ARM_WINDOWS, ARM_TEXTS = (0xffa2, 0xffb5), (0xffc8, 0xffe4)   # D37: free in MAIN's data: each panel's descriptor (19 bytes for its alignment), text (28)
-STONEHENGE_X, STONEHENGE_Y = 277, 143                # the map's place of Stonehenge (location 1Ah in DS:0498h's list)
+STONEHENGE_ID, PLACES_TABLE = 0x1b, 0x0498           # D138: Stonehenge is place 1Bh in the places' table DS:0498h
+STONEHENGE_X, STONEHENGE_Y = 88, 155                 # the game's own Stonehenge (sh_point's fallback without an 1Bh entry)
 ENCH_AREA = 0xfe80                                   # = KEY_TEXT: 40h for each panel
 KEY_REGIONS = ((8, 'Forest key: '), (4, 'Wasteland key: '), (2, 'Swamp key: '), (1, 'Moors key: '))   # the lair set-up's order (1E2D)
 TEMPLE_ITEMS, MAP_WALK, MAP_ANY_KEYS = 0xed96, 1, 2
+MAP_SKIP = 4                                         # D122 SKIPCOMBAT: a human knight's lair and dragon fights are skipped (won)
+LAIR_WON_AT, LAIR_CHEST_AT, DRAGON_HOARD_AT = 0x05ac, 0x05c3, 0x0d44   # D122: LairWon; the chest (past LairWon's XP); the hoard (past the dragon's XP)
 TARGET_HOLD = 24                                     # D15: a monster's updates it keeps a new knight (pick_target)
 MON_X_MIN, MON_X_MAX, MON_Z_MIN, MON_Z_MAX = 10, 300, 90, 200
 CU_STEP, CU_MAX, CU_SCROLL = 30, 4, 3                 # catchup: a level per 30 points behind, at most 4; from 3 a Scroll of Acquisition
@@ -713,17 +730,29 @@ HINT_TEXT, HINT_COLOUR, HINT_SHADOW = 'RESUME GAME: F11+L', 9, 0
 HINT_FONT = {'R': '110 101 110 101 101', 'E': '111 100 110 100 111', 'S': '011 100 010 001 110', 'U': '101 101 101 101 111',
              'M': '101 111 111 101 101', 'G': '011 100 101 101 011', 'A': '010 101 111 101 101', ':': '0 1 0 1 0',
              'F': '111 100 110 100 100', '1': '010 110 010 010 111', '+': '000 010 111 010 000', 'L': '100 100 100 100 111',
-             ' ': '00 00 00 00 00'}
+             ' ': '00 00 00 00 00',
+             'C': '011 100 100 100 011', 'V': '101 101 101 101 010', 'T': '111 010 010 010 010', 'H': '101 101 111 101 101',
+             'I': '111 010 010 010 111'}   # (C-I: D132's hint)
 HINT_ROW_BYTES = 9                                   # each of the 5 rows as 72 bits (the text is 67 wide)
-def hint_rows():
+def hint_rows(text=HINT_TEXT):
     """D71: the hint's 5 rows of pixels, left to right, as bit strings (1 = cream)."""
     rows = [''] * 5
-    for n, c in enumerate(HINT_TEXT):
+    for n, c in enumerate(text):
         for r, bits in enumerate(HINT_FONT[c].split()):
-            rows[r] += bits + ('0' if n < len(HINT_TEXT) - 1 else '')
+            rows[r] += bits + ('0' if n < len(text) - 1 else '')
     return rows
 HINT_W = len(hint_rows()[0])
 HINT_X, HINT_Y = 220 + (100 - HINT_W) // 2, 176
+# D132: the stuck fight exit's hint, in the D71 font, centred at the top of the fight's background page (AC00h, copied
+# to the screen every frame) inside the practice score's box (D56: its background kept in score_bg and put back; a
+# campaign fight has no score), in the score's colours: the fight palette's 1 (the knights' highlight, cream) with a
+# shadow of 5 (the knights' black) one pixel right and down
+SH_TEXT, SH_Y, SH_COLOUR, SH_SHADOW = 'ESC LEAVES THE FIGHT', 4, 1, 5
+SH_W = len(hint_rows(SH_TEXT)[0])
+SH_X, SH_ROW_BYTES = (320 - SH_W - 1) // 2, (SH_W + 7) // 8
+if not (SCORE_BOX_X <= SH_X and SH_X + SH_W + 1 <= SCORE_BOX_X + SCORE_BOX_W and SCORE_Y <= SH_Y
+        and SH_Y + 6 <= SCORE_Y + SCORE_BOX_H):
+    raise ValueError('D132: the hint (with its shadow) is not inside the score box it puts back')
 RSM_PATH = b'C:\\SAVEHOOK.RSM\0'                    # D71: the save slot before Resume Game picked one (CONFIG -get's output)
 def cmd_tail(text):
     """A command line for CONFIG.COM (length byte, text, CR)."""
@@ -765,6 +794,17 @@ def _gun_data():
 GUN_SRC, (GUN_SHOT, GUN_BALL, GUN_FLY, GUN_POINTS) = _gun_data()
 if GUN_AREA + len(GUN_SRC) > MINE_HITTER or GUN_AREA < 0xfe80:
     raise ValueError("D64: GUNSHOT's scripts do not fit between the hit marker's script and the mines' record")
+# D144 the duck under a thrown dagger (docs/duck-dodge-plan-2026-11-19.md, sections 9-10): its script is three frames
+# of the downward stab's (10BA) frame-3 body (KN2.OB 2 at dy 14, dx -15, flag 1; the sword piece left out), then the
+# end. gun_write copies it with GUNSHOT's data, right after it (DS:FEF2; the map's texts overwrite the area)
+DUCK_SRC = bytes.fromhex('8403' '04020e01f1ff' 'ffff')
+DUCK_AREA = GUN_AREA + len(GUN_SRC)
+if DUCK_AREA + len(DUCK_SRC) > MINE_HITTER:
+    raise ValueError("D144: the duck's script does not fit between GUNSHOT's data and the mines' record")
+DUCK_CPU_PERCENT = 25                                # a computer's knight's chance to duck a dagger (one roll a dagger)
+DUCK_ROLL = 256 * DUCK_CPU_PERCENT // 100            # against the low byte of game_random
+DUCK_MARK = 0x5e                                     # a thrown dagger's word (zeroed at the throw): the knight it was
+                                                     # judged against, | 1 when that knight ducked it (it passes over)
 DRAGON_HOARD, DRAGON_GOLD = 0x6ee8, 0x6e26 + 0x32   # K18: the dragon's 24-byte item table and its gold
 # D13: the knights drawn in the new colours: (record, its first knight-colour pixel, the game's fight palette words
 # for +20h = 1 and 3, which custom rules recolour); their pixels move up by 26: 6-8 -> 32-34, 9-11 -> 35-37
@@ -811,12 +851,61 @@ BUF_SCORE_BG = BUF_CONV + 2048                        # D56: the background unde
 BUF_MINE_BG = BUF_SCORE_BG + SCORE_BOX_W * SCORE_BOX_H   # MINEFIELD: the background under each mine
 BUF_KEY_TICK = BUF_MINE_BG + MINE_W * MINE_H * MINE_COUNT   # D24: each key's last press (BIOS tick)
 BUF_KEY_PENDING = BUF_KEY_TICK + 256                  # D24: 1 = its release is kept back
-BUF_ILOG = BUF_KEY_PENDING + 128                      # D24: input_log's entries (6 bytes each)
+BUF_TERRAIN = BUF_KEY_PENDING + 128                   # D133: the 80 x 50 terrain table, two cells a byte (installer, XMS)
+TZ_W, TZ_H = 80, 50                                   # D133: its cells of 4 x 4 pixels
+TZ_CELLS = TZ_W * TZ_H
+# D136 smooth animation: the pieces a fight tick drew, SM_E bytes each, in two lists of SM_MAX (this tick's and the
+# one before). An entry: the bank (offset, segment), x, y, the object, then bytes: the frame, SMF_ flags, recolour,
+# rc_shift, sw_shift, its step from the tick before (dx, dy) and E_AUX (1 = it continues from the tick before,
+# 2 = taken by a piece of the tick after)
+SM_E, SM_MAX = 18, 48
+SM_LIST = SM_E * SM_MAX
+E_X, E_Y, E_OBJ, E_FRAME, E_FLAGS, E_RC, E_SW, E_DX, E_DY, E_AUX = 4, 6, 8, 10, 11, 12, 14, 15, 16, 17
+SMF_SHADOW, SMF_LEFT, SMF_BG, SMF_SABER, SMF_CHAR, SMF_ORIENT = 1, 2, 4, 8, 0x10, 0x80   # (gore_pass in bits 5-6)
+BUF_SM = BUF_TERRAIN + TZ_CELLS // 2                  # D136: the two lists
+SM_SWAP = BUF_SM ^ (BUF_SM + SM_LIST)                 # ... one list's offset to the other's
+SM_FAR = 48                                           # a piece that moved more (|dx| + |dy|) is not moved in between
+SM_BACKOFF = 18                                       # ticks at one picture after the pictures made a tick late (2 s)
+SM_WINDOW = 10                                        # the read-outs count this many ticks
+SM_OUT_X, SM_OUT_Y, SM_OUT_GAP = 2, 2, 10             # the read-outs' corner, the gap between the two numbers
+SM_HOLD_SITE, SM_TICK_SITE = 0x0363, 0x036c           # the fight loop's call 5A4A (the flip) and call 98CA (the wait)
+RESTORE_PAGE, MIRROR_FRAME, TICK_TARGET = 0x5a72, 0x79bc, 0xc2f6   # the game's routines; DS: the tick's target
+TIMER_THIRD, SHADOW_SLOT = 0x7c19, 0x95e6             # DS: the timer handler's 3, 2, 1; the shadows' animation slot
+# A measuring build only (the environment variable MOONSTONE_SM_STATS set; research/smooth-animation-2026-11-19/
+# fps_measure.py reads them from a DOSBox-X save): smo_stat counts a fight's ticks, its ticks with movement, the
+# in-between pictures shown, the ticks the pictures made late, the ticks over when their own picture was due, the
+# first and last BIOS tick, then the ticks with movement by the pictures shown (0-5); and knight 1 walks to and fro
+SM_STATS = bool(os.environ.get('MOONSTONE_SM_STATS'))
+SM_STAT_WORDS = 7 + 6
+# D143 the walk's in-between poses (docs/smooth-animation-plan-2026-11-19.md, 13 and 14): SAVEHOOK.INB, made by
+# tools/walk_frames.py from the user's own KN1.OB and HE1.OB, is WK_SLOTS slots of WK_SLOT bytes. Slot 0 is the header
+# (WK_MAGIC, then the words WK_SLOT and WK_SLOTS). Slot 1 + ((look * 2 + facing) * 4 + pose) * 5 + (j - 1) is the body
+# picture j sixths of the way (j = 1-5) from walk pose `pose` (its legs frame is 3 + 2 * pose) to the next one in
+# WK_LOOP, for look 0 (KN1.OB) or 1 (HE1.OB), facing right (0) or left (1): two words (cx, cy), then a bank of one
+# frame in the game's layout (WK_BANK: 10 bytes of header, its data offset and segment written when the slot is
+# fetched; the frame's 10-byte entry; the bit planes). The picture's place when the legs piece was drawn at (xa, ya)
+# the tick before and is drawn at (xb, yb) now: x = xa + (j * (xb - xa) + (cx & 7FFFh)) // 6 - WK_BIAS, less 1 when
+# that is odd, the division left nothing and cx has WK_WHOLE (the place was an exact half: to the even pixel, as the
+# sample's rounding); y the same with cy.
+WK_SLOT, WK_LOOKS, WK_POSES, WK_STEPS = 1600, 2, 4, 5
+WK_SLOTS = 1 + WK_LOOKS * 2 * WK_POSES * WK_STEPS
+WK_MAGIC, WK_BIAS, WK_WHOLE, WK_BANK, WK_FAR = b'INB1', 128, 0x8000, 4, 40   # (WK_FAR: a legs piece that moved more has no in-between pose)
+WK_LOOP = (5, 7, 9, 3)                                # the walk's legs frames in order; a pose's torso is legs - 1
+# where the game's walk scripts draw the torso piece from the legs piece (x, y of the blits), by the legs frame:
+# facing right, facing left. The walk-in's second and third loop have pose 3's torso one pixel off in x
+WK_TORSO = {3: ((4, -55), (6, -55)), 5: ((10, -44), (4, -44)), 7: ((4, -32), (8, -32)), 9: ((9, -36), (6, -36))}
+INB_PATH = b'C:\\SAVEHOOK.INB\0'
+WK_SUM = 0x4b57                                       # the file's words add up to this (its header's ninth and tenth byte make it so)
+SMX_WALK, SMX_SKIP = 4, 8                             # E_AUX: a walker's legs piece (its slots' number in bits 4-7: (look * 2
+                                                      # + facing) * 4 + pose) and its torso piece (not drawn in between)
+KN1_SEG, HE1_SEG = 0x8937, 0x894d                     # DS: the segments of KN1.OB and HE1.OB in the knights' bank tables
+BUF_WALK = BUF_SM + 2 * SM_LIST                       # D143: the walk's in-between pose being drawn (a slot of SAVEHOOK.INB)
+BUF_ILOG = BUF_WALK + WK_SLOT                         # D24: input_log's entries (6 bytes each)
 BUF_PARAS = (BUF_ILOG + 15) // 16
 BUF_ILOG_PARAS = (BUF_ILOG + 6 * ILOG_MAX + 15) // 16
 BUF_TEST_SEG = 0x9000                                 # buf_seg before the installer runs (the Unicorn suites' block)
 BUF_LABELS = {'conv_t': BUF_CONV, 'score_bg': BUF_SCORE_BG, 'mine_bg': BUF_MINE_BG, 'key_tick': BUF_KEY_TICK,
-              'key_pending': BUF_KEY_PENDING, 'ilog': BUF_ILOG}
+              'key_pending': BUF_KEY_PENDING, 'tz_buf': BUF_TERRAIN, 'ilog': BUF_ILOG}
 
 
 def buffer_image():
@@ -832,14 +921,17 @@ def buffer_image():
 INST_TAIL = 'inst'                                    # not an overlay: the installer's tail, run in the window
 OVL_GROUPS = lambda a: [g for g in a.groups if isinstance(g, int)]
 OVL_POT, OVL_POT_FX = 3, 4                            # D101: the special potions' row, roll and clicks; their drink
-OVL_MAP = 5                                           # D103: the map potions' drink and the attack prompt's choice
+OVL_MAP = 5                                           # D103: the map potions' drink and the attack prompt's choice; D127: the
+                                                      # safety timer's leaving of a fight (safety_leave, safety_end); D132:
+                                                      # the knights it watches (safety_start) and its hint (safety_hint)
 OVL_SPEC = 6                                          # D105: the special items' shared cold code (TakeALL's move, the
                                                       # High Temple's sale, Stonehenge's offering), by kind (spec_kinds)
 SK_POT, SK_RING, SK_GEM = 0, 1, 2                     # D105: the kinds' numbers, their order in spec_kinds (D108 rings, D113 gems)
 OVL_RING = 7                                          # D108: the special rings' row, roll and clicks (kind_code; the gems' later)
 OVL_GEM, OVL_GEM_FX = 8, 9                            # D113: the special gems' row, roll and clicks (kind_code); their use on the item screen
 OVL_GEM_MAP = 10                                      # D115: the special gems' map effects (the Gem of Greed's amounts)
-OVL_CHEATS, OVL_COLD = 1, 2                        # the groups: the cheat codes' work; IDROPPEDMYKEY's screen and LOADEDDICE's throw
+OVL_WALK = 11                                         # D143: the walk's in-between poses: which knights walk (walk_match, once a tick)
+OVL_CHEATS, OVL_COLD = 1, 2                        # the groups: the cheat codes' work; IDROPPEDMYKEY's screen, LOADEDDICE's throw, BLACKDEATH's work and SKIPCOMBAT's skips (D122)
 WINDOW_MAX = 4096                                     # the largest group allowed (the window is the largest one's size)
 OVL_PATH = b'C:\\SAVEHOOK.OVL\0'
 XMS_TEST = (0x0060, 0x0000)                           # xms_entry before the installer runs (the Unicorn suites' driver)
@@ -852,9 +944,13 @@ def overlay_of(com):
     return _OVL.get(bytes(com), b'')
 
 
-def xms_test(mu, com):
+XMS_TEST_INB = 2                                      # xms_test: the handle of SAVEHOOK.INB's block
+
+
+def xms_test(mu, com, inb=b''):
     """SR4: the Unicorn suites' XMS driver: a retf at XMS_TEST, and function 0Bh (move) served in Python, a handle
-    other than 0 being com's SAVEHOOK.OVL and handle 0 a segment:offset in the machine."""
+    other than 0 being com's SAVEHOOK.OVL (D143: XMS_TEST_INB the bytes inb, SAVEHOOK.INB) and handle 0 a
+    segment:offset in the machine."""
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_AX, UC_X86_REG_BX, UC_X86_REG_DS, UC_X86_REG_SI
     ovl, at = overlay_of(com), XMS_TEST[0] * 16 + XMS_TEST[1]
@@ -865,7 +961,7 @@ def xms_test(mu, com):
         p = mu.reg_read(UC_X86_REG_DS) * 16 + mu.reg_read(UC_X86_REG_SI)
         n, sh, so, dh, do = struct.unpack('<IHIHI', bytes(mu.mem_read(p, 16)))
         lin = lambda v: (v >> 16) * 16 + (v & 0xffff)
-        data = ovl[so:so + n] if sh else bytes(mu.mem_read(lin(so), n))
+        data = inb[so:so + n] if sh == XMS_TEST_INB else ovl[so:so + n] if sh else bytes(mu.mem_read(lin(so), n))
         if dh or len(data) != n:
             raise ValueError('SR4: xms_test serves moves from the overlays only')
         mu.mem_write(lin(do), data)
@@ -939,14 +1035,16 @@ def ovl_resident(a):
             raise ValueError(f'SR4: overlay group {g} is {n} bytes, more than WINDOW_MAX ({WINDOW_MAX})')
         a.b(*u16(off), 0, 0, *u16(n), 0, 0)
         off, size = off + n, max(size, n)
-    a.ovl_size, a.ovl_win = off, max(size, len(a.groups[INST_TAIL][0]))
+    # D133: the terrain table rides after the groups (the installer moves it into the buffer block)
+    a.ovl_groups, a.ovl_size, a.ovl_win = off, off + len(a.terrain), max(size, len(a.groups[INST_TAIL][0]))
     a.label('ovl_window'); a.b(bytes(a.ovl_win))
 
 
 def ovl_install(a):
     """SR4: the installer's part (ds = cs): XMS, one block, SAVEHOOK.OVL read into the window piece by piece and
-    moved up, its length and word sum compared. Any failure: the block freed, ovl_ok = 0, and the cheat codes and the
-    special potions off (D101; everything else overlaid is reached only after a code), with a message if they were on."""
+    moved up (io_load, with the installer's data), its length and word sum compared. Any failure: the block freed,
+    ovl_ok = 0, and the cheat codes and the special potions off (D101; everything else overlaid is reached only after a code), with a message if they were on.
+    D143: then SAVEHOOK.INB the same way into a second block (wk_h), or the walk is drawn in place."""
     kb = max(1, (a.ovl_size + 1023) // 1024)
     a.b(0xb8, 0x00, 0x43, 0xcd, 0x2f, 0x3c, 0x80, 0x74, 0x03); a.near(0xe9, 'io_none')   # XMS there?
     a.b(0x06, 0xb8, 0x10, 0x43, 0xcd, 0x2f)                  # push es / mov ax, 4310h / int 2Fh
@@ -954,28 +1052,25 @@ def ovl_install(a):
     a.b(0xb4, 0x09, 0xba, *u16(kb), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
     a.b(0x0b, 0xc0, 0x75, 0x03); a.near(0xe9, 'io_none')
     a.b(0x89, 0x16); a.word('xm_sh'); a.b(0x89, 0x16); a.word('xi_dh')
-    a.b(0xb8, 0x00, 0x3d, 0xba); a.word('ovl_path'); a.b(0xcd, 0x21, 0x73, 0x03); a.near(0xe9, 'io_free')   # open
-    a.b(0xa3); a.word('xi_fh')
-    a.label('io_read')
-    a.b(0x8b, 0x1e); a.word('xi_fh'); a.b(0xb4, 0x3f, 0xb9, *u16(a.ovl_win), 0xba); a.word('ovl_window')
-    a.b(0xcd, 0x21); a.short(0x72, 'io_close'); a.b(0x0b, 0xc0); a.short(0x74, 'io_eof')   # read / jc / or ax, ax / jz
-    a.b(0x40, 0x24, 0xfe, 0x01, 0x06); a.word('xi_total')    # inc ax / and al, 0FEh (even) / add [xi_total], ax
-    a.b(0xa3); a.word('xi_len'); a.b(0x8b, 0xc8, 0xd1, 0xe9, 0xbe); a.word('ovl_window'); a.b(0xfc)
-    a.label('io_sum')
-    a.b(0xad, 0x01, 0x06); a.word('xi_sum'); a.short(0xe2, 'io_sum')   # lodsw / add [xi_sum], ax / loop
-    a.b(0x8c, 0x0e); a.word('xi_sseg')                       # mov [xi_sseg], cs
-    a.b(0xb4, 0x0b, 0xbe); a.word('xi_move'); a.b(0xff, 0x1e); a.word('xms_entry')   # move up
-    a.b(0x0b, 0xc0); a.short(0x74, 'io_close')
-    a.b(0xa1); a.word('xi_len'); a.b(0x01, 0x06); a.word('xi_doff')   # the next piece's place
-    a.short(0xeb, 'io_read')
-    a.label('io_eof')
-    a.b(0x8b, 0x1e); a.word('xi_fh'); a.b(0xb4, 0x3e, 0xcd, 0x21)   # close
+    a.b(0xba); a.word('ovl_path'); a.near(0xe8, 'io_load'); a.short(0x72, 'io_free')   # mov dx, the path / call io_load / jc
     a.b(0x81, 0x3e); a.word('xi_total'); a.b(*u16(a.ovl_size)); a.short(0x75, 'io_free')
     a.b(0x81, 0x3e); a.word('xi_sum'); a.label('ovl_sum_at'); a.b(0, 0); a.short(0x75, 'io_free')   # (patched)
     a.b(0xc6, 0x06); a.word('ovl_ok'); a.b(0x01, 0xc6, 0x06); a.word('ovl_cur'); a.b(0x00)
+    # D143: SAVEHOOK.INB (the walk's in-between poses, made by Setup from the user's files) into a block of its own:
+    # its length and word sum must be right, or the block is freed and the walk is drawn in place (wk_h stays 0)
+    size = WK_SLOT * WK_SLOTS
+    a.b(0xb4, 0x09, 0xba, *u16((size + 1023) // 1024), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
+    a.b(0x0b, 0xc0); a.short(0x74, 'io_done')                # or ax, ax / jz
+    a.b(0x89, 0x16); a.word('xi_dh')                         # mov [xi_dh], dx
+    a.b(0xba); a.word('inb_path'); a.near(0xe8, 'io_load'); a.short(0x72, 'inb_free')
+    a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(size & 0xffff)); a.short(0x75, 'inb_free')
+    a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(size >> 16); a.short(0x75, 'inb_free')
+    a.b(0x81, 0x3e); a.word('xi_sum'); a.b(*u16(WK_SUM)); a.short(0x75, 'inb_free')
+    a.b(0xa1); a.word('xi_dh'); a.b(0xa3); a.word('wk_h')    # mov ax, [xi_dh] / mov [wk_h], ax
     a.short(0xeb, 'io_done')
-    a.label('io_close')
-    a.b(0x8b, 0x1e); a.word('xi_fh'); a.b(0xb4, 0x3e, 0xcd, 0x21)
+    a.label('inb_free')
+    a.b(0xb4, 0x0a, 0x8b, 0x16); a.word('xi_dh'); a.b(0xff, 0x1e); a.word('xms_entry')   # free the block
+    a.short(0xeb, 'io_done')
     a.label('io_free')
     a.b(0xb4, 0x0a, 0x8b, 0x16); a.word('xm_sh'); a.b(0xff, 0x1e); a.word('xms_entry')   # free the block
     a.label('io_none')
@@ -1017,6 +1112,16 @@ def install_tail(a):
     a.short(0xe2, 'inst_conv_bit')                           # loop
     a.b(0xfe, 0xc2); a.short(0x75, 'inst_conv')              # inc dl / jnz
     a.b(0x0e, 0x07)                                          # push cs / pop es
+    # D133: the terrain table from SAVEHOOK.OVL's tail (XMS) into the buffer block; tz_on = 1 only if it got there
+    a.label('inst_tz')
+    a.b(0x80, 0x3e); a.word('ovl_ok'); a.b(0x00); a.short(0x74, 'inst_tz_none')   # cmp byte [ovl_ok], 0 / je
+    a.b(0x83, 0x3e); a.word('inst_tzm'); a.b(0x00); a.short(0x74, 'inst_tz_none')   # cmp word [its length], 0 / je
+    a.b(0xa1); a.word('buf_seg'); a.b(0xa3); a.word('inst_tzm_seg')   # mov ax, [buf_seg] / mov [the target's segment], ax
+    a.b(0xa1); a.word('xm_sh'); a.b(0xa3); a.word('inst_tzm_sh')      # mov ax, [xm_sh] / mov [the source's handle], ax
+    a.b(0xbe); a.word('inst_tzm'); a.b(0xb4, 0x0b, 0xff, 0x1e); a.word('xms_entry')   # mov si, the move / mov ah, 0Bh / call far
+    a.b(0x0b, 0xc0); a.short(0x74, 'inst_tz_none')           # or ax, ax / jz
+    a.b(0xc6, 0x06); a.word('tz_on'); a.b(0x01)              # mov byte [tz_on], 1
+    a.label('inst_tz_none')
     a.b(0xb4, 0x48, 0xbb, RESERVE_PARAS & 0xff, RESERVE_PARAS >> 8, 0xcd, 0x21)   # mov ah,48h / mov bx,n / int 21h
     a.short(0x72, 'no_reserve')                              # jc no_reserve
     a.b(0xa3); a.word('reserve')                             # mov [reserve], ax
@@ -1035,11 +1140,45 @@ def install_tail(a):
     a.b(0xba, 0, 0, 0xb8, 0x00, 0x31, 0xcd, 0x21)            # mov dx, paras / mov ax, 3100h / int 21h   stay resident
     a.label('msg_ok'); a.b(b'SAVEHOOK: save state before every fight and turn is on.\r\n$')
     a.label('msg_no_buf'); a.b(b'SAVEHOOK: no memory for its buffers.\r\n$')
+    # D133: the XMS move of the terrain table: length, source handle and offset (patched after the build), target
+    # (handle 0) buf_seg:BUF_TERRAIN
+    a.label('inst_tzm'); a.b(*struct.pack('<I', len(a.terrain)))
+    a.label('inst_tzm_sh'); a.b(0, 0)
+    a.label('inst_tzm_off'); a.b(0, 0, 0, 0)
+    a.b(0, 0, *u16(BUF_TERRAIN)); a.label('inst_tzm_seg'); a.b(0, 0)
     a.ovl_end()
 
 
 def ovl_install_data(a):
+    # io_load (dx = a file's path, [xi_dh] = an XMS block): the file read into the window piece by piece and moved
+    # up; xi_total = its length (16 bits), xi_doff all of it, xi_sum its words' sum. CF = 1 when it failed
+    a.label('io_load')
+    a.b(0x33, 0xc0)                                          # xor ax, ax
+    for name, add in (('xi_total', 0), ('xi_sum', 0), ('xi_doff', 0), ('xi_doff', 2)):
+        a.b(0xa3); a.word(name, add)                         # mov [name], ax
+    a.b(0xb8, 0x00, 0x3d, 0xcd, 0x21); a.short(0x72, 'io_ret')   # mov ax, 3D00h / int 21h / jc   open
+    a.b(0xa3); a.word('xi_fh')
+    a.label('io_read')
+    a.b(0x8b, 0x1e); a.word('xi_fh'); a.b(0xb4, 0x3f, 0xb9, *u16(a.ovl_win), 0xba); a.word('ovl_window')
+    a.b(0xcd, 0x21); a.short(0x72, 'io_close'); a.b(0x0b, 0xc0); a.short(0x74, 'io_close')   # read / jc / or ax, ax (CF = 0) / jz   the end
+    a.b(0x40, 0x24, 0xfe, 0x01, 0x06); a.word('xi_total')    # inc ax / and al, 0FEh (even) / add [xi_total], ax
+    a.b(0xa3); a.word('xi_len'); a.b(0x8b, 0xc8, 0xd1, 0xe9, 0xbe); a.word('ovl_window'); a.b(0xfc)
+    a.label('io_sum')
+    a.b(0xad, 0x01, 0x06); a.word('xi_sum'); a.short(0xe2, 'io_sum')   # lodsw / add [xi_sum], ax / loop
+    a.b(0x8c, 0x0e); a.word('xi_sseg')                       # mov [xi_sseg], cs
+    a.b(0xb4, 0x0b, 0xbe); a.word('xi_move'); a.b(0xff, 0x1e); a.word('xms_entry')   # move up
+    a.b(0x0b, 0xc0); a.short(0x74, 'io_fail')
+    a.b(0xa1); a.word('xi_len'); a.b(0x01, 0x06); a.word('xi_doff')   # the next piece's place
+    a.b(0x83, 0x16); a.word('xi_doff', 2); a.b(0x00)         # adc word [xi_doff+2], 0
+    a.short(0xeb, 'io_read')
+    a.label('io_fail')
+    a.b(0xf9)                                                # stc
+    a.label('io_close')
+    a.b(0x9c, 0x8b, 0x1e); a.word('xi_fh'); a.b(0xb4, 0x3e, 0xcd, 0x21, 0x9d)   # pushf / mov bx, [xi_fh] / mov ah, 3Eh / int 21h / popf
+    a.label('io_ret')
+    a.b(0xc3)
     a.label('ovl_path'); a.b(OVL_PATH)
+    a.label('inb_path'); a.b(INB_PATH)                       # D143
     a.label('msg_no_ovl'); a.b(b'SAVEHOOK: no XMS, or no SAVEHOOK.OVL of this build: the cheat codes, special potions, special rings and special gems are off.\r\n$')
     a.label('xi_fh'); a.b(0, 0)
     a.label('xi_total'); a.b(0, 0)
@@ -1049,6 +1188,9 @@ def ovl_install_data(a):
     a.b(0, 0); a.word('ovl_window'); a.label('xi_sseg'); a.b(0, 0)
     a.label('xi_dh'); a.b(0, 0)
     a.label('xi_doff'); a.b(0, 0, 0, 0)
+    # D133: the terrain table's CRC-32 (not used by the code): builds that differ only in their terrain differ in
+    # SAVEHOOK.COM too, so each keeps its own SAVEHOOK.OVL (overlay_of)
+    a.label('tz_crc'); a.b(*struct.pack('<I', zlib.crc32(a.terrain)))
 
 
 def gs_buf(a):
@@ -1445,9 +1587,9 @@ def rules_code(a):
     a.b(0x80, 0xfb, 0x03)                                    # cmp bl, 3
     a.short(0x77, 'init_pos')                                # ja init_pos
     a.b(0x32, 0xff, 0xd1, 0xe3, 0xd1, 0xe3)                  # xor bh, bh / shl bx, 1 / shl bx, 1
-    a.b(0x2e, 0x8b, 0x87); a.word('spawns')                  # mov ax, cs:[bx+spawns]      the home's start corner
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SPAWNS)   # mov ax, cs:[bx+spawns]      the home's start corner (D134: the table's)
     a.b(0x89, 0x44, 0x5c)                                    # mov [si+5Ch], ax
-    a.b(0x2e, 0x8b, 0x87); a.word('spawns', 2)               # mov ax, cs:[bx+spawns+2]
+    a.b(0x2e, 0x8b, 0x87); a.word('rules_table', G_SPAWNS + 2)   # mov ax, cs:[bx+spawns+2]
     a.b(0x89, 0x44, 0x5e)                                    # mov [si+5Eh], ax
     a.label('init_pos')
     a.b(0x2e, 0x8b, 0x1e); a.word('rec4')                    # mov bx, cs:[rec4]     remember the start position
@@ -2447,6 +2589,86 @@ def rules_code(a):
     a.b(0xba, 0x00, 0x00)                                    # mov dx, 0     (replaced instruction)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
+    # ability_pick (D123, 1000:B9EE; replaces cmp byte [bx+di],5 / je B9C2 in the pick after CheckMaxAbility, di =
+    # the record, the game's bx = the ability's offset): the game takes the ability unless it is exactly 5 (then it
+    # picks again; all three at 5 or more: none, at B9CA). An ability at 5 or more is picked again too, so nothing
+    # raises one past 5 (the user's changes of 19 Nov 2026; the base byte, so rings never count): Math
+    # (WIZBestowAbility, return B969), Mythral (_bestow_done, BB77) and, since D126, the computer knights' XP level-up
+    # (KnightXP, AE49). The Guardian's penalty no longer calls this pick (D130, guardian_pick)
+    a.label('rules_ability_pick')
+    a.b(0x50, 0x8b, 0x5e, 0xfe, 0x8a, 0x01, 0x3c, 0x05)     # push ax / mov bx, [bp-2] / mov al, [bx+di] / cmp al, 5
+    a.short(0x72, 'x123_ap_end')                             # jb: taken
+    a.b(0xc7, 0x46, 0x02, 0xc2, 0xb9)                        # mov word [bp+2], B9C2h   5 or more: pick again
+    a.label('x123_ap_end')
+    a.b(0x58); a.near(0xe9, 'rules_done')                    # pop ax / jmp rules_done
+
+    # mythral_loss (D126, 1000:BBAE; replaces cmp byte [bx+di],1 / je BBF6, Mythral's loss after a donation roll
+    # against the knight, di = the record when bx is not 0): the pick gives bx = 0 when every ability is at 5 or more,
+    # and the game then lowered the byte at [di] (not an ability). Now bx = 0 goes to BBF6 as an ability of 1 does:
+    # nothing is lowered and Mythral says his powers are weak (DS:DDF0, the line the game showed there already)
+    a.label('rules_mythral_loss')
+    a.b(0x8b, 0x5e, 0xfe, 0x0b, 0xdb)                        # mov bx, [bp-2] / or bx, bx
+    a.short(0x74, 'x126_ml_none')                            # none: as an ability of 1
+    a.b(0x80, 0x39, 0x01); a.short(0x75, 'x126_ml_end')      # cmp byte [bx+di], 1 / jne: lower it (BBB1)
+    a.label('x126_ml_none')
+    a.b(0xc7, 0x46, 0x02, 0xf6, 0xbb)                        # mov word [bp+2], BBF6h   the weak-powers line
+    a.label('x126_ml_end')
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # guardian_pick (D130, 1000:0FFA; replaces call B9C2, the pick the Guardian's penalty shared with Math, Mythral
+    # and KnightXP): the user's rule of 19 Nov 2026, the Guardian may lower any ability, never below 1. The game's
+    # pick never gave an ability of exactly 5, and none when all three were at 5 or more. Now one of the abilities
+    # above 1 is drawn, each as likely (the base byte, so the stat rings never count; game_random, the game's own
+    # generator); none (bx = 0) only when all three are 1. The game then lowers it by 1 (1003, D126: bx = 0 lowers
+    # nothing, an ability of 1 never falls). No retry loop: a stuck random state cannot hang it
+    a.label('rules_guardian_pick')
+    a.b(0x50, 0x51, 0x52, 0x56, 0x8b, 0x36, 0xe8, 0x77)     # push ax cx dx si / mov si, [77E8h] (the knight)
+    a.b(0x33, 0xc9, 0xbb, 0x2e, 0x00)                        # xor cx, cx / mov bx, 2Eh (Strength)
+    a.label('x130_gp_count')
+    a.b(0x80, 0x38, 0x01); a.short(0x76, 'x130_gp_low')      # cmp byte [bx+si], 1 / jbe: not above 1
+    a.b(0x41)                                                # inc cx   one more above 1
+    a.label('x130_gp_low')
+    a.b(0x43, 0x83, 0xfb, 0x31); a.short(0x72, 'x130_gp_count')   # inc bx / cmp bx, 31h / jb: Constitution, Endurance
+    a.b(0x33, 0xdb); a.short(0xe3, 'x130_gp_set')            # xor bx, bx / jcxz: all three at 1, none
+    a.near(0xe8, 'game_random')                              # call game_random   ax (keeps bx, cx)
+    a.b(0x33, 0xd2, 0xf7, 0xf1, 0xbb, 0x2d, 0x00)            # xor dx, dx / div cx   dx = 0 .. cx - 1 / mov bx, 2Dh
+    a.label('x130_gp_find')
+    a.b(0x43, 0x80, 0x38, 0x01); a.short(0x76, 'x130_gp_find')   # inc bx / cmp byte [bx+si], 1 / jbe: skip it
+    a.b(0x4a); a.short(0x79, 'x130_gp_find')                 # dec dx / jns: not this one yet
+    a.label('x130_gp_set')
+    a.b(0x89, 0x5e, 0xfe, 0x5e, 0x5a, 0x59, 0x58)            # mov [bp-2], bx (the game's bx) / pop si dx cx ax
+    a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # ratman_block (D145, 1000:429A; replaces cmp word [si+28h],2 in the ratman's hit on a knight, 4298: si = the
+    # ratman, di = the knight; the user's decision of 20 Nov 2026, "Make the block work", the ratman left as a trogg:
+    # "Nothing, like troggs"). The game never tested a defence here (the block test 4219 is not called; its defence
+    # table would let the block stop only the claw, and give the bite to move Eh, in this fight the downward stab).
+    # Now the bite (move 2) and the claw (move 4) are stopped when the knight is alive, its move is 8 (the block) and
+    # it faces the ratman (not the same facing, as 4219: no block from behind): no damage, no disease, [783Ah] =
+    # FFFFh and on to 2D5E, the handler's end, so the block plays on; the ratman's own blow goes on unchanged. Timed
+    # defence on (custom rules): a human knight's block counts only within the trogg window (td_window_trogg, from
+    # the block's start), and then gives the fast swing as against a trogg (td_monster); out of it the blow lands in
+    # full. Otherwise the game's cmp, and on at 429C
+    a.label('rules_ratman_block')
+    a.b(0x83, 0x7d, 0x28, 0x08); a.short(0x75, 'x145_rb_game')     # cmp word [di+28h], 8 / jne   not the block
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'x145_rb_game')     # cmp word [di+38h], 0 / jle   dead
+    a.b(0x83, 0x7c, 0x28, 0x02); a.short(0x74, 'x145_rb_blow')     # cmp word [si+28h], 2 / je    the bite
+    a.b(0x83, 0x7c, 0x28, 0x04); a.short(0x75, 'x145_rb_game')     # cmp word [si+28h], 4 / jne   not the claw
+    a.label('x145_rb_blow')
+    a.b(0x50, 0x52, 0x8a, 0x45, 0x08, 0x3a, 0x44, 0x08); a.short(0x74, 'x145_rb_pop')   # push ax dx / mov al, [di+8] / cmp al, [si+8] / je: from behind
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TD); a.b(0x00); a.short(0x74, 'x145_rb_yes')   # timed defence off: the block holds
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x75, 'x145_rb_yes')       # cmp byte [di+35h], 6 / jne   not a human's knight
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x145_rb_yes')         # call knight_no / jc
+    a.b(0xd1, 0xe3); a.near(0xe8, 'td_window_trogg'); a.short(0x73, 'x145_rb_pop')   # shl bx,1 / call td_window_trogg / jnc: too late
+    a.near(0xe8, 'td_now'); a.b(0x33, 0xd2, 0x2e, 0x8a, 0x16); a.word('rules_table', G_TD_FAST); a.b(0x03, 0xc2, 0x2e, 0x89, 0x87); a.word('td_fast')   # the fast swing
+    a.label('x145_rb_yes')
+    a.b(0x5a, 0x58, 0xc7, 0x06, 0x3a, 0x78, 0xff, 0xff)            # pop dx ax / mov word [783Ah], 0FFFFh
+    a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d); a.near(0xe9, 'rules_done')   # mov word [bp+2], 2D5Eh
+    a.label('x145_rb_pop')
+    a.b(0x5a, 0x58)                                                # pop dx ax
+    a.label('x145_rb_game')
+    a.b(0x83, 0x7c, 0x28, 0x02); a.near(0xe9, 'rules_flags')       # cmp word [si+28h], 2  (replaced)
+
     # hoard_win (K18, 1000:0D25; replaces mov si,6E26h before the dragon loots the knight it beat): with
     # dragon_hoard = grows, at a 50 % chance one more magic item (rolled against DS:E365 as 1000:BA5F does; a second
     # Sword of Sharpness is rolled again) and always 0-9 gold into the hoard
@@ -2493,6 +2715,11 @@ def rules_code(a):
     a.b(0x01, 0x16, DRAGON_GOLD & 0xff, DRAGON_GOLD >> 8)    # add [6E58h], dx
     a.b(0x5e, 0x5a, 0x59, 0x58)                              # pop si dx cx ax
     a.label('win_si')
+    # D120: the dragon that beat (or robbed) a knight flies off with what it took ([0CCB0h] = 0, as the Scroll of
+    # Protection's escape): the game left it where it caught the knight, so with that knight the only one left it
+    # attacked again at the start of the knight's next turn, before a step; InitDragon (A74A) brings it back from
+    # the map's left edge with a new target at the next map
+    a.b(0xc7, 0x06, 0xb0, 0xcc, 0x00, 0x00)                  # mov word [0CCB0h], 0
     a.b(0xbe, 0x26, 0x6e)                                    # mov si, 6E26h       (replaced instruction)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
     # game_random: ax = the game's next random word, as 1000:BF62 (state DS:E22F); keeps bx, cx
@@ -2835,22 +3062,27 @@ def rules_code(a):
     # --- D81: the Players value with or without computer knights ---
     # players_step (1000:13C2; replaces add [091Eh],ax, ax = -1, 0 or 1): ply_idx steps within the choices (PLY_HUMANS;
     # with custom rules computer_knights = off only those without "+ CPU"), a new one is kept in SAVEHOOK.PLY; then
-    # [091Eh] = its humans and on at 13DD (the clamps are not needed)
+    # [091Eh] = its humans and on at 13DD (the clamps are not needed). D129: the choices are a ring, so right after
+    # the last ("1") comes the first allowed ("1 + CPU", or "4" with computer_knights = off) and left the other way
     a.label('rules_players_step')
     a.near(0xe8, 'ply_load')
     a.near(0xe8, 'ply_lock')
     a.b(0x50)                                                # push ax
     a.b(0x2e, 0x8a, 0x1e); a.word('ply_idx')                 # mov bl, cs:[ply_idx]
     a.b(0x0b, 0xc0); a.short(0x74, 'd81_ps_set')                 # or ax, ax / jz ps_set
-    a.short(0x78, 'd81_ps_left')                                 # js ps_left
-    a.b(0x80, 0xfb, PLY_LAST); a.short(0x73, 'd81_ps_set')       # cmp bl, 6 / jae ps_set
-    a.b(0xfe, 0xc3); a.short(0xeb, 'd81_ps_set')                 # inc bl / jmp ps_set
-    a.label('d81_ps_left')
-    a.b(0xb0, 0x00)                                          # mov al, 0          the first choice allowed
+    a.b(0xb0, 0x00)                                          # mov al, 0          the first choice allowed (ah keeps the sign)
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_COMPUTER); a.b(0x00); a.short(0x75, 'd81_ps_low')
     a.b(0xb0, PLY_CPU_LAST + 1)                              # mov al, 3          none with "+ CPU"
     a.label('d81_ps_low')
-    a.b(0x3a, 0xd8); a.short(0x76, 'd81_ps_set')                 # cmp bl, al / jbe ps_set
+    a.b(0x0a, 0xe4); a.short(0x78, 'd81_ps_left')                # or ah, ah / js ps_left
+    a.b(0x80, 0xfb, PLY_LAST); a.short(0x72, 'd81_ps_inc')       # cmp bl, 6 / jb ps_inc
+    a.b(0x8a, 0xd8); a.short(0xeb, 'd81_ps_set')                 # mov bl, al / jmp ps_set     D129: round to the first
+    a.label('d81_ps_inc')
+    a.b(0xfe, 0xc3); a.short(0xeb, 'd81_ps_set')                 # inc bl / jmp ps_set
+    a.label('d81_ps_left')
+    a.b(0x3a, 0xd8); a.short(0x77, 'd81_ps_dec')                 # cmp bl, al / ja ps_dec
+    a.b(0xb3, PLY_LAST); a.short(0xeb, 'd81_ps_set')             # mov bl, 6 / jmp ps_set      D129: round to the last
+    a.label('d81_ps_dec')
     a.b(0xfe, 0xcb)                                          # dec bl
     a.label('d81_ps_set')
     a.b(0x2e, 0x3a, 0x1e); a.word('ply_idx'); a.short(0x74, 'd81_ps_same')   # cmp bl, cs:[ply_idx] / je
@@ -3255,6 +3487,7 @@ def rules_code(a):
     a.near(0xe8, 'he_shared')                                # call he_shared
     a.near(0xe8, 'sword_tint')                               # call sword_tint   D31
     a.near(0xe8, 'set_gore_pass')                            # call set_gore_pass   D22
+    a.near(0xe8, 'smo_rec')                                  # D136: the piece noted for the in-between pictures
     a.b(0x50, 0x8b, 0x46, 0x02, 0x40)                        # push ax / mov ax, [bp+2] / inc ax   site + 3
     a.b(0x2e, 0xa3); a.word('call_ret')                      # mov cs:[call_ret], ax
     a.b(0x58)                                                # pop ax
@@ -3308,11 +3541,11 @@ def rules_code(a):
     a.label('swt_pop')
     a.b(0x5b, 0x58)                                          # pop bx ax
     a.b(0xc3)
-    # sword_entries (D31): the gear's entries 48-71 at the fade level cs:[level] (0-16)
+    # sword_entries (D31): the gear's entries 48-71 at the fade level cs:[level] (0-16); D119: and VIOLET's 72-74
     a.label('sword_entries')
     a.b(0x50, 0x51, 0x52, 0x56)                              # push ax cx dx si
     a.b(0xba, 0xc8, 0x03, 0xb0, SWORD_FIRST, 0xee, 0x42)     # mov dx, 3C8h / mov al, 48 / out dx, al / inc dx
-    a.b(0xbe); a.word('sword_rgb'); a.b(0xb9, 3 * GEAR_ENTRIES, 0x00)   # mov si, sword_rgb / mov cx, 72
+    a.b(0xbe); a.word('sword_rgb'); a.b(0xb9, 3 * (GEAR_ENTRIES + len(VIOLET)), 0x00)   # mov si, sword_rgb / mov cx, 81
     a.label('se_loop')
     a.b(0x2e, 0x8a, 0x04, 0x2e, 0xf6, 0x26); a.word('level')   # mov al, cs:[si] / mul byte cs:[level]
     a.b(0xd1, 0xe8, 0xd1, 0xe8, 0xd1, 0xe8, 0xd1, 0xe8, 0xee, 0x46)   # shr ax, 1 (x4) / out dx, al / inc si
@@ -4398,9 +4631,17 @@ def rules_code(a):
     gs_buf(a)                                                # SR1: key_tick, key_pending
     a.b(0x06, 0x33, 0xf6, 0x8e, 0xc6, 0x26, 0x8b, 0x16, 0x6c, 0x04, 0x07)   # push es / xor si,si / mov es,si / mov dx,es:[046Ch] / pop es
     a.b(0x0a, 0xc0); a.short(0x75, 'kh_release')             # or al, al / jnz kh_release
+    a.b(0x80, 0xfb, ESC); a.short(0x74, 'x132_kh_esc')       # D132: a press (not Esc): a player's activity
+    a.b(0x2e, 0xc6, 0x06); a.word('st_act'); a.b(0x01)
+    a.label('x132_kh_esc')
     a.near(0xe8, 'cheat_key')                                # call cheat_key   CF = 1: a cheat code's key
     a.short(0x73, 'kh_press'); a.near(0xe9, 'kh_end')        # jnc kh_press / jmp kh_end   kept from the game
     a.label('kh_press')
+    # D127: Esc that left a fight is kept from the game while it is held (on the map Esc is Game Over, K5)
+    a.b(0x80, 0xfb, ESC); a.short(0x75, 'kh_press_k')        # cmp bl, 1 / jne
+    a.b(0x2e, 0x80, 0x3e); a.word('esc_eat'); a.b(0x00); a.short(0x74, 'kh_press_k')
+    a.near(0xe9, 'kh_end')
+    a.label('kh_press_k')
     # D39: the keyboard's auto-repeat sends a held key's press again: that is no new press
     a.b(0x80, 0xbf, KEY_TABLE & 0xff, KEY_TABLE >> 8, 0xff); a.short(0x74, 'kp_new')   # cmp byte [bx+81E3h], 0FFh / je
     a.b(0x65, 0x80, 0xbf, *u16(BUF_KEY_PENDING), 0x00); a.short(0x74, 'kp_held')   # cmp byte gs:[bx+key_pending], 0 / je
@@ -4416,6 +4657,9 @@ def rules_code(a):
     a.near(0xe8, 'kh_buffer')                                # call kh_buffer
     a.short(0xeb, 'kh_end')                                  # jmp kh_end
     a.label('kh_release')
+    a.b(0x80, 0xfb, ESC); a.short(0x75, 'kh_release_k')      # D127: Esc let go: the next press is the game's
+    a.b(0x2e, 0xc6, 0x06); a.word('esc_eat'); a.b(0x00)
+    a.label('kh_release_k')
     a.b(0x50, 0x51, 0xb8, ILOG_KEY_UP, 0x00, 0x8a, 0xe3, 0x33, 0xc9)   # push ax cx / mov ax, kind / mov ah, bl / xor cx, cx
     a.near(0xe8, 'ilog_put'); a.b(0x59, 0x58)                # call ilog_put / pop cx ax
     a.near(0xe8, 'kh_let_go')                                # call kh_let_go
@@ -4857,6 +5101,13 @@ def rules_code(a):
     a.label('ce_pop')
     a.b(0x5f, 0x5e, 0x58)                                    # pop di si ax
     a.label('ce_test')
+    # D127: a lair fight left by Esc: no chest, no experience, the lair not marked won (on at 05CC: the map again)
+    a.b(0x2e, 0x80, 0x3e); a.word('st_fled'); a.b(0x00); a.short(0x74, 'ce_fight')
+    a.b(0x2e, 0xc6, 0x06); a.word('st_fled'); a.b(0x00)
+    a.b(0x2e, 0xc7, 0x06); a.word('coop_partner'); a.b(0x00, 0x00)   # no co-op chest
+    a.b(0xc7, 0x46, 0x02, 0xcc, 0x05)                        # mov word [bp+2], 05CCh
+    a.near(0xe9, 'rules_done')
+    a.label('ce_fight')
     a.b(0xf7, 0x06, 0x42, 0x09, 0x01, 0x00)                  # test word [0942h], 1   (replaced)
     a.near(0xe9, 'rules_flags')
 
@@ -5518,11 +5769,11 @@ def rules_code(a):
     a.label('x97_al_on')
     a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(0xae, 0xc8); a.near(0xe9, 'x97_ai_lair')
     # item_palette (1000:BFAD, mov [0ED92h],ax as the item screen opens, before its palette is faded in from DS:ED46):
-    # D98: the enchanted look's three colours into the palette's free entries 17-19 (each time: saves hold the table)
+    # D119: the palette's entries 17-19 the game's own again (D98 had written its violets there; saves hold the table)
     a.label('rules_item_palette')
     a.b(0xa3, 0x92, 0xed)                                    # (replaced)
-    for k, rgb in enumerate(ENCH_LOOK_RGB):
-        at = ITEM_PALETTE + 2 * (ENCH_LOOK_FIRST + k)
+    for k, rgb in enumerate(ITEM_PALETTE_GAME):
+        at = ITEM_PALETTE + 2 * (ITEM_KEEP_FIRST + k)
         a.b(0xc7, 0x06, at & 0xff, at >> 8, rgb & 0xff, rgb >> 8)
     a.near(0xe8, 'cha_texts')                                # D112: the price texts with the visitor's prices
     a.b(0x2e, 0xc6, 0x06); a.word('dup_armed'); a.b(0x00)    # D114: no Gem of Duplication armed as a screen opens
@@ -5584,9 +5835,24 @@ def rules_code(a):
     # arm_reborn (from lives, si = a knight that lost a fight with Rebirth): no life lost, at Stonehenge, the armour plain
     a.label('arm_reborn')
     a.near(0xe8, 'arm_clear')
-    for pos, value in ((0x5c, STONEHENGE_X), (0x5e, STONEHENGE_Y), (0x2a, STONEHENGE_X >> 3), (0x2c, STONEHENGE_Y >> 3)):
-        a.b(0xc7, 0x44, pos, value & 0xff, value >> 8)
+    a.b(0x51, 0x52); a.near(0xe8, 'sh_point')               # push cx dx / call sh_point   D138: the table's Stonehenge
+    a.b(0x89, 0x4c, 0x5c, 0x89, 0x54, 0x5e)                  # mov [si+5Ch], cx / mov [si+5Eh], dx   its place's top left
+    a.b(0xc1, 0xe9, 0x03, 0xc1, 0xea, 0x03)                  # shr cx, 3 / shr dx, 3
+    a.b(0x89, 0x4c, 0x2a, 0x89, 0x54, 0x2c, 0x5a, 0x59)      # mov [si+2Ah], cx / mov [si+2Ch], dx / pop dx cx   its cell
     a.near(0xe9, 'lives_end')
+    # sh_point (D138; ds = the game's): cx, dx = Stonehenge's x, y from the places' table DS:0498h (id, x, y; FFFFh
+    # ends it): the map tool's place with custom_places on, else the game's own; no 1Bh entry: the game's 88, 155.
+    # A knight there has its icon inside the place's box (18 x 12), as the game's entry test 0653 counts it
+    a.label('sh_point')
+    a.b(0x50, 0x56, 0xbe, *u16(PLACES_TABLE))                 # push ax si / mov si, 0498h
+    a.label('shp_loop')
+    a.b(0x8b, 0x04, 0x0b, 0xc0); a.short(0x78, 'shp_none')   # mov ax, [si] / or ax, ax / js
+    a.b(0x8b, 0x4c, 0x02, 0x8b, 0x54, 0x04, 0x83, 0xc6, 0x06)   # mov cx, [si+2] / mov dx, [si+4] / add si, 6
+    a.b(0x3d, *u16(STONEHENGE_ID)); a.short(0x75, 'shp_loop'); a.short(0xeb, 'shp_end')   # cmp ax, 1Bh / jne / jmp
+    a.label('shp_none')
+    a.b(0xb9, *u16(STONEHENGE_X), 0xba, *u16(STONEHENGE_Y))
+    a.label('shp_end')
+    a.b(0x5e, 0x58, 0xc3)                                    # pop si ax / ret
     # turn_move (1000:A6C4, mov al,[di+3Eh]): a turn's movement: endurance * 2 + 4 + the armour's value (Mithril: not
     # below 0), at least 1. Worked out here so that it is right after any change of armour or enchantment
     a.label('rules_turn_move')
@@ -6084,10 +6350,11 @@ def rules_code(a):
     a.label('x103_ht_go')
     a.b(0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'horse_of'); a.b(0x5f, 0x0a, 0xc0); a.short(0x75, 'x38_ht_on')
     # D110: on foot the game's mask is the cell without TERRAIN_ROCKS (rocks 6 -> 2): al for A91D, si as the game's
-    a.b(0x8b, 0x5e, 0xfe, 0x8a, 0x87, 0x2a, 0xc4, 0x24, 0x03, 0xbe, 0x2a, 0xc4)   # mov bx, [bp-2] / mov al, [bx+0C42Ah] / and al, 3 / mov si, 0C42Ah
+    a.b(0x8b, 0x5e, 0xfe); a.near(0xe8, 'tz_get')            # mov bx, [bp-2] / call tz_get   (D133: al = the cell)
+    a.b(0x24, 0x03, 0xbe, 0x2a, 0xc4)                        # and al, 3 / mov si, 0C42Ah
     a.b(0xc7, 0x46, 0x02, 0x1d, 0xa9); a.near(0xe9, 'rules_done')   # on at A91D (or al, al)
     a.label('x38_ht_on')
-    a.b(0x8b, 0x5e, 0xfe, 0x32, 0xe4, 0x8b, 0xf0, 0x8a, 0x87, 0x2a, 0xc4, 0x0a, 0xc0); a.short(0x74, 'x38_ht_ret')
+    a.b(0x8b, 0x5e, 0xfe, 0x32, 0xe4, 0x8b, 0xf0); a.near(0xe8, 'tz_get'); a.b(0x0a, 0xc0); a.short(0x74, 'x38_ht_ret')   # D133: tz_get
     a.b(0xff, 0x06, 0x4a, 0xcd, 0x8a, 0x1e, 0x4a, 0xcd, 0x80, 0xe3, 0x07, 0x3c, 0x03); a.short(0x74, 'x38_ht_hard')
     a.b(0x2e, 0x8a, 0x94); a.word('rules_table', G_HORSE_SOFT - 1); a.short(0xeb, 'x38_ht_rate')
     a.label('x38_ht_hard')
@@ -6097,6 +6364,41 @@ def rules_code(a):
     a.b(0xc7, 0x06, 0x4c, 0xcd, 0x01, 0x00)
     a.label('x38_ht_ret')
     a.b(0xc7, 0x46, 0x02, 0x34, 0xa9); a.near(0xe9, 'rules_done')
+    # D133: the 80 x 50 terrain (docs/terrain-80x50-plan-2026-11-19.md). tz_raw (1000:AD8B, the six shifts of ad5c's
+    # point under the icon, ax = x + 4, the game's bx = y + 10): the sums kept for tz_index, then the shifts as the game
+    a.label('rules_tz_raw')
+    a.b(0x2e, 0xa3); a.word('tz_x'); a.b(0x8b, 0x5e, 0xfe, 0x2e, 0x89, 0x1e); a.word('tz_y')   # mov cs:[tz_x], ax / mov bx, [bp-2] / mov cs:[tz_y], bx
+    a.b(0xc1, 0xe8, 0x03, 0xc1, 0xeb, 0x03, 0x89, 0x5e, 0xfe)   # shr ax, 3 / shr bx, 3 / mov [bp-2], bx
+    a.b(0xc7, 0x46, 0x02, 0x97, 0xad); a.near(0xe9, 'rules_done')   # on at AD97
+    # tz_index (1000:AD4B, mov [0CD48h], ax: ad30's old cell): that, and tz_idx = the 4 x 4 cell of the probe point:
+    # (y + 10 - probe) / 4 * 80 + (x + 4) / 4, probe = 5 for the icon's middle (terrain_probe = centre) or 0 (feet);
+    # outside the 80 x 50 cells TZ_CELLS (tz_get: mountains, as the old grid's edges)
+    a.label('rules_tz_index')
+    a.b(0xa3, 0x48, 0xcd, 0x50, 0x52)                        # mov [0CD48h], ax / push ax dx
+    a.b(0x2e, 0xa1); a.word('tz_y'); a.b(0x2e, 0x8a, 0x1e); a.word('rules_table', G_TZ_PROBE)   # mov ax, cs:[tz_y] / mov bl, cs:[probe]
+    a.b(0x32, 0xff, 0x2b, 0xc3); a.short(0x72, 'x133_ti_out')   # xor bh, bh / sub ax, bx / jb
+    a.b(0xc1, 0xe8, 0x02, 0x3d, *u16(TZ_H)); a.short(0x73, 'x133_ti_out')   # shr ax, 2 / cmp ax, 50 / jae
+    a.b(0xba, *u16(TZ_W), 0xf7, 0xe2)                        # mov dx, 80 / mul dx
+    a.b(0x2e, 0x8b, 0x1e); a.word('tz_x'); a.b(0xc1, 0xeb, 0x02, 0x83, 0xfb, TZ_W); a.short(0x73, 'x133_ti_out')   # bx = x / 4 / cmp bx, 80 / jae
+    a.b(0x03, 0xc3); a.short(0xeb, 'x133_ti_put')            # add ax, bx
+    a.label('x133_ti_out')
+    a.b(0xb8, *u16(TZ_CELLS))                                # mov ax, TZ_CELLS
+    a.label('x133_ti_put')
+    a.b(0x2e, 0xa3); a.word('tz_idx'); a.b(0x5a, 0x58); a.near(0xe9, 'rules_done')   # mov cs:[tz_idx], ax / pop dx ax
+    # tz_get (bx = the old 40 x 25 cell, [0CD48h]): al = the terrain value at the knight's cell (0-3, rocks 2 |
+    # TERRAIN_ROCKS): the 80 x 50 table's tz_idx once the installer has loaded it (tz_on), else the old grid DS:C42A
+    # at bx (no XMS or no SAVEHOOK.OVL); keeps all else
+    a.label('tz_get')
+    a.b(0x2e, 0x80, 0x3e); a.word('tz_on'); a.b(0x00); a.short(0x74, 'x133_tg_old')
+    a.b(0x53, 0x2e, 0x8b, 0x1e); a.word('tz_idx'); a.b(0x81, 0xfb, *u16(TZ_CELLS)); a.short(0x73, 'x133_tg_edge')   # push bx / mov bx, cs:[tz_idx] / cmp
+    a.b(0xd1, 0xeb); gs_buf(a); a.b(0x65, 0x8a, 0x87, *u16(BUF_TERRAIN)); a.short(0x73, 'x133_tg_even')   # shr bx, 1 / mov al, gs:[bx+table] / jnc: low nibble
+    a.b(0xc0, 0xe8, 0x04)                                    # shr al, 4
+    a.label('x133_tg_even')
+    a.b(0x24, 0x0f, 0x5b, 0xc3)                              # and al, 0Fh / pop bx / ret
+    a.label('x133_tg_edge')
+    a.b(0xb0, 0x03, 0x5b, 0xc3)                              # mov al, 3 / pop bx / ret
+    a.label('x133_tg_old')
+    a.b(0x8a, 0x87, 0x2a, 0xc4, 0xc3)                        # mov al, [bx+0C42Ah] / ret
     # move_bar (1000:A4D6, call A3C9 SHOW, D75): the movement left ([CCACh] - [CC98h], open-ground pixels, at most 320) as a
     # line centred in row MOVE_BAR_Y of the draw page [80B9h], which 5A72 has just filled from the map's clean copy at AC00h
     # (so the bar leaves nothing behind); none while the Hawk flies or lands. Then SHOW, back to the call after it (5A4A,
@@ -6130,6 +6432,7 @@ def rules_code(a):
     a.label('knight_reset')
     a.near(0xe8, 'knight_clear'); a.short(0x72, 'x106_kr_end'); a.short(0x75, 'x106_kr_end')
     a.b(0x50, 0x51, 0x57, 0x06, 0x0e, 0x07, 0xbf); a.word('lair_ench'); a.b(0xb9, 5 * (LAIR_COUNT + 1) + LAIR_COUNT + 6, 0x00, 0x32, 0xc0, 0xfc, 0xf3, 0xaa, 0x07, 0x5f, 0x59, 0x58)
+    a.near(0xe8, 'spec_pick')                                # D139: the lairs way's pick
     a.label('x106_kr_end')
     a.b(0xc3)
     a.label('knight_clear')
@@ -6146,6 +6449,161 @@ def rules_code(a):
     a.b(0x0b, 0xdb)                                          # or bx, bx: knight 1 (knight_reset: the chests too, D101: lair_potion after arm_lair, D108: lair_ring, D113: lair_gem)
     a.label('ddr_end')
     a.b(0x5f, 0x5a, 0x5b, 0xc3)
+
+    # D139 spec_pick (from knight_reset for knight 1, the tables just cleared; resident, so also without XMS): with
+    # special_items = lairs in a game (not a practice) special_item_lairs of the 24 lairs get special items, at least
+    # one each. Each holder's byte of a kind (lair_ench ... lair_gem, 25 apart, the hoard last) is written 1 (none) or
+    # left 0: the chance bytes are 100 in the lairs way, so a 0 becomes an item of its kind at the first look, drawn
+    # there as in the chance way. 1) every byte 1; 2) D140: the lairs where some kind is allowed (sp_eff) listed by
+    # quarter (the game's four key regions, lairs 0-5, 6-11, 12-17, 18-23: sp_list 6 a quarter, sp_qn their numbers);
+    # each quarter's share N / 4, the rest one more each in quarters drawn from those with a lair left above it
+    # (sp_quota, sp_ql); 3) in each quarter its share (at most its listed lairs) drawn by a partial shuffle (sp_take),
+    # each picked lair's allowed kinds rolled at their chances (G_SPEC_W); 4) none came: one kind drawn by weight,
+    # every kind once before any twice (sp_draw); 5) the hoard: each allowed kind at its chance (the Sword of Sharpness
+    # there is tested at the look, as today). Allowed: the kind's on-byte (read now: the installer clears them
+    # without XMS), its weight above 0, and not the sword in a lair where the Sword of Sharpness lies ([items+4])
+    a.label('spec_pick')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_SPEC_MODE); a.b(SPEC_LAIRS); a.short(0x74, 'x139_sp_lairs')   # cmp byte cs:[spec_mode], 2 / je
+    a.label('x139_sp_ret')
+    a.b(0xc3)
+    a.label('x139_sp_lairs')
+    a.b(0x83, 0x3e, *u16(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'x139_sp_ret')   # cmp word [0704h], 2 / je   practice
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x06, 0x0e, 0x07, 0xfc)   # push ax bx cx dx si di es / push cs / pop es / cld
+    a.b(0xbf); a.word('lair_ench'); a.b(0xb9, 5 * (LAIR_COUNT + 1), 0x00, 0xb0, 0x01, 0xf3, 0xaa)   # mov di, lair_ench / mov cx, 125 / mov al, 1 / rep stosb   (the hoard's: sp_roll)
+    a.b(0x2e, 0xc6, 0x06); a.word('sp_round'); a.b(0x00)   # mov byte cs:[sp_round], 0
+    a.b(0xbb, LAIR_COUNT, 0x00); a.near(0xe8, 'sp_eff'); a.b(0x2e, 0x88, 0x26); a.word('sp_all')   # mov bx, 24 / call sp_eff / mov cs:[sp_all], ah
+    a.b(0xbf); a.word('sp_qn'); a.b(0xb9, 0x08, 0x00, 0x32, 0xc0, 0xf3, 0xaa, 0x33, 0xdb)   # mov di, sp_qn / mov cx, 8 / xor al, al / rep stosb (sp_qn, sp_quota) / xor bx, bx
+    a.label('x140_sp_list')
+    a.near(0xe8, 'sp_eff'); a.b(0x0a, 0xe4); a.short(0x74, 'x140_sp_ln')   # call sp_eff / or ah, ah / jz   nothing allowed there
+    a.b(0x8b, 0xc3, 0xb2, 0x06, 0xf6, 0xf2, 0x32, 0xe4, 0x8b, 0xf0, 0xf6, 0xe2)   # mov ax, bx / mov dl, 6 / div dl / xor ah, ah / mov si, ax: the quarter / mul dl
+    a.b(0x2e, 0x02, 0x84); a.word('sp_qn'); a.b(0x2e, 0xfe, 0x84); a.word('sp_qn')   # add al, cs:[si+sp_qn] / inc byte cs:[si+sp_qn]
+    a.b(0x8b, 0xf8, 0x2e, 0x88, 0x9d); a.word('sp_list')   # mov di, ax / mov cs:[di+sp_list], bl: the quarter's next place
+    a.label('x140_sp_ln')
+    a.b(0x43, 0x83, 0xfb, LAIR_COUNT); a.short(0x72, 'x140_sp_list')   # inc bx / cmp bx, 24 / jb
+    a.b(0x2e, 0xa0); a.word('rules_table', G_SPEC_LAIRS); a.b(0x32, 0xe4, 0xb1, 0x04, 0xf6, 0xf1, 0x8b, 0xd8)   # mov al, cs:[spec_lairs] / xor ah, ah / mov cl, 4 / div cl / mov bx, ax: bl N / 4, bh the rest
+    a.b(0xbf); a.word('sp_quota'); a.b(0xb9, 0x04, 0x00, 0xf3, 0xaa)   # mov di, sp_quota / mov cx, 4 / rep stosb: each quarter N / 4
+    a.b(0xbf); a.word('sp_ql'); a.b(0x33, 0xf6)              # mov di, sp_ql / xor si, si
+    a.label('x140_sp_q')
+    a.b(0x2e, 0x38, 0x9c); a.word('sp_qn'); a.short(0x76, 'x140_sp_qn'); a.b(0x8b, 0xc6, 0xaa)   # cmp cs:[si+sp_qn], bl / jbe / mov ax, si / stosb: a lair left above N / 4
+    a.label('x140_sp_qn')
+    a.b(0x46, 0x83, 0xfe, 0x04); a.short(0x72, 'x140_sp_q')  # inc si / cmp si, 4 / jb
+    a.b(0x8b, 0xcf, 0x81, 0xe9); a.word('sp_ql')           # mov cx, di / sub cx, sp_ql: those quarters
+    a.label('x140_sp_rest')
+    a.b(0x0a, 0xff); a.short(0x74, 'x140_sp_qd'); a.short(0xe3, 'x140_sp_qd')   # or bh, bh / jz / jcxz
+    a.b(0xbe); a.word('sp_ql'); a.near(0xe8, 'sp_take')      # mov si, sp_ql / call sp_take: al = a quarter
+    a.b(0x32, 0xe4, 0x8b, 0xf8, 0x2e, 0xfe, 0x85); a.word('sp_quota'); a.b(0xfe, 0xcf); a.short(0xeb, 'x140_sp_rest')   # xor ah, ah / mov di, ax / inc byte cs:[di+sp_quota] / dec bh / jmp
+    a.label('x140_sp_qd')
+    a.b(0x33, 0xc0)                                          # xor ax, ax: quarter 0
+    a.label('x140_sp_quarter')
+    a.b(0x50, 0x8b, 0xf0, 0x2e, 0x8a, 0x94); a.word('sp_quota')   # push ax / mov si, ax / mov dl, cs:[si+sp_quota]
+    a.b(0x2e, 0x8a, 0x8c); a.word('sp_qn'); a.b(0x32, 0xed, 0x3a, 0xd1); a.short(0x76, 'x140_sp_take'); a.b(0x8a, 0xd1)   # mov cl, cs:[si+sp_qn] / xor ch, ch / cmp dl, cl / jbe / mov dl, cl
+    a.label('x140_sp_take')
+    a.b(0xb6, 0x06, 0xf6, 0xe6, 0x05); a.word('sp_list'); a.b(0x8b, 0xf0)   # mov dh, 6 / mul dh / add ax, sp_list / mov si, ax: its list
+    a.label('x140_sp_pick')
+    a.b(0x0a, 0xd2); a.short(0x74, 'x140_sp_next')           # or dl, dl / jz
+    a.b(0x52); a.near(0xe8, 'sp_take'); a.b(0x8a, 0xd8, 0x32, 0xff, 0x51, 0x56)   # push dx / call sp_take / mov bl, al / xor bh, bh: the lair / push cx si
+    a.near(0xe8, 'sp_eff'); a.near(0xe8, 'sp_roll'); a.b(0x0a, 0xe4); a.short(0x75, 'x140_sp_hit')   # its weights / the rolls / or ah, ah / jnz
+    a.near(0xe8, 'sp_draw')                                  # none came: one drawn
+    a.label('x140_sp_hit')
+    a.b(0x5e, 0x59, 0x5a, 0xfe, 0xca); a.short(0xeb, 'x140_sp_pick')   # pop si cx dx / dec dl / jmp
+    a.label('x140_sp_next')
+    a.b(0x58, 0x40, 0x83, 0xf8, 0x04); a.short(0x72, 'x140_sp_quarter')   # pop ax / inc ax / cmp ax, 4 / jb
+    a.b(0xbb, LAIR_COUNT, 0x00); a.near(0xe8, 'sp_eff'); a.near(0xe8, 'sp_roll')   # mov bx, 24: the hoard's rolls
+    a.b(0x07, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)      # pop es di si dx cx bx ax / ret
+    # sp_take (D140; si = a list in cs, cx = its length, 1 or more): al = one of it at random, the list's last moved
+    # into its place, cx - 1; keeps bx, si (dx clobbered)
+    a.label('sp_take')
+    a.near(0xe8, 'sp_rand'); a.b(0x57, 0x8b, 0xfe, 0x03, 0xfa, 0x2e, 0x8a, 0x05, 0x49)   # dx = 0 to cx - 1 / push di / mov di, si / add di, dx / mov al, cs:[di] / dec cx
+    a.b(0x53, 0x8b, 0xde, 0x03, 0xd9, 0x2e, 0x8a, 0x27, 0x2e, 0x88, 0x25, 0x5b, 0x5f, 0xc3)   # push bx / mov bx, si / add bx, cx / mov ah, cs:[bx] / mov cs:[di], ah / pop bx / pop di / ret
+    # D140 lair_empty (1000:0608, or ax, ax / jne 0616 in 05DD after a lair's chest: ax = 0 when its gold and the
+    # game's 24 items are all gone, and the game takes it off the map at 060C): it stays while a special item is
+    # left in it, a kind's byte 1 + an item, or 0 (not decided yet) with the kind on (an item may still come: the
+    # lairs way's pick, or the chance way's roll that waited for a free place). In a practice as the game
+    a.label('rules_lair_empty')
+    a.b(0x0b, 0xc0); a.short(0x75, 'x140_le_keep')          # or ax, ax / jnz: gold or the game's items left
+    a.b(0x83, 0x3e, *u16(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'x140_le_gone')   # cmp word [0704h], 2 / je
+    a.b(0x50, 0x53, 0x56, 0x57); a.near(0xe8, 'lair_slot'); a.short(0x72, 'x140_le_pop0')   # push ax bx si di / bx = its byte in lair_ench
+    a.b(0x33, 0xf6)                                          # xor si, si: the kind
+    a.label('x140_le_loop')
+    a.b(0x2e, 0x8a, 0x07, 0x3c, 0x01); a.short(0x77, 'x140_le_pop1'); a.short(0x74, 'x140_le_next')   # mov al, cs:[bx] / cmp al, 1 / ja: an item / je: none
+    a.b(0x8b, 0xfe, 0xd1, 0xe7, 0x2e, 0x8b, 0xbd); a.word('sp_on'); a.b(0x2e, 0x80, 0x3d, 0x00); a.short(0x75, 'x140_le_pop1')   # 0: its on-byte (sp_on) / jne: may still come
+    a.label('x140_le_next')
+    a.b(0x83, 0xc3, LAIR_COUNT + 1, 0x46, 0x83, 0xfe, 0x05); a.short(0x72, 'x140_le_loop')   # add bx, 25 / inc si / cmp si, 5 / jb
+    a.label('x140_le_pop0')
+    a.b(0x5f, 0x5e, 0x5b, 0x58)                              # pop di si bx ax
+    a.label('x140_le_gone')
+    a.b(0xc7, 0x46, 0x02, 0x0c, 0x06); a.near(0xe9, 'rules_done')   # on at 060C: off the map (as the game)
+    a.label('x140_le_pop1')
+    a.b(0x5f, 0x5e, 0x5b, 0x58)
+    a.label('x140_le_keep')
+    a.b(0xc7, 0x46, 0x02, 0x16, 0x06); a.near(0xe9, 'rules_done')   # on at 0616: it stays
+    # sp_rand (cx = n, 1 or more): dx = game_random % n; keeps all else
+    a.label('sp_rand')
+    a.b(0x50); a.near(0xe8, 'game_random'); a.b(0x33, 0xd2, 0xf7, 0xf1, 0x58, 0xc3)   # push ax / call game_random / xor dx, dx / div cx / pop ax / ret
+    # sp_eff (bx = a holder, 0-23 a lair, 24 the hoard): cs:[sp_w + kind] = the kind's weight there (0: not allowed),
+    # ah = a bit for each kind allowed (1 sword ... 10h gem); al clobbered, keeps the rest
+    a.label('sp_eff')
+    a.b(0x51, 0x56, 0x57, 0x33, 0xf6, 0x32, 0xe4, 0xb5, 0x01)   # push cx si di / xor si, si / xor ah, ah / mov ch, 1
+    a.label('x139_se_loop')
+    a.b(0x8b, 0xfe, 0xd1, 0xe7, 0x2e, 0x8b, 0xbd); a.word('sp_on')   # mov di, si / shl di, 1 / mov di, cs:[di+sp_on]: its on-byte
+    a.b(0x2e, 0x8a, 0x84); a.word('rules_table', G_SPEC_W)  # mov al, cs:[si+spec_w]
+    a.b(0x2e, 0x80, 0x3d, 0x00); a.short(0x75, 'x139_se_on'); a.b(0x32, 0xc0)   # cmp byte cs:[di], 0 / jne / xor al, al   off
+    a.label('x139_se_on')
+    a.b(0x0b, 0xf6); a.short(0x75, 'x139_se_set')            # or si, si / jnz   not the sword
+    a.b(0x83, 0xfb, LAIR_COUNT); a.short(0x73, 'x139_se_set')   # cmp bx, 24 / jae   the hoard
+    a.b(0x50, 0x53, 0xb0, LAIR_SIZE, 0xf6, 0xe3, 0x93, 0x8b, 0x9f, *u16(LAIR_FIRST))   # push ax bx / mov al, 12h / mul bl / xchg ax, bx / mov bx, [bx+2]: its items
+    a.b(0x80, 0x7f, 0x04, 0x00, 0x5b, 0x58); a.short(0x74, 'x139_se_set'); a.b(0x32, 0xc0)   # cmp byte [bx+4], 0 / pop bx ax / je / xor al, al   the Sword of Sharpness there
+    a.label('x139_se_set')
+    a.b(0x2e, 0x88, 0x84); a.word('sp_w'); a.b(0x0a, 0xc0); a.short(0x74, 'x139_se_next'); a.b(0x0a, 0xe5)   # mov cs:[si+sp_w], al / or al, al / jz / or ah, ch
+    a.label('x139_se_next')
+    a.b(0xd0, 0xe5, 0x46, 0x83, 0xfe, 0x05); a.short(0x72, 'x139_se_loop')   # shl ch, 1 / inc si / cmp si, 5 / jb
+    a.b(0x5f, 0x5e, 0x59, 0xc3)                              # pop di si cx / ret
+    a.label('sp_on')                                         # the five kinds' on-bytes, in the tables' order
+    for at in (G_ENCHANT, G_ARM_ENCH, G_POTIONS, G_RINGS, G_GEMS):
+        a.word('rules_table', at)
+    # sp_roll (bx = a holder, sp_w its weights from sp_eff): each kind's byte 1, or 0 when its roll (0-99) is below
+    # its weight; ah = the rolls that came. Keeps bx
+    a.label('sp_roll')
+    a.b(0x8b, 0xfb, 0x81, 0xc7); a.word('lair_ench'); a.b(0x33, 0xf6, 0x32, 0xe4, 0xb9, 100, 0x00)   # mov di, bx / add di, lair_ench / xor si, si / xor ah, ah / mov cx, 100
+    a.label('x139_sr_loop')
+    a.b(0x2e, 0xc6, 0x05, 0x01, 0x2e, 0x8a, 0x84); a.word('sp_w'); a.b(0x0a, 0xc0); a.short(0x74, 'x139_sr_next')   # mov byte cs:[di], 1 / mov al, cs:[si+sp_w] / or al, al / jz
+    a.near(0xe8, 'sp_rand'); a.b(0x3a, 0xd0); a.short(0x73, 'x139_sr_next')   # dx = 0-99 / cmp dl, al / jae
+    a.b(0x2e, 0xc6, 0x05, 0x00, 0xfe, 0xc4)                  # mov byte cs:[di], 0 / inc ah
+    a.label('x139_sr_next')
+    a.b(0x83, 0xc7, LAIR_COUNT + 1, 0x46, 0x83, 0xfe, 0x05); a.short(0x72, 'x139_sr_loop')   # add di, 25 / inc si / cmp si, 5 / jb
+    a.b(0xc3)
+    # sp_draw (bx = a picked lair whose rolls all missed, sp_w its weights): one kind drawn by weight from those not
+    # yet drawn in this round (sp_round), its byte 0. None left: a new round if every kind allowed anywhere (sp_all)
+    # has come in it; else (the Sword of Sharpness lair, only the sword left) from all of this lair's kinds, the
+    # round kept. Keeps bx
+    a.label('sp_draw')
+    a.b(0x2e, 0x8a, 0x26); a.word('sp_round')               # mov ah, cs:[sp_round]: the kinds left out
+    a.label('x139_sd_try')
+    a.b(0x33, 0xc9, 0x33, 0xf6, 0xb2, 0x01)                  # xor cx, cx / xor si, si / mov dl, 1
+    a.label('x139_sd_sum')
+    a.b(0x84, 0xe2); a.short(0x75, 'x139_sd_sn')             # test dl, ah / jnz
+    a.b(0x2e, 0x8a, 0x84); a.word('sp_w'); a.b(0x02, 0xc8, 0x80, 0xd5, 0x00)   # mov al, cs:[si+sp_w] / add cl, al / adc ch, 0
+    a.label('x139_sd_sn')
+    a.b(0xd0, 0xe2, 0x46, 0x83, 0xfe, 0x05); a.short(0x72, 'x139_sd_sum')   # shl dl, 1 / inc si / cmp si, 5 / jb
+    a.short(0xe3, 'x139_sd_none')                            # jcxz: none left
+    a.near(0xe8, 'sp_rand'); a.b(0x33, 0xf6, 0xb1, 0x01)     # dx = 0 to the sum - 1 / xor si, si / mov cl, 1
+    a.label('x139_sd_walk')
+    a.b(0x84, 0xe1); a.short(0x75, 'x139_sd_wn')             # test cl, ah / jnz
+    a.b(0x2e, 0x8a, 0x84); a.word('sp_w'); a.b(0x2a, 0xd0, 0x80, 0xde, 0x00); a.short(0x72, 'x139_sd_hit')   # mov al, cs:[si+sp_w] / sub dl, al / sbb dh, 0 / jb
+    a.label('x139_sd_wn')
+    a.b(0xd0, 0xe1, 0x46); a.short(0xeb, 'x139_sd_walk')     # shl cl, 1 / inc si / jmp
+    a.label('x139_sd_hit')
+    a.b(0x2e, 0x08, 0x0e); a.word('sp_round')               # or cs:[sp_round], cl
+    a.b(0xb8, LAIR_COUNT + 1, 0x00, 0xf7, 0xe6, 0x03, 0xc3, 0x8b, 0xf8)   # mov ax, 25 / mul si / add ax, bx / mov di, ax
+    a.b(0x2e, 0xc6, 0x85); a.word('lair_ench'); a.b(0x00, 0xc3)   # mov byte cs:[di+lair_ench], 0 / ret
+    a.label('x139_sd_none')
+    a.b(0x0a, 0xe4); a.short(0x74, 'x139_sd_end')            # or ah, ah / jz   (nothing allowed here: not a picked lair)
+    a.b(0x8a, 0xc4, 0xf6, 0xd0, 0x2e, 0x22, 0x06); a.word('sp_all'); a.short(0x75, 'x139_sd_keep')   # mov al, ah / not al / and al, cs:[sp_all] / jnz
+    a.b(0x2e, 0xa2); a.word('sp_round')                     # mov cs:[sp_round], al (0): a new round
+    a.label('x139_sd_keep')
+    a.b(0x32, 0xe4); a.short(0xeb, 'x139_sd_try')            # xor ah, ah / jmp
+    a.label('x139_sd_end')
+    a.b(0xc3)
 
     # ilog_put (input_log on; al = kind, ah = knight or scan code, cl, ch = its two values): one entry, the BIOS tick
     # first, into the fight's log; keeps all registers. Also from the keyboard interrupt
@@ -6277,9 +6735,22 @@ def rules_code(a):
     a.b(0xa8, 0x10); a.short(0x75, 'ib_merge')               # test al, 10h / jnz ib_merge   fire now
     a.b(0xf6, 0xc2, 0x0f); a.short(0x74, 'ib_fire')          # test dl, 0Fh / jz ib_fire
     a.b(0x32, 0xe4, 0x8a, 0xc2)                              # xor ah, ah / mov al, dl   fire and its directions
-    a.short(0xeb, 'ib_chord')
+    a.short(0xeb, 'ib_buf_turn')
     a.label('ib_fire')
-    a.b(0x0c, 0x10); a.short(0xeb, 'ib_chord')               # or al, 10h   fire, the directions held now
+    a.b(0x0c, 0x10)                                          # or al, 10h   fire, the directions held now
+    # D141: the noted fire with a back direction pressed long after the up or down held (turn_stale): the game would
+    # have turned at this read (no fire held), so this read turns and the note waits for the next one (the attack
+    # then goes the new way: the lunge, not back + down). D142: unless the back key and the fire key were pressed
+    # within input_chord ticks of each other: back + fire, the backward thrust (ib_chord drops the up or down)
+    a.label('ib_buf_turn')
+    a.near(0xe8, 'turn_stale'); a.short(0x73, 'ib_chord')   # call turn_stale / jnc
+    a.b(0xd1, 0xe6, 0x2e, 0x8b, 0x9c); a.word('buf_tick'); a.b(0xd1, 0xee)   # shl si,1 / mov bx, cs:[si+buf_tick] / shr si,1   the fire's press
+    a.b(0x2e, 0x2b, 0x1e); a.word('stale_back')              # sub bx, cs:[stale_back]   the back key's press
+    a.b(0x79, 0x02, 0xf7, 0xdb)                              # jns / neg bx
+    a.b(0x51, 0x2e, 0x8a, 0x0e); a.word('rules_table', G_INPUT_CHORD); a.b(0x32, 0xed)   # push cx / mov cl, cs:[input_chord] / xor ch, ch
+    a.b(0x3b, 0xd9, 0x59); a.short(0x76, 'ib_chord')         # cmp bx, cx / pop cx / jbe   together: back + fire
+    a.b(0x2e, 0x88, 0x94); a.word('buf_bits'); a.b(0x24, 0x0f)   # mov cs:[si+buf_bits], dl   kept / and al, 0Fh   no fire now
+    a.short(0xeb, 'ib_chord')
     a.label('ib_merge')
     a.b(0x80, 0xe2, 0x0f)                                    # and dl, 0Fh
     a.b(0xa8, 0x03); a.short(0x74, 'ib_mh'); a.b(0x80, 0xe2, 0x0c)   # test al, 3 / jz / and dl, 0Ch
@@ -6288,6 +6759,12 @@ def rules_code(a):
     a.label('ib_mv')
     a.b(0x0a, 0xc2)                                          # or al, dl
     a.label('ib_chord')
+    # D142: fire with the back direction and an up or down key pressed long before the back key (held from before:
+    # walking, turn_stale) is back + fire, the backward thrust: the block and the dagger need the two pressed together
+    a.b(0xa8, 0x10); a.short(0x74, 'ibc_go')                 # test al, 10h / jz
+    a.near(0xe8, 'turn_stale'); a.short(0x73, 'ibc_go')      # call turn_stale / jnc
+    a.b(0x24, 0xf3)                                          # and al, 0F3h   no up or down
+    a.label('ibc_go')
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_INPUT_CHORD); a.b(0x00)   # cmp byte cs:[input_chord], 0
     a.short(0x74, 'ib_log')
     a.near(0xe8, 'knight_no'); a.short(0x72, 'ib_log')       # call knight_no / jc   (bx = 0-3)
@@ -6295,6 +6772,7 @@ def rules_code(a):
     a.b(0xb2, 0x02, 0x80, 0x7d, 0x08, 0x03); a.short(0x75, 'ich_back'); a.b(0xb2, 0x01)   # mov dl, 2 (left) / cmp [di+8], 3 / jne / mov dl, 1
     a.label('ich_back')
     a.b(0x84, 0xc2); a.short(0x74, 'ich_clear')              # test al, dl / jz   no back direction
+    # (D141 skipped the wait with up or down held from before; D142: it waits too, a fire in the window is back + fire)
     a.b(0x2e, 0x8a, 0xa7); a.word('chord_on')                # mov ah, cs:[bx+chord_on]
     a.b(0x80, 0xfc, 0x02); a.short(0x74, 'ib_log')           # cmp ah, 2 / je   waited already: it turns
     a.b(0xd1, 0xe3, 0x1e, 0x33, 0xd2, 0x8e, 0xda, 0x8b, 0x16, 0x6c, 0x04, 0x1f)   # shl bx,1 / push ds / xor dx,dx / mov ds,dx / mov dx,[046Ch] / pop ds
@@ -6355,11 +6833,15 @@ def rules_code(a):
 
     # turn_note (di = a knight that turns now): the BIOS tick and its facing before the turn, for fire_facing; only
     # with up or down held as it turns (back + up together): a turn made on its own (back alone, then an attack up
-    # the new way, as against ratmen) stays a turn
+    # the new way, as against ratmen) stays a turn. D141: so does a turn with up or down held from before it (a
+    # knight walking or lunging with down held turns to the other side and lunges there, not back + down)
     a.label('turn_note')
     a.b(0x50, 0x53, 0x52)                                    # push ax bx dx
     a.near(0xe8, 'knight_no'); a.short(0x72, 'tn_end')       # call knight_no / jc   not one of the four
-    a.b(0x8a, 0x45, 0x08, 0xf6, 0x45, 0x26, 0x0c); a.short(0x75, 'tn_up')   # mov al, [di+8] / test byte [di+26h], 0Ch / jnz   up or down held
+    a.b(0x8a, 0x45, 0x26, 0xa8, 0x0c); a.short(0x74, 'tn_none')   # mov al, [di+26h] / test al, 0Ch / jz   no up or down held
+    a.near(0xe8, 'turn_stale'); a.short(0x72, 'tn_none')     # call turn_stale / jc   D141: held from before
+    a.b(0x8a, 0x45, 0x08); a.short(0xeb, 'tn_up')            # mov al, [di+8] / jmp
+    a.label('tn_none')
     a.b(0x32, 0xc0)                                          # xor al, al   none noted
     a.label('tn_up')
     a.b(0x2e, 0x88, 0x87); a.word('turn_from')               # mov cs:[bx+turn_from], al
@@ -6367,6 +6849,42 @@ def rules_code(a):
     a.b(0x2e, 0x89, 0x87); a.word('turn_tick')               # mov cs:[bx+turn_tick], ax
     a.label('tn_end')
     a.b(0x5a, 0x5b, 0x58, 0xc3)                              # pop dx bx ax / ret
+    # turn_stale (D141; di = a knight, al = its input bits, [di+8] its facing before any turn): CF = 1 when al holds
+    # the back direction and up or down, and that up or down key was pressed more than DIR_CHORD_MAX ticks before
+    # the back key (held from before: walking or a lunge, D39's rule): the back key is a plain turn, as in the game,
+    # not part of back + up or back + down. Keyboard players only (the key presses' ticks); keeps every register
+    a.label('turn_stale')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x55)                  # push ax bx cx dx si bp
+    a.b(0xb4, 0x00, 0x80, 0x7d, 0x09, 0x02); a.short(0x74, 'tst_p')   # mov ah, 0 / cmp byte [di+9], 2 / je   player 1
+    a.b(0xb4, 0x02, 0x80, 0x7d, 0x09, 0x01); a.short(0x74, 'tst_p')   # mov ah, 2 / cmp byte [di+9], 1 / je   player 2
+    a.b(0xb4, 0x04, 0x80, 0x7d, 0x09, KEYS3_CONTROL); a.short(0x75, 'tst_no')   # mov ah, 4 / cmp byte [di+9], 7 / jne
+    a.label('tst_p')
+    a.b(0xb5, 0x02, 0x80, 0x7d, 0x08, 0x03); a.short(0x75, 'tst_b'); a.b(0xb5, 0x01)   # mov ch, 2 (left) / cmp byte [di+8], 3 / jne / mov ch, 1
+    a.label('tst_b')
+    a.b(0x84, 0xc5); a.short(0x74, 'tst_no')                 # test al, ch / jz   no back direction
+    a.b(0x8a, 0xc8, 0x80, 0xe1, 0x0c); a.short(0x74, 'tst_no')   # mov cl, al / and cl, 0Ch / jz   no up or down
+    a.b(0x0a, 0xcd, 0x33, 0xd2, 0x33, 0xed)                  # or cl, ch / xor dx, dx / xor bp, bp
+    gs_buf(a)                                                # key_tick
+    a.b(0xbe); a.word('key_dirs')                            # mov si, key_dirs
+    a.label('tst_loop')
+    a.b(0x2e, 0x8a, 0x1c, 0x0a, 0xdb); a.short(0x74, 'tst_cmp')   # mov bl, cs:[si] / or bl, bl / jz   the end
+    a.b(0x2e, 0x38, 0x64, 0x02); a.short(0x75, 'tst_next')   # cmp cs:[si+2], ah / jne   another player's
+    a.b(0x2e, 0x8a, 0x44, 0x01, 0x84, 0xc1); a.short(0x74, 'tst_next')   # mov al, cs:[si+1] / test al, cl / jz
+    a.b(0x32, 0xff, 0xd1, 0xe3, 0x65, 0x8b, 0x9f, *u16(BUF_KEY_TICK))   # xor bh, bh / shl bx, 1 / mov bx, gs:[bx+key_tick]   its press
+    a.b(0x84, 0xc5); a.short(0x74, 'tst_vert'); a.b(0x8b, 0xd3); a.short(0xeb, 'tst_next')   # test al, ch / jz / mov dx, bx (the back key) / jmp
+    a.label('tst_vert')
+    a.b(0x8b, 0xeb)                                          # mov bp, bx   the up or down key
+    a.label('tst_next')
+    a.b(0x83, 0xc6, 0x03); a.short(0xeb, 'tst_loop')         # add si, 3 / jmp
+    a.label('tst_cmp')
+    a.b(0x2e, 0x89, 0x16); a.word('stale_back')              # mov cs:[stale_back], dx   D142: the back key's press, for ib_buf_turn
+    a.b(0x2b, 0xd5, 0x83, 0xfa, DIR_CHORD_MAX); a.short(0x7f, 'tst_yes')   # sub dx, bp / cmp dx, DIR_CHORD_MAX / jg   pressed long before
+    a.label('tst_no')
+    a.b(0xf8); a.short(0xeb, 'tst_end')                      # clc / jmp
+    a.label('tst_yes')
+    a.b(0xf9)                                                # stc
+    a.label('tst_end')
+    a.b(0x5d, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)            # pop bp si dx cx bx ax / ret
     # knight_no (di = a record): bx = 0-3 for the four knights' records, CF = 1 for anything else
     a.label('knight_no')
     a.b(0x50, 0x8b, 0xc7, 0x2d, KNIGHTS[0] & 0xff, KNIGHTS[0] >> 8)   # push ax / mov ax, di / sub ax, 6C9Eh
@@ -6843,6 +7361,15 @@ def rules_code(a):
     a.b(0x2e, 0xc6, 0x06); a.word('key_show'); a.b(0x01, 0x2e, 0xc6, 0x06); a.word('keys_shown'); a.b(0x01)
     mend('IDROPPEDMYKEY')
     mcase('BLACKDEATH')                                      # the computer's knights as the B key's Black Knights
+    a.near(0xe8, 'cm_bd')                                    # D122: its work in group OVL_COLD (room for SKIPCOMBAT here)
+    mend('BLACKDEATH', RECALC)
+    mcase('SKIPCOMBAT'); a.b(0x2e, 0x80, 0x36); a.word('map_flags'); a.b(MAP_SKIP); mend('SKIPCOMBAT')   # D122: on / off
+    a.label('cm_done')
+    a.b(0x5b, 0x5f, 0x5e, 0xf8, 0xc3)                        # pop bx di si / clc / ret
+    a.ovl_end()
+    # cm_bd (BLACKDEATH's work; bp = the rules frame, ds = MAIN's data; clobbers si): the computer's knights as the
+    # B key's Black Knights
+    a.ovl_begin(OVL_COLD); a.ovl_entry('cm_bd', 'call')
     a.b(0x2e, 0xc6, 0x06); a.word('bd_on'); a.b(0x01)        # their fights: the TOOEASY rules (hard_flags)
     a.b(0x06, 0x8e, 0x46, 0x04)                              # push es / mov es, [bp+4]   MAIN's code segment
     for site, value in zip(BLACK_SITES, STRONG_BLACK):       # their fight colours black (+20h = 4)
@@ -6855,9 +7382,46 @@ def rules_code(a):
         a.b(0xc7, 0x44, 0x40, CLAYMORE, 0x00)                # the claymore (0279 arms a Sword of Sharpness it holds)
         a.b(0xc7, 0x44, 0x38, 0xe7, 0x03)                    # HP 999: 0279 brings it to the new max
         a.label(f'cm_bd_{rec:x}')
-    mend('BLACKDEATH', RECALC)
-    a.label('cm_done')
-    a.b(0x5b, 0x5f, 0x5e, 0xf8, 0xc3)                        # pop bx di si / clc / ret
+    a.b(0xc3)
+    # D122 SKIPCOMBAT (map_flags MAP_SKIP; ds = MAIN's data, bp = the rules frame). x122_skip_on: CF = 1 when a fight
+    # of the knight [77E8h] is to be skipped: cheat_codes on, the code on, not a practice, a human knight; keeps all
+    # but the flags
+    a.label('x122_skip_on')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_CHEATS); a.b(0x00); a.short(0x74, 'x122_so_no')
+    a.b(0x2e, 0xf6, 0x06); a.word('map_flags'); a.b(MAP_SKIP); a.short(0x74, 'x122_so_no')
+    a.b(0x83, 0x3e, MENU_OPTION & 0xff, MENU_OPTION >> 8, PRACTICE_OPTION); a.short(0x74, 'x122_so_no')
+    a.b(0x56, 0x8b, 0x36, 0xe8, 0x77, 0x83, 0x7c, 0x20, COMPUTER, 0x5e); a.short(0x74, 'x122_so_no')   # a computer's knight
+    a.b(0xf9, 0xc3)                                          # stc / ret
+    a.label('x122_so_no')
+    a.b(0xf8, 0xc3)                                          # clc / ret
+    # skip_lair (lair_hawk at 0581, the lair [6962h] entered, not the seeing mode, not banished): CF = 1 to skip the
+    # fight. As a won fight's end: the turn's movement used up ([0CC98h] = [0CCACh], 038D), [0942h] = 0 (all stand),
+    # the lair's monsters all beaten (+4 = 0, as 039E writes [096Ah] after a lair fight, K34); a lair not yet won gets
+    # skip_xp, so lair_loot (05B6, after LairWon's mark and the catchup loot) goes on past the first win's XP
+    # (05BB-05C2). The caller goes on at LairWon (05AC); keeps all but flags
+    a.ovl_entry('skip_lair', 'call')
+    a.near(0xe8, 'x122_skip_on'); a.short(0x73, 'x122_sl_end')
+    a.b(0x50, 0x56, 0xa1, 0xac, 0xcc, 0xa3, 0x98, 0xcc)      # push ax si / mov ax, [0CCACh] / mov [0CC98h], ax
+    a.b(0xc7, 0x06, 0x42, 0x09, 0x00, 0x00)                  # mov word [0942h], 0
+    a.b(0x8b, 0x36, 0x62, 0x69, 0xc7, 0x44, 0x04, 0x00, 0x00)   # mov si, [6962h] / mov word [si+4], 0
+    a.b(0x83, 0x7c, 0x08, 0x00); a.short(0x75, 'x122_sl_won')   # cmp word [si+8], 0 / jne
+    a.b(0x2e, 0xc6, 0x06); a.word('skip_xp'); a.b(0x01)
+    a.label('x122_sl_won')
+    a.b(0x5e, 0x58, 0xf9)                                    # pop si ax / stc
+    a.label('x122_sl_end')
+    a.b(0xc3)
+    # skip_dragon (dragon_scroll at 0D15, the dragon's fight about to begin for the human knight [0978h]): CF = 1: the
+    # fight skipped as the knight's win (0D35): the dragon dead ([6E57h] = FFh), [0942h] = 0, the turn's movement used
+    # up; on at 0D44 (the hoard, the dragon off the map, the turn's end) past the win's XP (0D40), si = the knight
+    a.ovl_entry('skip_dragon', 'call')
+    a.near(0xe8, 'x122_skip_on'); a.short(0x73, 'x122_sd_end')
+    a.b(0xc6, 0x06, (DRAGON_RECORD + 0x31) & 0xff, (DRAGON_RECORD + 0x31) >> 8, 0xff)   # mov byte [6E57h], 0FFh
+    a.b(0xc7, 0x06, 0x42, 0x09, 0x00, 0x00)                  # mov word [0942h], 0
+    a.b(0x50, 0xa1, 0xac, 0xcc, 0xa3, 0x98, 0xcc, 0x58)      # push ax / mov ax, [0CCACh] / mov [0CC98h], ax / pop ax
+    a.b(0x8b, 0x36, 0x78, 0x09)                              # mov si, [0978h]
+    a.b(0xc7, 0x46, 0x02, DRAGON_HOARD_AT & 0xff, DRAGON_HOARD_AT >> 8, 0xf9)   # mov word [bp+2], 0D44h / stc
+    a.label('x122_sd_end')
+    a.b(0xc3)
     a.ovl_end()
 
     # cheat_fight (from practice_frame, every frame of every fight): the fight codes; they stay on until typed
@@ -8051,6 +8615,9 @@ def rules_code(a):
     # that a healing potion is in it; both, 25 %
     a.label('rules_lair_loot')
     a.b(0xc7, 0x45, 0x08, 0x01, 0x00)                        # mov word [di+8], 1   (replaced)
+    a.b(0x2e, 0xd0, 0x2e); a.word('skip_xp'); a.short(0x73, 'x122_ll_xp')   # D122: shr byte cs:[skip_xp], 1 / jnc
+    a.b(0xc7, 0x46, 0x02, LAIR_CHEST_AT & 0xff, LAIR_CHEST_AT >> 8)   # a skipped fight (SKIPCOMBAT): no first-win XP
+    a.label('x122_ll_xp')
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_CATCHUP); a.b(0x00); a.short(0x75, 'll_on')
     a.near(0xe9, 'rules_done')
     a.label('ll_on')
@@ -9192,6 +9759,7 @@ def rules_code(a):
     a.near(0xe8, 'gun_write'); a.near(0xe8, 'gun_bank')      # (also one thrown before the code)
     a.b(0xc7, 0x06, 0x3a, 0x78, GUN_FLY & 0xff, GUN_FLY >> 8)   # mov word [783Ah], its flight
     a.label('dn_ngun')
+    a.near(0xe8, 'x144_dagger')                              # call x144_dagger   D144: a knight ducks it
     a.b(0x50, 0x53, 0x51, 0x57, 0x56)                        # push ax bx cx di si
     a.near(0xe8, 'd20_state')                                # call d20_state   ZF = 1: the new deaths
     a.short(0x74, 'dn_on'); a.near(0xe9, 'dn_none')          # jne dn_none
@@ -9510,6 +10078,9 @@ def rules_code(a):
     # flies off and the turn ends (113E); else the fight
     a.label('rules_dragon_scroll')
     a.b(0x2e, 0x80, 0x3e); a.word('ds_have'); a.b(0x00); a.short(0x75, 'ds_back')
+    a.near(0xe8, 'skip_dragon'); a.short(0x73, 'x122_ds_fight')   # D122 SKIPCOMBAT: the knight's win, no offer
+    a.near(0xe9, 'rules_done')
+    a.label('x122_ds_fight')
     a.b(0x2e, 0xc6, 0x06); a.word('ds_have'); a.b(0x01)
     a.b(0xa1, 0x79, 0x89, 0x2e, 0xa3); a.word('ds_old', 0)   # mov ax, [8979h] / mov cs:[ds_old], ax
     a.b(0xa1, 0x7b, 0x89, 0x2e, 0xa3); a.word('ds_old', 2)   # mov ax, [897Bh] / mov cs:[ds_old+2], ax
@@ -9532,11 +10103,12 @@ def rules_code(a):
     a.near(0xe9, 'call_game')
 
     # in_valley: si = a knight -> CF = 1 if it touches the Valley's icon (x and y measured with 1000:0653)
-    a.label('in_valley')
-    a.b(0x81, 0x7c, 0x5c, VALLEY_X[0], 0x00); a.short(0x7c, 'iv_no')   # cmp word [si+5Ch], x0 / jl
-    a.b(0x81, 0x7c, 0x5c, VALLEY_X[1], 0x00); a.short(0x7f, 'iv_no')
-    a.b(0x83, 0x7c, 0x5e, VALLEY_Y[0]); a.short(0x7c, 'iv_no')
-    a.b(0x83, 0x7c, 0x5e, VALLEY_Y[1]); a.short(0x7f, 'iv_no')
+    a.label('in_valley')                                     # D134: the box from the rules table (the Valley's place)
+    vx0, vx1, vy0, vy1 = struct.unpack_from('<4H', a.table, G_VALLEY)
+    a.b(0x81, 0x7c, 0x5c, *u16(vx0)); a.short(0x7c, 'iv_no')   # cmp word [si+5Ch], x0 / jl
+    a.b(0x81, 0x7c, 0x5c, *u16(vx1)); a.short(0x7f, 'iv_no')
+    a.b(0x81, 0x7c, 0x5e, *u16(vy0)); a.short(0x7c, 'iv_no')
+    a.b(0x81, 0x7c, 0x5e, *u16(vy1)); a.short(0x7f, 'iv_no')
     a.b(0xf9, 0xc3)                                          # stc / ret
     a.label('iv_no')
     a.b(0xf8, 0xc3)                                          # clc / ret
@@ -9544,7 +10116,7 @@ def rules_code(a):
     a.label('rules_hawk_land')
     a.b(0x83, 0x44, 0x5c, 0x20)                              # (replaced)
     a.near(0xe8, 'in_valley'); a.short(0x73, 'hk_end')
-    a.b(0xc7, 0x44, 0x5e, VALLEY_Y[0] - 1, 0x00)             # mov word [si+5Eh], y0 - 1   just north of it
+    a.b(0xc7, 0x44, 0x5e, *u16(vy0 - 1))                     # mov word [si+5Eh], y0 - 1   just north of it
     a.label('hk_end')
     a.near(0xe9, 'rules_done')
     # hawk_guard (from turn_moves, every pass of the map loop): the Hawk's flight ([0CC9Eh]) cannot enter the Valley:
@@ -10989,12 +11561,12 @@ def rules_code(a):
     a.near(0xe9, 'rules_done')
     a.label('bkl_game')
     a.b(0xbe, 0xd2, 0xcc); a.near(0xe9, 'rules_done')        # mov si, 0CCD2h  (replaced)
-    # bk_target (1000:ABD7, cmp word [si+46h],0: ax, bx = the knight's map place, about to pick its goal): all four keys: Stonehenge
+    # bk_target (1000:ABD7, cmp word [si+46h],0: ax, bx = the knight's map place, about to pick its goal): all four keys: Stonehenge (sh_point)
     # at once, whatever else it was after, and the turn ends there. (No computer knight can enter the Valley: that stays a player's.)
     a.label('rules_bk_target')
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_BK_AI); a.b(0x00); a.short(0x74, 'bkg_game')
     a.b(0x8b, 0x5c, 0x44, 0x80, 0x7f, 0x14, 0x0f); a.short(0x75, 'bkg_game')   # mov bx, [si+44h] / cmp byte [bx+14h], 0Fh / jne
-    a.b(0xb9, STONEHENGE_X & 0xff, STONEHENGE_X >> 8, 0xba, STONEHENGE_Y & 0xff, STONEHENGE_Y >> 8)   # mov cx, x / mov dx, y
+    a.near(0xe8, 'sh_point')                                 # cx, dx = Stonehenge (D138: the places' table, place 1Bh)
     a.b(0x50, 0x2b, 0xc1, 0x79, 0x02, 0xf7, 0xd8, 0x8b, 0x5e, 0xfe, 0x2b, 0xda, 0x79, 0x02, 0xf7, 0xdb, 0x03, 0xc3)   # push ax / ax = |ax - x| + |bx - y|
     a.b(0x83, 0xf8, 0x08, 0x58); a.short(0x7e, 'bkg_there')  # cmp ax, 8 / pop ax / jle
     a.b(0xc7, 0x46, 0x02, 0x0a, 0xac); a.near(0xe9, 'rules_done')   # mov word [bp+2], 0AC0Ah
@@ -11223,6 +11795,7 @@ def rules_code(a):
     a.near(0xe9, 'hp_flags')                                 # jmp hp_flags   (ZF kept)
     a.label('hp_hit')
     a.near(0xe8, 'td_collide')                               # D46: a blow that lands first stops an overhead chop
+    a.near(0xe8, 'td_tie')                                   # D125: ... and one that lands with a monster's blow from above
     a.b(0x53, 0x8b, 0x5e, 0x00, 0x8b, 0x5f, 0x16)            # push bx / mov bx, [bp+0] / mov bx, [bx+16h]   the game's bp
     a.b(0x83, 0x3e, 0x2e, 0x78, 0x00)                        # cmp word [782Eh], 0
     a.short(0x75, 'hp_table')                                # jne hp_table
@@ -11320,10 +11893,11 @@ def rules_code(a):
     a.label('cks_set')
     a.b(0xa3, 0x3a, 0x78)                                    # mov [783Ah], ax   (replaced)
     a.near(0xe9, 'rules_done')
-    # gun_write (ds = MAIN's data): GUNSHOT's scripts and hit points at GUN_AREA (all registers kept)
+    # gun_write (ds = MAIN's data): GUNSHOT's scripts and hit points at GUN_AREA, and after them D144's duck
+    # (DUCK_AREA; all registers kept)
     a.label('gun_write')
     a.b(0x50, 0x51, 0x56, 0x57, 0xbe); a.word('gun_src')     # push ax cx si di / mov si, gun_src
-    a.b(0xbf, GUN_AREA & 0xff, GUN_AREA >> 8, 0xb9, len(GUN_SRC), 0x00)   # mov di, GUN_AREA / mov cx, length
+    a.b(0xbf, GUN_AREA & 0xff, GUN_AREA >> 8, 0xb9, len(GUN_SRC) + len(DUCK_SRC), 0x00)   # mov di, GUN_AREA / mov cx, length
     a.label('gw_copy')
     a.b(0x2e, 0x8a, 0x04, 0x88, 0x05, 0x46, 0x47); a.short(0xe2, 'gw_copy')   # mov al, cs:[si] / mov [di], al / inc si / inc di / loop
     a.b(0x5f, 0x5e, 0x59, 0x58, 0xc3)                        # pop di si cx ax / ret
@@ -11359,6 +11933,7 @@ def rules_code(a):
     a.b(0xc7, 0x45, 0x1a, 0x2a, 0x77)                        # mov word [di+1Ah], 772Ah   (replaced)
     a.b(0x50, 0x2e, 0xa1); a.word('thrower')                 # push ax / mov ax, cs:[thrower]
     a.b(0x89, 0x45, DAGGER_OWNER, 0x58)                      # mov [di+5Ch], ax / pop ax
+    a.b(0xc7, 0x45, DUCK_MARK, 0x00, 0x00)                   # mov word [di+5Eh], 0   D144: judged against no knight yet
     a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x74, 'dow_end')   # D64: the ball's banks
     a.b(0x56, 0x8b, 0xf7); a.near(0xe8, 'gun_bank'); a.b(0x5e)   # push si / mov si, di / call gun_bank / pop si
     a.label('dow_end')
@@ -11452,6 +12027,92 @@ def rules_code(a):
     a.b(0xc6, 0x47, 0x01, 0x00, 0xc6, 0x47, 0x05, 0x00, 0xc7, 0x47, 0x0a, 0x00, 0x00, 0xc6, 0x47, 0x12, 0x00)   # its repeat, loop, return and jump states off
     a.label('tc_end')
     a.b(0x5b, 0xc3)                                          # pop bx / ret
+    # D144 duck_dodge. x144_dagger (dagger_near, si = a thrown dagger; its handler runs before the struck knight's):
+    # when it struck a knight that ducks it (not a teammate's, ph_judge; duck_try), the hit is undone and the dagger
+    # flies on (its control finds no hit); keeps every register
+    a.label('x144_dagger')
+    a.b(0x83, 0x7c, 0x0c, 0x00); a.short(0x74, 'x144_d_end')  # cmp word [si+0Ch], 0 / je   no hit
+    a.b(0x50, 0x53, 0x57, 0x8b, 0x7c, 0x0c)                  # push ax bx di / mov di, [si+0Ch]   the knight
+    a.near(0xe8, 'ph_judge'); a.short(0x72, 'x144_d_pop')    # call ph_judge / jc   a teammate's: dropped there
+    a.near(0xe8, 'duck_try'); a.short(0x73, 'x144_d_pop')    # call duck_try / jnc   a hit
+    a.near(0xe8, 'duck_start')                               # call duck_start
+    a.label('x144_d_pop')
+    a.b(0x5f, 0x5b, 0x58)                                    # pop di bx ax
+    a.label('x144_d_end')
+    a.b(0xc3)
+    # duck_start (si = the dagger, di = the knight, ax = duck_try's script): the hit undone on both sides (as
+    # practice_hit's ph_drop), and the knight's running script cut to the duck (td_cut) unless ax = FFFFh
+    a.label('duck_start')
+    a.b(0x39, 0x75, 0x0e); a.short(0x75, 'dst_dagger'); a.b(0xc7, 0x45, 0x0e, 0x00, 0x00)   # cmp [di+0Eh], si / jne / mov word [di+0Eh], 0
+    a.label('dst_dagger')
+    a.b(0x39, 0x7c, 0x0c); a.short(0x75, 'dst_cut'); a.b(0xc7, 0x44, 0x0c, 0x00, 0x00)   # cmp [si+0Ch], di / jne / mov word [si+0Ch], 0
+    a.label('dst_cut')
+    a.b(0x83, 0xf8, 0xff); a.short(0x74, 'dst_end'); a.near(0xe8, 'td_cut')   # cmp ax, FFFFh / je / call td_cut
+    a.label('dst_end')
+    a.b(0xc3)
+    # duck_try (si = a thrown dagger, di = the record it struck; ds = MAIN's data): CF = 1 when the knight ducks it,
+    # ax = the duck's script to start now (written to DUCK_AREA) or FFFFh (already ducking, or this dagger passed over
+    # it: its script goes on). A knight ducks when it is alive, its move is 0 (standing or walking), it is not
+    # staggered, and it is a keyboard player whose down key was pressed at most duck_window ticks ago (held or let
+    # go), or a computer's knight that wins a roll (DUCK_CPU_PERCENT, one a dagger: [si+DUCK_MARK]). Not: GUNSHOT's
+    # ball, a dagger from the sky (D49), a joystick player, duck_dodge off. Keeps every register but ax. In overlay
+    # group OVL_WALK (in the window in fights; without overlays its stub returns CF = 0: a hit)
+    a.ovl_begin(OVL_WALK); a.ovl_entry('duck_try', 'call')
+    jn = lambda cc, label: (a.b(0x0f), a.near(0x80 | cc, label))   # a near jcc (386)
+    a.b(0x53, 0x51, 0x52)                                    # push bx cx dx
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DUCK); a.b(0x00); a.short(0x74, 'dk_no_1')   # duck_dodge off
+    a.b(0x39, 0x74, DAGGER_OWNER); a.short(0x74, 'dk_no_1')  # cmp [si+5Ch], si / je   from the sky
+    a.b(0x2e, 0xf6, 0x06); a.word('cheat_flags2'); a.b(F2_GUNSHOT); a.short(0x75, 'dk_no_1')   # GUNSHOT: a ball
+    a.b(0x8a, 0x45, 0x35, 0x3c, 0x06); a.short(0x74, 'dk_knight')   # mov al, [di+35h] / cmp al, 6 / je
+    a.b(0x3c, COMPUTER_TYPE); a.short(0x74, 'dk_knight')     # cmp al, 8 / je
+    a.label('dk_no_1')
+    a.near(0xe9, 'dk_no')
+    a.label('dk_knight')
+    a.b(0x8b, 0xc7, 0x0c, 0x01, 0x39, 0x44, DUCK_MARK); jn(4, 'dk_going')   # mov ax, di / or al, 1 / cmp [si+5Eh], ax / je   passed over it
+    a.near(0xe8, 'anim_of'); a.short(0x75, 'dk_no_1')        # call anim_of / jnz
+    a.b(0x8b, 0x47, 0x02, 0x2d, DUCK_AREA & 0xff, DUCK_AREA >> 8, 0x3d, len(DUCK_SRC), 0x00)   # mov ax, [bx+2] / sub ax, DUCK_AREA / cmp ax, length
+    jn(2, 'dk_going')                                        # jb   already ducking
+    a.b(0x39, 0x7c, DUCK_MARK); a.short(0x74, 'dk_no_1')     # cmp [si+5Eh], di / je   judged already: a hit
+    a.b(0x89, 0x7c, DUCK_MARK)                               # mov [si+5Eh], di   judged now (a hit unless it ducks)
+    a.b(0x83, 0x7d, 0x28, 0x00); a.short(0x75, 'dk_no_1')    # cmp word [di+28h], 0 / jne   an attack, block or dodge
+    a.b(0x83, 0x7d, 0x38, 0x00); a.short(0x7e, 'dk_no_1')    # cmp word [di+38h], 0 / jle   down
+    a.near(0xe8, 'td_held'); a.short(0x72, 'dk_no_1')        # call td_held / jc   staggered
+    a.b(0x80, 0x7d, 0x35, 0x06); a.short(0x74, 'dk_human')   # cmp byte [di+35h], 6 / je
+    a.near(0xe8, 'game_random'); a.b(0x3c, DUCK_ROLL); a.short(0x73, 'dk_no'); a.short(0xeb, 'dk_duck')   # call game_random / cmp al, roll / jae / jmp
+    a.label('dk_human')                                      # the player's keys (as turn_stale): 2 player 1, 1 player 2, 7 the third set
+    a.b(0xb4, 0x00, 0x80, 0x7d, 0x09, 0x02); a.short(0x74, 'dk_p')   # mov ah, 0 / cmp byte [di+9], 2 / je
+    a.b(0xb4, 0x02, 0x80, 0x7d, 0x09, 0x01); a.short(0x74, 'dk_p')   # mov ah, 2 / cmp byte [di+9], 1 / je
+    a.b(0xb4, 0x04, 0x80, 0x7d, 0x09, KEYS3_CONTROL); a.short(0x75, 'dk_no')   # mov ah, 4 / cmp byte [di+9], 7 / jne   a joystick
+    a.label('dk_p')
+    a.b(0x8a, 0xcc); a.near(0xe8, 'td_now'); a.b(0x8b, 0xd0, 0x8a, 0xe1)   # mov cl, ah / call td_now / mov dx, ax / mov ah, cl
+    gs_buf(a)                                                # key_tick
+    a.b(0x56, 0xbb); a.word('key_dirs')                      # push si / mov bx, key_dirs
+    a.label('dk_key')
+    a.b(0x2e, 0x8a, 0x0f, 0x0a, 0xc9); a.short(0x74, 'dk_k_no')   # mov cl, cs:[bx] / or cl, cl / jz   the end: none
+    a.b(0x2e, 0x38, 0x67, 0x02); a.short(0x75, 'dk_next')    # cmp cs:[bx+2], ah / jne   another player's
+    a.b(0x2e, 0xf6, 0x47, 0x01, 0x04); a.short(0x74, 'dk_next')   # test byte cs:[bx+1], 4 / jz   not down
+    a.b(0x32, 0xed, 0x8b, 0xf1, 0xd1, 0xe6, 0x8b, 0xca, 0x65, 0x2b, 0x8c, *u16(BUF_KEY_TICK))   # xor ch,ch / mov si,cx / shl si,1 / mov cx,dx / sub cx, gs:[si+key_tick]
+    a.b(0x0a, 0xed); a.short(0x75, 'dk_next')                # or ch, ch / jnz   pressed long ago
+    a.b(0x2e, 0x3a, 0x0e); a.word('rules_table', G_DUCK_WINDOW); a.short(0x76, 'dk_k_yes')   # cmp cl, cs:[duck_window] / jbe
+    a.label('dk_next')
+    a.b(0x83, 0xc3, 0x03); a.short(0xeb, 'dk_key')           # add bx, 3 / jmp
+    a.label('dk_k_no')
+    a.b(0x5e); a.short(0xeb, 'dk_no')                        # pop si / jmp
+    a.label('dk_k_yes')
+    a.b(0x5e)                                                # pop si
+    a.label('dk_duck')
+    a.near(0xe8, 'gun_write'); a.b(0xb8, DUCK_AREA & 0xff, DUCK_AREA >> 8)   # call gun_write (the duck's script) / mov ax, it
+    a.short(0xeb, 'dk_mark')
+    a.label('dk_going')
+    a.b(0xb8, 0xff, 0xff)                                    # mov ax, FFFFh   its script goes on
+    a.label('dk_mark')
+    a.b(0x89, 0x7c, DUCK_MARK, 0x80, 0x4c, DUCK_MARK, 0x01, 0xf9)   # mov [si+5Eh], di / or byte [si+5Eh], 1 / stc
+    a.short(0xeb, 'dk_end')
+    a.label('dk_no')
+    a.b(0xf8)                                                # clc
+    a.label('dk_end')
+    a.b(0x5a, 0x59, 0x5b, 0xc3)                              # pop dx cx bx / ret
+    a.ovl_end()
     a.label('td_stagger')                                    # si = the attacker (a knight), al = ticks: its hit reaction now, then no input for that long
     a.b(0x50, 0x53, 0x57, 0x8b, 0xfe, 0x32, 0xe4, 0x50); a.near(0xe8, 'td_slot'); a.short(0x72, 'tsg_no')   # push ax bx di / mov di, si / xor ah,ah / push ax / call td_slot / jc
     a.near(0xe8, 'td_now'); a.b(0x5a, 0x03, 0xc2, 0xd1, 0xe3, 0x2e, 0x89, 0x87); a.word('td_stag')   # call td_now / pop dx / add ax, dx / shl bx,1 / mov cs:[bx+td_stag], ax
@@ -11479,6 +12140,53 @@ def rules_code(a):
     a.b(0xb8, 0xe6, 0x11); a.near(0xe8, 'td_cut')            # mov ax, 11E6h / call td_cut
     a.label('tcl_end')
     a.b(0x5f, 0x5e, 0x5b, 0x58, 0x9d, 0xc3)                  # pop di si bx ax / popf / ret
+
+    # td_tie (D125; from hit_pair, ax = 1 a hit, [bp-2] = the struck figure's slot, [bp] = the striker's): a knight's blow
+    # (not a chop) and the blow from above (move 10h) of a troll or an axe or hammer trogg that land in the same frame:
+    # the knight's wins, as one landing a frame earlier does (the monster's struck reaction then cuts its blow). The
+    # game noted both: the troll's control took its own hit first (1000:55E7) and never felt the knight's (no damage,
+    # no flinch, a riposte lost); a trogg felt it but its blow still hurt the knight. Either order of the two hits:
+    # the monster's after the knight's is not noted (ax = 0 back); the knight's after the monster's undoes the
+    # monster's ([+0Ch], and [+0Eh] of the knights it hit). With timed_defence on, as D46's chop rules
+    a.label('td_tie')
+    a.b(0x9c, 0x50, 0x53, 0x56, 0x57)                        # pushf / push ax bx si di
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_TD); a.b(0x00); a.short(0x74, 'tie_end')
+    a.b(0x8b, 0x5e, 0xfe, 0x8b, 0x7f, 0x16, 0x8b, 0x76, 0x00, 0x8b, 0x74, 0x16)   # mov bx,[bp-2] / mov di,[bx+16h] / mov si,[bp] / mov si,[si+16h]
+    a.b(0x8b, 0xde); a.near(0xe8, 'tie_chop'); a.short(0x73, 'tie_b')   # mov bx, si / call tie_chop / jnc   the striker in its blow from above?
+    a.b(0x8b, 0x5c, 0x0e, 0x0b, 0xdb); a.short(0x74, 'tie_end')         # mov bx, [si+0Eh] / or bx, bx / jz   struck already this frame
+    a.near(0xe8, 'tie_knight'); a.short(0x73, 'tie_end')               # call tie_knight / jnc   by a knight's blow
+    a.b(0x5f, 0x5e, 0x5b, 0x58, 0x9d, 0x33, 0xc0, 0xc3)      # pop di si bx ax / popf / xor ax, ax / ret   its own hit is not noted
+    a.label('tie_b')
+    a.b(0x8b, 0xdf); a.near(0xe8, 'tie_chop'); a.short(0x73, 'tie_end')   # mov bx, di / call tie_chop / jnc   the struck one in its blow
+    a.b(0x8b, 0xde); a.near(0xe8, 'tie_knight'); a.short(0x73, 'tie_end') # mov bx, si / call tie_knight / jnc   struck by a knight's blow
+    a.b(0x83, 0x7d, 0x0c, 0x00); a.short(0x74, 'tie_end')    # cmp word [di+0Ch], 0 / je   its blow has hit nobody yet
+    a.b(0xc7, 0x45, 0x0c, 0x00, 0x00, 0x51)                  # mov word [di+0Ch], 0 / push cx
+    a.b(0xbb, (KNIGHTS[0] + 0x0e) & 0xff, (KNIGHTS[0] + 0x0e) >> 8, 0xb9, 0x04, 0x00)   # mov bx, knight 1 +0Eh / mov cx, 4
+    a.label('tie_l')
+    a.b(0x39, 0x3f); a.short(0x75, 'tie_n'); a.b(0xc7, 0x07, 0x00, 0x00)   # cmp [bx], di / jne / mov word [bx], 0   not struck by it
+    a.label('tie_n')
+    a.b(0x83, 0xc3, SLOT_SIZE); a.short(0xe2, 'tie_l'); a.b(0x59)   # add bx, 62h / loop / pop cx
+    a.label('tie_end')
+    a.b(0x5f, 0x5e, 0x5b, 0x58, 0x9d, 0xc3)                  # pop di si bx ax / popf / ret
+    a.label('tie_chop')                                      # bx = a record: CF = 1 a troll or an axe or hammer trogg, alive, in its blow from above
+    a.b(0x50, 0x8a, 0x47, 0x35)                              # push ax / mov al, [bx+35h]
+    for typ in RIPOSTE_MONSTERS:
+        a.b(0x3c, typ); a.short(0x74, 'tie_ct')              # cmp al, type / je
+    a.short(0xeb, 'tie_cn')
+    a.label('tie_ct')
+    a.b(0x83, 0x7f, 0x28, 0x10); a.short(0x75, 'tie_cn')     # cmp word [bx+28h], 10h / jne
+    a.b(0x83, 0x7f, 0x38, 0x00); a.short(0x7e, 'tie_cn')     # cmp word [bx+38h], 0 / jle
+    a.b(0x58, 0xf9, 0xc3)                                    # pop ax / stc / ret
+    a.label('tie_cn')
+    a.b(0x58, 0xf8, 0xc3)                                    # pop ax / clc / ret
+    a.label('tie_knight')                                    # bx = a record: CF = 1 a knight (a player's or a computer's) whose blow is not a chop
+    a.b(0x80, 0x7f, 0x35, 0x06); a.short(0x74, 'tie_kk')     # cmp byte [bx+35h], 6 / je
+    a.b(0x80, 0x7f, 0x35, COMPUTER_TYPE); a.short(0x75, 'tie_kn')
+    a.label('tie_kk')
+    a.b(0x83, 0x7f, 0x28, 0x10); a.short(0x74, 'tie_kn')     # cmp word [bx+28h], 10h / je   chop against chop: both land
+    a.b(0xf9, 0xc3)                                          # stc / ret
+    a.label('tie_kn')
+    a.b(0xf8, 0xc3)                                          # clc / ret
 
     # td_move (1000:40CA, mov [di+28h],ax: a human knight's move): the start of a block or dodge (a gap of more than 4 ticks ends a hold); a swing while
     # the bonus runs starts at 0EAAh, past the wind-up frames of 0E90h. A dodge has no once-only rule with timed defence
@@ -11794,6 +12502,16 @@ def rules_code(a):
     a.label('tmo_end')
     a.b(0x5a, 0x5b, 0x58, 0x83, 0x3e, 0xfc, 0x77, 0x00); a.near(0xe9, 'rules_flags')   # pop dx bx ax / cmp word [77FCh], 0  (replaced)
 
+    # spear_pause (D124; 1000:2F61, mov byte [di+4Ah],0Ah in TroggHit: a trogg's pause after its blow hit something,
+    # di = it): the spear trogg's from spear_trogg_attack_pause (13 by default); its pause after a miss is the
+    # immediate at 2ED1 (rules.py)
+    a.label('rules_spear_pause')
+    a.b(0xc6, 0x45, 0x4a, 0x0a)                              # mov byte [di+4Ah], 0Ah   (replaced)
+    a.b(0x80, 0x7d, 0x35, 0x10); a.short(0x75, 'spp_end')    # cmp byte [di+35h], 10h / jne   a spear trogg
+    a.b(0x50, 0x2e, 0xa0); a.word('rules_table', G_SPEAR_HIT); a.b(0x88, 0x45, 0x4a, 0x58)   # push ax / mov al, cs:[pause] / mov [di+4Ah], al / pop ax
+    a.label('spp_end')
+    a.near(0xe9, 'rules_done')
+
     a.label('rules_td_trogg')                                # 1000:4302, sub [di+38h],ax: an axe trogg's hit
     a.near(0xe8, 'td_adjust'); a.b(0x29, 0x45, 0x38, 0x2e, 0xc6, 0x06); a.word('td_after'); a.b(0x00); a.near(0xe9, 'rules_done')
     a.label('rules_td_cdmg')                                 # 1000:4DA1, sub [di+38h],ax: a computer knight's damage
@@ -12032,6 +12750,9 @@ def rules_code(a):
     a.near(0xe8, 'amiga_stop')                               # call amiga_stop   (D67)
     a.near(0xe8, 'cheat_fight_end')                          # call cheat_fight_end
     a.near(0xe8, 'pot_fight_end')                            # D102: the fight potions used
+    a.b(0x2e, 0x80, 0x3e); a.word('st_fled'); a.b(0x00); a.short(0x74, 'fe_stayed')   # D127: a fight left by Esc:
+    a.near(0xe8, 'safety_end')                               #   no winner
+    a.label('fe_stayed')
     a.b(0x2e, 0xc7, 0x06); a.word('demon_held'); a.b(0x00, 0x00)   # mov word cs:[demon_held], 0   (K40)
     for name in ('charred', 'boar_victim', 'boar_obj'):      # K42
         a.b(0x2e, 0xc7, 0x06); a.word(name); a.b(0x00, 0x00)
@@ -12046,6 +12767,190 @@ def rules_code(a):
     a.b(0x1f, 0x07, 0x5d, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58)   # pop ds es bp di si dx cx bx ax
     a.b(0xc7, 0x06, 0x42, 0x09, 0x00, 0x00)                  # mov word [0942h], 0   (replaced)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
+
+    # --- D127, D132: the stuck fight exit (work queue 2026-11-18 step 6) ---
+    # safety_frame (from the fight loop's own test, practice_frame's pf_cmp at 1000:036F, every frame of every fight,
+    # after every rule that sets [897Dh]): in a campaign fight (not practice) the BIOS ticks since the last activity
+    # are counted (fight_handler starts them). Activity (D132, the user's rule of 19 Nov 2026, replacing D127's fight
+    # length): a key pressed (key_handler, not Esc) or held (the key table, not Esc), a human knight's input not 0
+    # (input_pick: keys or joystick), or a watched knight's HP changed. The watched knights (safety_start, the first
+    # frame): the human ones (+9 not 4) in the fight, or the fight's own knight [8979h] (its animation may be gone in a
+    # stuck fight); none (a computer knight's own fight): never open. Once fight_idle_exit is reached and the end has
+    # not begun, the exit is open: the hint shows (safety_hint, into the background page; taken away again as soon
+    # as the exit closes) and Esc pressed leaves the fight (safety_leave). The test is here, not in a control
+    # routine, so that a fight where nobody can act any more can still be left. Esc is taken from the key table, and
+    # kept from the game while held (key_handler: esc_eat), because on the map Esc is Game Over (K5)
+    a.label('safety_frame')
+    a.b(0x83, 0x3e, *u16(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'x132_sf_r0')   # cmp word [0704h], 2 / je   practice
+    a.b(0x2e, 0x83, 0x3e); a.word('rules_table', G_SAFETY); a.b(0x00); a.short(0x75, 'x132_sf_go')   # 0 = off
+    a.label('x132_sf_r0')
+    a.b(0xc3)
+    a.label('x132_sf_go')
+    a.b(0x50, 0x53, 0x51, 0x56, 0x57, 0x06)                  # push ax bx cx si di es
+    a.b(0x33, 0xc0, 0x8e, 0xc0, 0x26, 0xa0, 0x6c, 0x04)      # xor ax, ax / mov es, ax / mov al, es:[046Ch]
+    a.b(0x8a, 0xe0, 0x2e, 0x2a, 0x06); a.word('st_last')     # mov ah, al / sub al, cs:[st_last]   ticks since the last frame
+    a.b(0x2e, 0x88, 0x26); a.word('st_last'); a.b(0x32, 0xe4)   # mov cs:[st_last], ah / xor ah, ah
+    a.b(0x2e, 0x01, 0x06); a.word('st_ticks'); a.short(0x73, 'x132_sf_hum')   # add cs:[st_ticks], ax / jnc
+    a.b(0x2e, 0xc7, 0x06); a.word('st_ticks'); a.b(0xff, 0xff)   # at most FFFFh
+    a.label('x132_sf_hum')
+    a.b(0x2e, 0x80, 0x3e); a.word('st_hum'); a.b(0xff); a.short(0x75, 'x132_sf_act')   # the knights known?
+    a.b(0x2e, 0xc6, 0x06); a.word('st_hum'); a.b(0x00)       # (no XMS: none)
+    a.near(0xe8, 'safety_start')
+    a.label('x132_sf_act')
+    a.b(0x32, 0xdb, 0x2e, 0x86, 0x1e); a.word('st_act')      # xor bl, bl / xchg bl, cs:[st_act]   a press or an input
+    a.b(0x8e, 0x46, 0x04)                                    # mov es, [bp+4]       MAIN's code segment
+    a.b(0xbf, *u16(KEY_TABLE + 2), 0xb9, 0x7e, 0x00, 0x32, 0xc0)   # mov di, 81E5h / mov cx, 7Eh / xor al, al
+    a.b(0x9c, 0xfc, 0xf2, 0xae); a.short(0x75, 'x132_sf_nokey')   # pushf / cld / repne scasb / jne   no key held (Esc not looked at)
+    a.b(0xb3, 0x01)                                          # mov bl, 1
+    a.label('x132_sf_nokey')
+    a.b(0x9d)                                                # popf
+    a.b(0x2e, 0xa0); a.word('st_hum'); a.b(0x0a, 0xc0); a.short(0x75, 'x132_sf_hp')   # mov al, cs:[st_hum] / or al, al / jnz
+    a.b(0xb3, 0x01)                                          # no human knight: never open
+    a.label('x132_sf_hp')
+    a.b(0xbe, *u16(KNIGHTS[0]), 0x33, 0xff)                  # mov si, the first knight / xor di, di
+    a.label('x132_sf_hpk')
+    a.b(0xd0, 0xe8); a.short(0x73, 'x132_sf_hpn')            # shr al, 1 / jnc   not watched
+    a.b(0x8b, 0x4c, 0x38, 0x2e, 0x3b, 0x8d); a.word('st_hp'); a.short(0x74, 'x132_sf_hpn')   # mov cx, [si+38h] / cmp cx, cs:[di+st_hp] / je
+    a.b(0x2e, 0x89, 0x8d); a.word('st_hp'); a.b(0xb3, 0x01)  # mov cs:[di+st_hp], cx / mov bl, 1   its HP changed
+    a.label('x132_sf_hpn')
+    a.b(0x83, 0xc6, KNIGHTS[1] - KNIGHTS[0], 0x47, 0x47, 0x0a, 0xc0); a.short(0x75, 'x132_sf_hpk')   # add si, 62h / inc di x2 / or al, al / jnz
+    a.b(0x0a, 0xdb); a.short(0x74, 'x132_sf_cmp')            # or bl, bl / jz   idle
+    a.b(0x2e, 0xc7, 0x06); a.word('st_ticks'); a.b(0x00, 0x00)   # activity: the count again from 0
+    a.label('x132_sf_cmp')
+    a.b(0x2e, 0xa1); a.word('st_ticks'); a.b(0x2e, 0x3b, 0x06); a.word('rules_table', G_SAFETY)
+    a.short(0x72, 'x132_sf_shut')                            # jb   not open
+    a.b(0x80, 0x3e, 0x7d, 0x89, 0x00); a.short(0x74, 'x132_sf_shut')   # cmp byte [897Dh], 0 / je   ending: the game's own end
+    a.b(0x26, 0x80, 0x3e, *u16(KEY_TABLE + ESC), 0xff); a.short(0x74, 'x132_sf_open')   # cmp byte es:[81E4h], 0FFh / je   no Esc
+    a.b(0x26, 0xc6, 0x06, *u16(KEY_TABLE + ESC), 0xff)       # mov byte es:[81E4h], 0FFh   taken
+    gs_buf(a)
+    a.b(0x65, 0x80, 0x3e, *u16(BUF_KEY_PENDING + ESC), 0x00); a.short(0x75, 'x127_sf_leave')   # its release already seen (D24 keeps it back)
+    a.b(0x2e, 0xc6, 0x06); a.word('esc_eat'); a.b(0x01)      # held: kept from the game until let go
+    a.label('x127_sf_leave')
+    a.near(0xe8, 'safety_leave')
+    a.b(0x80, 0x3e, 0x7d, 0x89, 0x00); a.short(0x74, 'x132_sf_shut')   # left: the hint away
+    a.label('x132_sf_open')
+    a.b(0xb0, 0x01); a.short(0xeb, 'x132_sf_hint')           # mov al, 1
+    a.label('x132_sf_shut')
+    a.b(0x32, 0xc0)                                          # xor al, al
+    a.label('x132_sf_hint')
+    a.b(0x2e, 0x3a, 0x06); a.word('st_hint'); a.short(0x74, 'x127_sf_pop')   # cmp al, cs:[st_hint] / je   as shown
+    a.b(0x2e, 0xa2); a.word('st_hint')                       # mov cs:[st_hint], al
+    a.near(0xe8, 'safety_hint')
+    a.label('x127_sf_pop')
+    a.b(0x07, 0x5f, 0x5e, 0x59, 0x5b, 0x58, 0xc3)            # pop es di si cx bx ax / ret
+    # safety_start (D132; the fight's first frame, ds = the game's): st_hum = the knights to watch (a bit each of the
+    # four records): the human ones (+9 not 4) with an animation in the fight, and the fight's own knight [8979h]
+    # if human; st_hp = their HP now
+    a.ovl_begin(OVL_MAP); a.ovl_entry('safety_start', 'call')   # cold: once a fight (no XMS: none watched, never open)
+    a.b(0x50, 0x53, 0x51, 0x56, 0x57)                        # push ax bx cx si di
+    a.b(0x32, 0xc9, 0xb5, 0x01, 0xbf, *u16(KNIGHTS[0]), 0x33, 0xf6)   # xor cl, cl / mov ch, 1 / mov di, the first knight / xor si, si
+    a.label('x132_ss_k')
+    a.b(0x80, 0x7d, 0x09, COMPUTER_CONTROL); a.short(0x74, 'x132_ss_n')   # cmp byte [di+9], 4 / je   a computer's
+    a.b(0x3b, 0x3e, 0x79, 0x89); a.short(0x74, 'x132_ss_take')   # cmp di, [8979h] / je   the fight's own knight
+    a.near(0xe8, 'anim_of'); a.short(0x75, 'x132_ss_n')      # call anim_of / jne   not in the fight
+    a.label('x132_ss_take')
+    a.b(0x0a, 0xcd, 0x8b, 0x45, 0x38, 0x2e, 0x89, 0x84); a.word('st_hp')   # or cl, ch / mov ax, [di+38h] / mov cs:[si+st_hp], ax
+    a.label('x132_ss_n')
+    a.b(0x83, 0xc7, KNIGHTS[1] - KNIGHTS[0], 0x46, 0x46, 0xd0, 0xe5, 0x80, 0xfd, 0x10); a.short(0x72, 'x132_ss_k')   # add di, 62h / inc si x2 / shl ch, 1 / cmp ch, 10h / jb
+    a.b(0x2e, 0x88, 0x0e); a.word('st_hum')                  # mov cs:[st_hum], cl
+    a.b(0x5f, 0x5e, 0x59, 0x5b, 0x58, 0xc3)                  # pop di si cx bx ax / ret
+    a.ovl_end()
+    # safety_hint (D132; al = 1: the hint shows, 0: it is taken away): into the fight's background page (AC00h, copied
+    # to the screen every frame: it shows from the next frame on, without flicker). Shown: the background under the
+    # practice score's box is kept first (score_box, box_mode 0: score_bg), then the hint's shadow and its text drawn
+    # (sp_plot). Taken away: the box put back (box_mode 1)
+    a.ovl_begin(OVL_MAP); a.ovl_entry('safety_hint', 'call')   # cold: when the exit opens or closes
+    a.b(0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x55, 0x06)      # push ax bx cx dx si di bp es
+    a.b(0x34, 0x01, 0x2e, 0xa2); a.word('box_mode')          # xor al, 1 / mov cs:[box_mode], al   1: keep (0), 0: put back (1)
+    a.b(0xbb, *u16(MINE_BG_PAGE), 0x8e, 0xc3)                # mov bx, 0AC00h / mov es, bx   the background page
+    a.near(0xe8, 'vga_keep')                                 # (al, dx, si not kept)
+    a.near(0xe8, 'score_box')
+    a.b(0x2e, 0x80, 0x3e); a.word('box_mode'); a.b(0x00); a.short(0x75, 'x132_sh_out')   # taken away: done
+    a.b(0xb0, SH_SHADOW, 0xbd, 0x01, 0x00); a.near(0xe8, 'x132_sh_pass')   # the shadow, one pixel right and down
+    a.b(0xb0, SH_COLOUR, 0x33, 0xed); a.near(0xe8, 'x132_sh_pass')         # the text
+    a.label('x132_sh_out')
+    a.near(0xe8, 'vga_back')
+    a.b(0x07, 0x5d, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0xc3)   # pop es bp di si dx cx bx ax / ret
+    # x132_sh_pass (al = the colour, bp = 0 or 1 the offset): the hint's bits, a row of SH_ROW_BYTES bytes each
+    a.label('x132_sh_pass')
+    a.b(0xbe); a.word('x132_sh_bits'); a.b(0xba, SH_Y, 0x00, 0x03, 0xd5, 0xb4, 0x05)   # mov si, bits / mov dx, y / add dx, bp / mov ah, 5
+    a.label('x132_sh_row')
+    a.b(0xb9, *u16(SH_X), 0x03, 0xcd, 0xbf, SH_ROW_BYTES, 0x00)   # mov cx, x / add cx, bp / mov di, bytes
+    a.label('x132_sh_byte')
+    a.b(0x2e, 0x8a, 0x1c, 0x46, 0xb7, 0x08)                  # mov bl, cs:[si] / inc si / mov bh, 8
+    a.label('x132_sh_bit')
+    a.b(0xd0, 0xe3); a.short(0x73, 'x132_sh_skip')           # shl bl, 1 / jnc
+    a.near(0xe8, 'sp_plot')
+    a.label('x132_sh_skip')
+    a.b(0x41, 0xfe, 0xcf); a.short(0x75, 'x132_sh_bit')      # inc cx / dec bh / jnz
+    a.b(0x4f); a.short(0x75, 'x132_sh_byte')                 # dec di / jnz
+    a.b(0x42, 0xfe, 0xcc); a.short(0x75, 'x132_sh_row')      # inc dx / dec ah / jnz
+    a.b(0xc3)
+    a.label('x132_sh_bits')
+    for row in hint_rows(SH_TEXT):
+        row = row.ljust(8 * SH_ROW_BYTES, '0')
+        a.b(bytes(int(row[k:k + 8], 2) for k in range(0, len(row), 8)))
+    a.ovl_end()
+    # safety_leave (Esc with the exit open; [bp+8] = the return address of the fight's call InitCombat 1000:0307): the
+    # fight ends at once ([897Dh] = 0, [8987h] = 1: its end next). When the fight's side has a knight standing it is
+    # left (st_fled, no winner: safety_end, coop_end); when it has none (a knight down whose end never came) it ends
+    # as the game ends it with that knight down. A duel (0428): both knights must stand. A lair (0591): the visit's
+    # knight or, in co-op, a partner. The dragon (0D1B) and the Guardian (0FED): the knight, and a knight being eaten
+    # ([77F0h], the dragon's bite: D120) is down. Another caller (practice, 014B): nothing
+    a.ovl_begin(OVL_MAP); a.ovl_entry('safety_leave', 'call')   # cold: once a fight (no XMS: never left)
+    a.b(0x50, 0x56, 0x8b, 0x36, 0x79, 0x89, 0x8b, 0x46, 0x08)   # push ax si / mov si, [8979h] / mov ax, [bp+8]
+    a.b(0x3d, 0x28, 0x04); a.short(0x75, 'x127_sl_lair')          # cmp ax, 0428h / jne   not a duel
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'x127_sl_now')     # cmp word [si+38h], 0 / jle   down
+    a.b(0x8b, 0x36, 0x7b, 0x89); a.short(0xeb, 'x127_sl_test')    # mov si, [897Bh]   the other
+    a.label('x127_sl_lair')
+    a.b(0x3d, 0x91, 0x05); a.short(0x75, 'x127_sl_dragon')        # cmp ax, 0591h / jne
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7f, 'x127_sl_fled')    # cmp word [si+38h], 0 / jg   stands
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00); a.short(0x74, 'x127_sl_now')   # no partners
+    a.near(0xe8, 'first_standing'); a.b(0x8b, 0xf0); a.short(0xeb, 'x127_sl_test')   # call first_standing / mov si, ax
+    a.label('x127_sl_dragon')
+    a.b(0x3d, 0x1b, 0x0d); a.short(0x74, 'x127_sl_eaten')         # cmp ax, 0D1Bh / je
+    a.b(0x3d, 0xed, 0x0f); a.short(0x75, 'x127_sl_pop')           # cmp ax, 0FEDh / jne   another caller
+    a.label('x127_sl_eaten')
+    a.b(0x83, 0x3e, 0xf0, 0x77, 0x00); a.short(0x74, 'x127_sl_test')   # cmp word [77F0h], 0 / je
+    a.b(0xc7, 0x44, 0x38, 0x00, 0x00)                        # mov word [si+38h], 0   eaten: down
+    a.label('x127_sl_test')
+    a.b(0x83, 0x7c, 0x38, 0x00); a.short(0x7e, 'x127_sl_now')     # cmp word [si+38h], 0 / jle
+    a.label('x127_sl_fled')
+    a.b(0x2e, 0xc6, 0x06); a.word('st_fled'); a.b(0x01)
+    a.label('x127_sl_now')
+    a.b(0xc6, 0x06, 0x7d, 0x89, 0x00, 0xc6, 0x06, 0x87, 0x89, 0x01)   # mov byte [897Dh], 0 / mov byte [8987h], 1
+    a.label('x127_sl_pop')
+    a.b(0x5e, 0x58, 0xc3)                                    # pop si ax / ret
+    a.ovl_end()
+    # safety_end (fight_end, 1000:0ABE called from 037D: [bp+10] = the fight's caller): a fight left by Esc has no
+    # winner. The game's own count after it still runs (a knight down loses its life: only a co-op lair's visit's
+    # knight can be down here). A duel: on at 0486 (the map), after the duel's own 0428-043B; the dragon: on at 113E
+    # (the map), the dragon flies off as after its win (D120: else the knight's next turn starts under it); the
+    # Guardian: on at 113E; a lair: its monsters as before the fight ([096Ah] = the lair's +4, which 039E writes back),
+    # and coop_end (0597) goes on at 05CC
+    a.ovl_begin(OVL_MAP); a.ovl_entry('safety_end', 'call')   # cold (fight_end calls it only for a fight left)
+    a.b(0x50, 0x56, 0x8b, 0x46, 0x0a)                        # push ax si / mov ax, [bp+10]
+    a.b(0x3d, 0x91, 0x05); a.short(0x75, 'x127_se_duel')          # cmp ax, 0591h / jne
+    a.b(0x8b, 0x36, 0x62, 0x69, 0x8b, 0x44, 0x04, 0xa3, 0x6a, 0x09)   # mov si, [6962h] / mov ax, [si+4] / mov [096Ah], ax
+    a.short(0xeb, 'x127_se_pop')                                  # (st_fled kept for coop_end)
+    a.label('x127_se_duel')
+    a.b(0x3d, 0x28, 0x04); a.short(0x75, 'x127_se_dragon')        # cmp ax, 0428h / jne
+    a.b(0xc7, 0x06, 0x24, 0x04, 0x00, 0x00)                  # mov word [0424h], 0          (as 0428)
+    a.b(0x8b, 0x36, 0x79, 0x89, 0xc7, 0x44, 0x46, 0x00, 0x00)   # mov si, [8979h] / mov word [si+46h], 0   (0436)
+    a.b(0x8b, 0x36, 0x7b, 0x89, 0xc7, 0x44, 0x46, 0x00, 0x00)   # mov si, [897Bh] / mov word [si+46h], 0   (043B)
+    a.b(0xc7, 0x46, 0x0a, 0x86, 0x04); a.short(0xeb, 'x127_se_clear')   # mov word [bp+10], 0486h
+    a.label('x127_se_dragon')
+    a.b(0x3d, 0x1b, 0x0d); a.short(0x75, 'x127_se_guard')         # cmp ax, 0D1Bh / jne
+    a.b(0xc7, 0x06, 0xb0, 0xcc, 0x00, 0x00); a.short(0xeb, 'x127_se_map')   # mov word [0CCB0h], 0   the dragon flies off
+    a.label('x127_se_guard')
+    a.b(0x3d, 0xed, 0x0f); a.short(0x75, 'x127_se_clear')         # cmp ax, 0FEDh / jne
+    a.label('x127_se_map')
+    a.b(0xc7, 0x46, 0x0a, 0x3e, 0x11)                        # mov word [bp+10], 113Eh
+    a.label('x127_se_clear')
+    a.b(0x2e, 0xc6, 0x06); a.word('st_fled'); a.b(0x00)
+    a.label('x127_se_pop')
+    a.b(0x5e, 0x58, 0xc3)                                    # pop si ax / ret
+    a.ovl_end()
 
     # moon_picture (K20; 1000:9053, replaces mov ax,[8989h] before the map's moon is drawn): the phase values 2Eh
     # and 2Fh are drawn as each other's picture. The cycle DS:05A9 showed full, half, three-quarters, crescent, new;
@@ -12323,6 +13228,7 @@ def rules_code(a):
     a.label('pf_pop')
     a.b(0x58)                                                # pop ax
     a.label('pf_cmp')
+    a.near(0xe8, 'safety_frame')                             # D127: a campaign fight's safety timer and its Esc
     a.near(0xe8, 'score_settled')                            # D57: the practice score, as its end begins
     a.b(0x80, 0x3e, 0x7d, 0x89, 0x00)                        # cmp byte [897Dh], 0     (replaced instruction)
     a.near(0xe9, 'rules_flags')                              # jmp rules_flags
@@ -12338,40 +13244,16 @@ def rules_code(a):
     # practice_hit (1000:4275, a knight was hit; replaces mov si,[di+0Eh] / xor ax,ax): a hit by a teammate is
     # dropped and the knight's control goes on as if not hit (1000:3F05)
     a.label('rules_practice_hit')
-    a.b(0x8b, 0x75, 0x0e, 0x33, 0xc0)                        # mov si, [di+0Eh] / xor ax, ax   (replaced)
-    # against monsters a knight's dagger does not hit knights (unless coop_dagger_hits)
-    a.b(0x2e, 0x80, 0x3e); a.word('vs_monsters'); a.b(0x00)  # cmp byte cs:[vs_monsters], 0
-    a.short(0x74, 'ph_knights')                              # je ph_knights
-    a.b(0x80, 0x7c, 0x35, DAGGER)                            # cmp byte [si+35h], 1Ah
-    a.short(0x75, 'ph_knights')                              # jne ph_knights
-    a.b(0x81, 0x7c, DAGGER_OWNER, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp word [si+5Ch], 6F08h
-    a.short(0x73, 'ph_knights')                              # jae ph_knights   D19: a Black Knight's: a hit
-    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_PRACTICE_FLAGS); a.b(COOP_DAGGER_HITS)   # test flags, dagger
-    a.short(0x74, 'ph_drop')                                 # jz ph_drop
-    a.label('ph_knights')
-    a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x74, 'ph_sides')   # D33: a co-op lair:
-    a.near(0xe9, 'ph_end')                                   # every hit as the game's (friendly fire)
-    a.label('ph_sides')
-    a.near(0xe8, 'colours_active')                           # call colours_active   (3-4 players or co-op)
-    a.short(0x74, 'ph_end')                                  # jz ph_end
-    a.b(0x8b, 0xdf); a.near(0xe8, 'team')                    # mov bx, di / call team
-    a.b(0x8a, 0xe0)                                          # mov ah, al
-    a.b(0x8b, 0xde)                                          # mov bx, si
-    a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'ph_team')  # cmp byte [bx+35h], 1Ah / jne ph_team
-    a.b(0x8b, 0x5f, DAGGER_OWNER)                            # mov bx, [bx+5Ch]   D19: a dagger is on its thrower's side
-    a.label('ph_team')
-    a.near(0xe8, 'team')                                     # call team
-    a.b(0x0a, 0xc0)                                          # or al, al
-    a.short(0x74, 'ph_clear')                                # jz ph_clear     not a knight (a dagger): a hit
-    a.b(0x3a, 0xc4)                                          # cmp al, ah
-    a.short(0x75, 'ph_clear')                                # jne ph_clear
-    a.b(0xb0, COOP_KNIGHT_HITS)                              # mov al, co-op flag    same side: allowed?
-    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
-    a.short(0x75, 'ph_flag')                                 # jne ph_flag
-    a.b(0xb0, TEAM_KNIGHT_HITS)                              # mov al, team flag
-    a.label('ph_flag')
-    a.b(0x2e, 0x84, 0x06); a.word('rules_table', G_PRACTICE_FLAGS)   # test cs:[flags], al
-    a.short(0x75, 'ph_clear')                                # jnz ph_clear     allowed: a hit
+    a.b(0x8b, 0x75, 0x0e)                                    # mov si, [di+0Eh]   (replaced, with xor ax, ax below)
+    a.near(0xe8, 'ph_judge'); a.short(0x72, 'ph_drop')       # call ph_judge / jc ph_drop
+    # D144: a thrown dagger the knight ducks (its handler runs before the dagger's: an earlier animation slot): no
+    # hit, the knight's running script is the duck (or goes on), the dagger flies on (its control finds no hit)
+    a.b(0x80, 0x7c, 0x35, DAGGER); a.short(0x75, 'ph_clear') # cmp byte [si+35h], 1Ah / jne
+    a.near(0xe8, 'duck_try'); a.short(0x73, 'ph_clear')      # call duck_try / jnc   a hit
+    a.near(0xe8, 'duck_start')                               # call duck_start   (the hit undone, the duck)
+    a.b(0xc7, 0x06, 0x3a, 0x78, 0xff, 0xff)                  # mov word [783Ah], FFFFh   the control: its script goes on
+    a.b(0xc7, 0x46, 0x02, 0x5e, 0x2d)                        # mov word [bp+2], 2D5Eh   the control's end
+    a.short(0xeb, 'ph_clear')
     a.label('ph_drop')
     a.b(0xc7, 0x45, 0x0e, 0x00, 0x00)                        # mov word [di+0Eh], 0
     a.b(0x39, 0x7c, 0x0c)                                    # cmp [si+0Ch], di
@@ -12381,9 +13263,47 @@ def rules_code(a):
     a.b(0x8b, 0xf7)                                          # mov si, di
     a.b(0xc7, 0x46, 0x02, 0x05, 0x3f)                        # mov word [bp+2], 3F05h   not hit
     a.label('ph_clear')
-    a.b(0x33, 0xc0)                                          # xor ax, ax
-    a.label('ph_end')
+    a.b(0x33, 0xc0)                                          # xor ax, ax   (replaced)
     a.near(0xe9, 'rules_done')                               # jmp rules_done
+    # ph_judge (di = the knight struck, si = the striker): CF = 1 when the hit is dropped (D12, D33: a teammate's blow
+    # or dagger, a knight's dagger against monsters); keeps si, di; ax, bx changed
+    a.label('ph_judge')
+    # against monsters a knight's dagger does not hit knights (unless coop_dagger_hits)
+    a.b(0x2e, 0x80, 0x3e); a.word('vs_monsters'); a.b(0x00)  # cmp byte cs:[vs_monsters], 0
+    a.short(0x74, 'ph_knights')                              # je ph_knights
+    a.b(0x80, 0x7c, 0x35, DAGGER)                            # cmp byte [si+35h], 1Ah
+    a.short(0x75, 'ph_knights')                              # jne ph_knights
+    a.b(0x81, 0x7c, DAGGER_OWNER, MONSTER_SLOTS & 0xff, MONSTER_SLOTS >> 8)   # cmp word [si+5Ch], 6F08h
+    a.short(0x73, 'ph_knights')                              # jae ph_knights   D19: a Black Knight's: a hit
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_PRACTICE_FLAGS); a.b(COOP_DAGGER_HITS)   # test flags, dagger
+    a.short(0x74, 'ph_yes')                                  # jz ph_yes
+    a.label('ph_knights')
+    a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x75, 'ph_no')   # D33: a co-op lair:
+    #                                                          every hit as the game's (friendly fire)
+    a.near(0xe8, 'colours_active')                           # call colours_active   (3-4 players or co-op)
+    a.short(0x74, 'ph_no')                                   # jz ph_no
+    a.b(0x8b, 0xdf); a.near(0xe8, 'team')                    # mov bx, di / call team
+    a.b(0x8a, 0xe0)                                          # mov ah, al
+    a.b(0x8b, 0xde)                                          # mov bx, si
+    a.b(0x80, 0x7f, 0x35, DAGGER); a.short(0x75, 'ph_team')  # cmp byte [bx+35h], 1Ah / jne ph_team
+    a.b(0x8b, 0x5f, DAGGER_OWNER)                            # mov bx, [bx+5Ch]   D19: a dagger is on its thrower's side
+    a.label('ph_team')
+    a.near(0xe8, 'team')                                     # call team
+    a.b(0x0a, 0xc0)                                          # or al, al
+    a.short(0x74, 'ph_no')                                   # jz ph_no      not a knight (a dagger): a hit
+    a.b(0x3a, 0xc4)                                          # cmp al, ah
+    a.short(0x75, 'ph_no')                                   # jne ph_no
+    a.b(0xb0, COOP_KNIGHT_HITS)                              # mov al, co-op flag    same side: allowed?
+    a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
+    a.short(0x75, 'ph_flag')                                 # jne ph_flag
+    a.b(0xb0, TEAM_KNIGHT_HITS)                              # mov al, team flag
+    a.label('ph_flag')
+    a.b(0x2e, 0x84, 0x06); a.word('rules_table', G_PRACTICE_FLAGS)   # test cs:[flags], al
+    a.short(0x75, 'ph_no')                                   # jnz ph_no     allowed: a hit
+    a.label('ph_yes')
+    a.b(0xf9, 0xc3)                                          # stc / ret
+    a.label('ph_no')
+    a.b(0xf8, 0xc3)                                          # clc / ret
     a.label('team')                                          # bx = record -> al = its team, 0 = not a knight
     a.b(0x2e, 0x80, 0x3e); a.word('coop'); a.b(0x00)         # cmp byte cs:[coop], 0
     a.short(0x74, 'team_split')                              # je team_split
@@ -12461,6 +13381,11 @@ def rules_code(a):
     a.label('ip_keys')
     a.b(0x8b, 0x46, 0xfe)                                    # mov ax, [bp-2]          the caller's bx
     a.label('ip_end')
+    # D132: a human knight's input (a direction or a button, keys or joystick, held too) is a player's activity
+    a.b(0x0b, 0xc0); a.short(0x74, 'x132_ip_done')           # or ax, ax / jz
+    a.b(0x80, 0x7d, 0x09, COMPUTER_CONTROL); a.short(0x74, 'x132_ip_done')   # cmp byte [di+9], 4 / je   a computer's
+    a.b(0x2e, 0xc6, 0x06); a.word('st_act'); a.b(0x01)
+    a.label('x132_ip_done')
     a.near(0xe9, 'rules_done')                               # jmp rules_done
 
     # practice_end (1000:014D; replaces mov dx,[0940h]): practice is over
@@ -12745,13 +13670,14 @@ def potions_code(a):
     # end, turn_end; a walk ring's cell leaves it waiting); keeps all
     a.label('terrain_free')
     a.b(0x50, 0x53, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77)     # push ax bx dx di / mov di, [77E8h]
-    a.b(0x8b, 0x5e, 0xfe, 0x8a, 0x87, 0x2a, 0xc4, 0x24, 0x07, 0xbb); a.word('tf_ring'); a.b(0x2e, 0xd7)   # al = the cell / and al, 7 / xlat cs:tf_ring
+    a.b(0x8b, 0x5e, 0xfe); a.near(0xe8, 'tz_get')            # al = the cell (D133: tz_get)
+    a.b(0x24, 0x07, 0xbb); a.word('tf_ring'); a.b(0x2e, 0xd7)   # and al, 7 / xlat cs:tf_ring
     a.b(0x0a, 0xc0); a.short(0x74, 'x111_tf_lev'); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x75, 'x103_tf_yes')
     a.label('x111_tf_lev')
     a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_tf_no')
     a.b(0x2e, 0x8a, 0x87); a.word('pot_fx'); a.b(0xa8, FX_LEV_ON); a.short(0x75, 'x103_tf_yes')
     a.b(0xa8, FX_LEV_WAIT); a.short(0x74, 'x103_tf_no')
-    a.b(0x8b, 0x7e, 0xfe, 0x80, 0xbd, 0x2a, 0xc4, 0x00); a.short(0x74, 'x103_tf_no')   # mov di, [bp-2] / cmp byte [di+0C42Ah], 0
+    a.b(0x53, 0x8b, 0x5e, 0xfe); a.near(0xe8, 'tz_get'); a.b(0x5b, 0x0a, 0xc0); a.short(0x74, 'x103_tf_no')   # push bx / the cell (tz_get) / pop bx: open: no
     a.b(0x2e, 0x80, 0xb7); a.word('pot_fx'); a.b(FX_LEV_WAIT | FX_LEV_ON)   # waiting -> working
     a.label('x103_tf_yes')
     a.b(0xf9); a.short(0xeb, 'x103_tf_end')
@@ -12767,7 +13693,7 @@ def potions_code(a):
     # a Ring of Plainswalking on open ground (the cell [0CD48h] that A901 has just found, value 0) every third step is
     # free, so open ground takes two thirds: 50 % farther in a turn, on foot or mounted (the budget is the same)
     a.label('rules_plain_step')
-    a.b(0x50, 0x57, 0x8b, 0x1e, 0x48, 0xcd, 0x80, 0xbf, 0x2a, 0xc4, 0x00); a.short(0x75, 'x111_ps_inc')   # push ax di / mov bx, [0CD48h] / cmp byte [bx+0C42Ah], 0
+    a.b(0x50, 0x57, 0x8b, 0x1e, 0x48, 0xcd); a.near(0xe8, 'tz_get'); a.b(0x0a, 0xc0); a.short(0x75, 'x111_ps_inc')   # push ax di / mov bx, [0CD48h] / tz_get
     a.b(0x8b, 0x3e, 0xe8, 0x77, 0xb0, R_PLAIN); a.near(0xe8, 'ring_cnt'); a.b(0x0a, 0xc0); a.short(0x74, 'x111_ps_inc')
     a.b(0x2e, 0xfe, 0x0e); a.word('plain_ctr'); a.short(0x79, 'x111_ps_inc')   # dec byte cs:[plain_ctr] / jns: counted
     a.b(0x2e, 0xc6, 0x06); a.word('plain_ctr'); a.b(0x02); a.short(0xeb, 'x111_ps_end')   # the third: free
@@ -12877,6 +13803,7 @@ def potions_code(a):
     a.b(0x81, 0x7e, 0x02, 0xdf, 0x05); a.short(0x74, 'x103_lh_after')
     a.b(0x53, 0x52, 0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'knight_no'); a.short(0x72, 'x103_lh_none')
     a.near(0xe8, 'banish_here'); a.short(0x73, 'x116_lh_inv')
+    a.label('x122_lh_take')
     a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x74, 'x116_lh_alone')
     a.near(0xe8, 'banish_coop')
     a.label('x116_lh_alone')
@@ -12887,6 +13814,9 @@ def potions_code(a):
     a.label('x116_lh_zf')
     a.b(0x0b, 0xe4); a.short(0xeb, 'x103_lh_flags')         # or sp, sp: ZF = 0 (the seeing mode's path)
     a.label('x116_lh_inv')
+    a.near(0xe8, 'skip_lair'); a.short(0x73, 'x122_lh_fight')   # D122 SKIPCOMBAT: no fight, on at LairWon
+    a.b(0xc7, 0x46, 0x02, LAIR_WON_AT & 0xff, LAIR_WON_AT >> 8); a.short(0xeb, 'x122_lh_take')   # (co-op: as banished)
+    a.label('x122_lh_fight')
     a.b(0x2e, 0x83, 0x3e); a.word('coop_partner'); a.b(0x00); a.short(0x75, 'x103_lh_none')
     a.b(0x2e, 0xf6, 0x87); a.word('pot_fx'); a.b(FX_INVIS); a.short(0x74, 'x103_lh_none')
     a.b(0x2e, 0x80, 0xa7); a.word('pot_fx'); a.b(0xff ^ FX_INVIS)
@@ -13589,23 +14519,21 @@ def rings_code(a):
         a.label(f'x108_rc_{k}')
     a.label('x108_rc_end')
     a.b(0x5b, 0xc3)
-    # ring_stat (si = a record, bx = an ability's offset, 2Eh-30h): cl = the ability as counted: + 1 for each of its
-    # rings (ring 1-3 = offset - 2Dh), at most POT_STAT_MAX (never below the byte); keeps all but cl and the flags
+    # ring_stat (si = a record, bx = an ability's offset, 2Eh-30h): cl = the ability as counted: the byte (the base)
+    # + 1 for each of its rings (ring 1-3 = offset - 2Dh), with no cap (D121: the user's rule of 18 Nov 2026, a ring
+    # always gives its +1, also over the stat potions' 9); keeps all but cl and the flags
     a.label('ring_stat')
     a.b(0x50, 0x57, 0x8a, 0x08, 0x8a, 0xc3, 0x2c, 0x2d, 0x8b, 0xfe)   # push ax di / mov cl, [bx+si] / mov al, bl / sub al, 2Dh / mov di, si
-    a.near(0xe8, 'ring_cnt'); a.b(0x02, 0xc1, 0x3c, POT_STAT_MAX); a.short(0x76, 'x108_st_cap'); a.b(0xb0, POT_STAT_MAX)   # add al, cl / cmp al, 9 / jbe
-    a.label('x108_st_cap')
-    a.b(0x3a, 0xc1); a.short(0x72, 'x108_st_end'); a.b(0x8a, 0xc8)   # cmp al, cl / jb / mov cl, al
-    a.label('x108_st_end')
-    a.b(0x5f, 0x58, 0xc3)
+    a.near(0xe8, 'ring_cnt'); a.b(0x02, 0xc8, 0x5f, 0x58, 0xc3)   # add cl, al / pop di ax / ret
     # the abilities' reads (each replaces a mov or cmp of the ability byte; si = the record): the item screen's
-    # Strength, Endurance, Constitution digits (C2BD, C2F3, C329: mov cl,[si+..]), the movement at a redraw (02E9: mov
-    # bl,[si+30h], bx 0 before it), a fight's Endurance (356D: mov al,[si+30h]), a lair's extra monster for Strength
-    # above 3 (283D: cmp byte [si+2Eh],3; the flags back). Damage (2D84), max HP (02D3) and the turn's movement (A6C4)
-    # read it in their own handlers
-    for name, off in (('ring_cl_str', STAT_STR), ('ring_cl_end', STAT_END), ('ring_cl_con', STAT_CON)):
-        a.label('rules_' + name)
-        a.b(0xbb, off, 0x00); a.near(0xe8, 'ring_stat'); a.near(0xe9, 'rules_done')
+    # Strength, Constitution, Endurance numbers (D121: _ablloop C3EB, xor ax,ax / mov al,[bx+si], the game's bx = the
+    # offset; D108's C2BD, C2F3, C329 only counted the ability's gadget, drawn n times at one place, so nothing showed),
+    # the movement at a redraw (02E9: mov bl,[si+30h], bx 0 before it), a fight's Endurance (356D: mov al,[si+30h]), a
+    # lair's extra monster for Strength above 3 (283D: cmp byte [si+2Eh],3; the flags back). Damage (2D84), max HP
+    # (02D3) and the turn's movement (A6C4) read it in their own handlers. Every raise of the base (XP at D58B/CDEE,
+    # Math and Mythral at B9A6, the stat potions) reads the byte itself, so the rings never block one
+    a.label('rules_ring_abl')
+    a.b(0x51, 0x8b, 0x5e, 0xfe); a.near(0xe8, 'ring_stat'); a.b(0x33, 0xc0, 0x8a, 0xc1, 0x59); a.near(0xe9, 'rules_done')   # push cx / mov bx, [bp-2] / ... / xor ax, ax / mov al, cl / pop cx
     a.label('rules_ring_bl_end')
     a.b(0x51, 0xbb, STAT_END, 0x00); a.near(0xe8, 'ring_stat'); a.b(0x88, 0x4e, 0xfe, 0x59); a.near(0xe9, 'rules_done')   # mov [bp-2], cl
     a.label('rules_ring_al_end')
@@ -14131,7 +15059,7 @@ def gems_code(a):
     # knight, not one with no lives (a grave, a record left out of the game), not one map_hidden hides (invisible or
     # concealed); D118: for the Gem of Frog not one with Spellproof (arm_of, as the scrolls' arm_target: a computer's
     # knight's armour does not count). None: nothing (on at A5BB, as the game's fire on nothing; the aim goes on, the gem
-    # kept). Hit: the gem's effect, the gem used
+    # kept; D128: Change Places with nobody anywhere to target teleports, below). Hit: the gem's effect, the gem used
     # (aim_used), aim_end, the map drawn again (A4B0). Frog: a frog for its next turn only: [3Ah] = 1 when its turn
     # comes later this day, 2 when after the day's end (which takes one day off, 11BB), a longer frog time kept
     a.ovl_entry('aim_shot', 'jump', 'x116_af_game')
@@ -14145,6 +15073,7 @@ def gems_code(a):
     a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(GM_FROG); a.short(0x75, 'x118_ash_spell')   # D118: Frog: cmp byte cs:[gem_aim], 9 / jne
     a.b(0x50); a.near(0xe8, 'arm_of'); a.b(0x3c, A_SPELL, 0x58); a.short(0x74, 'x116_ash_next')   # push ax / Spellproof: passed over
     a.label('x118_ash_spell')
+    a.b(0xfe, 0xc5)                                          # D128: inc ch: one more knight that can be a target
     a.b(0x51, 0x50, 0x8b, 0x4c, 0x5c, 0x2b, 0xc8); a.short(0x79, 'x116_ash_x'); a.b(0xf7, 0xd9)   # push cx ax / cx = |x - ball|
     a.label('x116_ash_x')
     a.b(0x83, 0xf9, AIM_REACH); a.short(0x77, 'x116_ash_far')
@@ -14156,8 +15085,22 @@ def gems_code(a):
     a.label('x116_ash_far')
     a.b(0x58, 0x59)                                          # pop ax cx
     a.label('x116_ash_next')
-    a.b(0x83, 0xc6, SLOT_SIZE); a.short(0xe2, 'x116_ash_loop')
+    a.b(0x83, 0xc6, SLOT_SIZE, 0xfe, 0xc9); a.short(0x75, 'x116_ash_loop')   # add si / dec cl / jnz (ch counts)
     a.b(0x5d, 0x8b, 0xf3, 0x0b, 0xf6); a.short(0x75, 'x116_ash_hit')   # pop bp / mov si, bx / or si, si
+    # D128: Change Places with no knight anywhere that could be a target (ch = 0: every other record is the aiming
+    # knight's own, has no lives or is hidden; the reach is not asked): a teleport to the ball's place, written into
+    # [0CCA4h]/[0CCA6h] for aim_end (the movement used and Haste kept, as the swap). Refused (nothing, the aim goes on,
+    # the gem kept) where the knight would touch the Valley's icon (in_valley, the game's own measure 0653) or at the
+    # place it aims from (an unmoved ball). The ball moves within the knights' own bounds (A478 -> AB82), and every
+    # terrain can be walked, so no other place is refused; what stands there is met as after walking there (by fire)
+    a.b(0x08, 0xed); a.short(0x75, 'x128_ash_none')          # or ch, ch / jnz: someone could be a target
+    a.b(0x2e, 0x80, 0x3e); a.word('gem_aim'); a.b(GM_PLACES); a.short(0x75, 'x128_ash_none')
+    a.b(0x3b, 0x06, 0xa4, 0xcc); a.short(0x75, 'x128_ash_moved')   # cmp ax, [0CCA4h] / jne
+    a.b(0x3b, 0x16, 0xa6, 0xcc); a.short(0x74, 'x128_ash_none')    # cmp dx, [0CCA6h] / je: not moved
+    a.label('x128_ash_moved')
+    a.b(0x8b, 0xf7); a.near(0xe8, 'in_valley'); a.short(0x72, 'x128_ash_none')   # mov si, di / the Valley: refused
+    a.b(0xa3, 0xa4, 0xcc, 0x89, 0x16, 0xa6, 0xcc); a.short(0xeb, 'x116_ash_used')   # the ball's place for aim_end
+    a.label('x128_ash_none')
     a.b(0xc7, 0x46, 0x02, 0xbb, 0xa5); a.short(0xeb, 'x116_ash_end')   # none: on at A5BB
     a.label('x116_ash_hit')                                  # si = the target, di = the aiming knight
     # D117: Change Places: the target to the aiming knight's place ([0CCA4h], [0CCA6h], knight_move), the target's old
@@ -14433,6 +15376,531 @@ def kind_code(a, K):
         remove()
 
 
+def smooth_code(a):
+    """D136 smooth animation (resident: it runs for every piece and every picture of a fight). A fight's logic keeps
+    its tick of 2 BIOS ticks (6 interrupts of the game's own 54.6 Hz timer, 109.85 ms); with smooth_animation = n
+    above 1 the tick's picture is held back and n - 1 in-between pictures are shown first, drawn from two display
+    lists (this tick's pieces and those of the tick before, noted by smo_rec at rules_draw's draw_call): the new
+    tick's pieces, those of an object whose picture is the same as the tick before (smo_match; docs/smooth-
+    animation-plan-2026-11-19.md 12.5) each (n - k) / n of its step back towards where it was, the rest in
+    place. Nothing of the game's logic runs again: no script, no control routine, no
+    random number, and rules_draw runs once a piece as before."""
+    # smo_rec (from rules_draw's draw_call: es:si = the bank, ax = the frame, [bp-2] = x, cx = y, di = the animation
+    # slot, [bp+2] = the site; keeps all): the piece and its colour state into this tick's list. The draw into the
+    # background (9AFD: a piece flagged 10h, drawn again at 9B09) is only remembered, for SMF_BG. Nothing is noted
+    # until the fight loop's own hook has run (smo_arm): the other screens, and a MAIN.EXE without the two sites
+    a.label('smo_rec')
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_arm'); a.b(0x00); a.short(0x75, 'x136_rec_on'); a.b(0xc3)   # cmp byte cs:[smo_arm], 0 / jne / ret
+    a.label('x136_rec_on')
+    a.b(0x81, 0x7e, 0x02, 0xfd, 0x9a); a.short(0x75, 'x136_rec_go')   # cmp word [bp+2], 9AFDh / jne
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_bg'); a.b(SMF_BG, 0xc3)   # mov byte cs:[smo_bg], 4 / ret
+    a.label('x136_rec_go')
+    a.b(0x53, 0x50); gs_buf(a)                               # push bx ax / gs = the buffer block
+    a.b(0x2e, 0x8b, 0x1e); a.word('smo_cnt')                 # mov bx, cs:[smo_cnt]
+    a.b(0x81, 0xfb, *u16(SM_LIST)); a.short(0x73, 'x136_rec_full')   # cmp bx, SM_LIST / jae
+    a.b(0x2e, 0x03, 0x1e); a.word('smo_cur')                 # add bx, cs:[smo_cur]
+    a.b(0x65, 0x89, 0x37, 0x65, 0x8c, 0x47, 0x02)            # mov gs:[bx], si / mov gs:[bx+2], es
+    a.b(0x65, 0x89, 0x4f, E_Y, 0x65, 0x88, 0x47, E_FRAME)    # mov gs:[bx+6], cx / mov gs:[bx+10], al
+    a.b(0x8b, 0x46, 0xfe, 0x65, 0x89, 0x47, E_X)             # mov ax, [bp-2] / mov gs:[bx+4], ax
+    a.b(0x8b, 0x45, 0x16, 0x65, 0x89, 0x47, E_OBJ)           # mov ax, [di+16h] / mov gs:[bx+8], ax
+    a.b(0x8a, 0x45, 0x14, 0x24, SMF_LEFT)                    # mov al, [di+14h] / and al, 2   facing left (3)
+    a.b(0x81, 0xff, *u16(SHADOW_SLOT)); a.short(0x75, 'x136_rec_fig'); a.b(0x0c, SMF_SHADOW)   # cmp di, 95E6h / jne / or al, 1
+    a.label('x136_rec_fig')
+    a.b(0x2e, 0x0a, 0x06); a.word('smo_bg')                  # or al, cs:[smo_bg]
+    for name, shift in (('saber_piece', 3), ('char_piece', 4), ('gore_pass', 5)):
+        a.b(0x2e, 0x8a, 0x26); a.word(name); a.b(0xc0, 0xe4, shift, 0x0a, 0xc4)   # mov ah, cs:[name] / shl ah, n / or al, ah
+    a.b(0x65, 0x88, 0x47, E_FLAGS)                           # mov gs:[bx+11], al
+    a.b(0x2e, 0xa0); a.word('recolour'); a.b(0x2e, 0x8a, 0x26); a.word('rc_shift')   # mov al, cs:[recolour] / mov ah, cs:[rc_shift]
+    a.b(0x65, 0x89, 0x47, E_RC)                              # mov gs:[bx+12], ax
+    a.b(0x2e, 0xa0); a.word('sw_shift'); a.b(0x65, 0x88, 0x47, E_SW)   # mov al, cs:[sw_shift] / mov gs:[bx+14], al
+    a.b(0x65, 0xc6, 0x47, E_AUX, 0x00)                       # mov byte gs:[bx+17], 0
+    a.b(0x2e, 0x83, 0x06); a.word('smo_cnt'); a.b(SM_E)      # add word cs:[smo_cnt], 18
+    a.label('x136_rec_out')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_bg'); a.b(0x00, 0x58, 0x5b, 0xc3)   # mov byte cs:[smo_bg], 0 / pop ax bx / ret
+    a.label('x136_rec_full')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_over'); a.b(0x01); a.short(0xeb, 'x136_rec_out')
+
+    # smo_now (ds = MAIN's data): ax = the sub-ticks since the tick began; a sub-tick is one interrupt of the game's
+    # timer (1000:5934: [7C19h] counts 3, 2, 1 and every third goes on to the BIOS), so the clock is
+    # [0:046Ch] * 3 + 3 - [7C19h], read with the interrupts off. Returns with them off
+    a.label('smo_now')
+    a.b(0x53, 0x06, 0x33, 0xc0, 0x8e, 0xc0, 0xfa)            # push bx es / xor ax, ax / mov es, ax / cli
+    a.b(0x26, 0xa1, 0x6c, 0x04, 0x8b, 0xd8, 0xd1, 0xe0, 0x03, 0xc3)   # mov ax, es:[046Ch] / mov bx, ax / shl ax, 1 / add ax, bx
+    a.b(0x05, 0x03, 0x00, 0x2b, 0x06, *u16(TIMER_THIRD))     # add ax, 3 / sub ax, [7C19h]
+    a.b(0x2e, 0x2b, 0x06); a.word('smo_t0'); a.b(0x07, 0x5b, 0xc3)   # sub ax, cs:[smo_t0] / pop es bx / ret
+    # smo_wait: until the sub-tick cs:[smo_g] (at once when it is past)
+    a.label('smo_wait')
+    a.near(0xe8, 'smo_now'); a.b(0x2e, 0x3b, 0x06); a.word('smo_g'); a.short(0x7d, 'x136_ret')   # cmp ax, cs:[smo_g] / jge
+    a.b(0xfb, 0x90); a.short(0xeb, 'smo_wait')               # sti / nop / jmp
+    a.label('x136_ret')
+    a.b(0xc3)
+    # smo_vsync: until a vertical retrace begins (CF = 0: the page shown before the last flip is off the screen, the
+    # start address is latched there), or the sub-tick cs:[smo_g] (CF = 1)
+    a.label('smo_vsync')
+    a.near(0xe8, 'x136_vs_poll'); a.short(0x72, 'x136_ret'); a.short(0x75, 'smo_vsync')   # inside a retrace: its end first
+    a.label('x136_vs_start')
+    a.near(0xe8, 'x136_vs_poll'); a.short(0x72, 'x136_ret'); a.short(0x74, 'x136_vs_start')
+    a.b(0xf8, 0xc3)                                          # clc / ret
+    a.label('x136_vs_poll')                                  # CF = 1: the time is up; else ZF = 0 in the retrace
+    a.near(0xe8, 'smo_now'); a.b(0x2e, 0x3b, 0x06); a.word('smo_g'); a.short(0x7c, 'x136_vs_in'); a.b(0xf9, 0xc3)   # jl / stc / ret
+    a.label('x136_vs_in')
+    a.b(0xfb, 0xba, 0xda, 0x03, 0xec, 0xfa, 0xa8, 0x08, 0xc3)   # sti / mov dx, 3DAh / in al, dx / cli / test al, 8 / ret
+    # smo_flip (ax = a page's segment; keeps all): that page on the screen (the CRTC's start address high, as 5A40)
+    a.label('smo_flip')
+    a.b(0x2e, 0xa3); a.word('smo_vis')                       # mov cs:[smo_vis], ax
+    a.b(0x50, 0x52, 0xba, 0xd4, 0x03, 0x80, 0xec, 0xa0, 0xc0, 0xe4, 0x04)   # push ax dx / mov dx, 3D4h / sub ah, A0h / shl ah, 4
+    a.b(0xb0, 0x0c, 0xef, 0x5a, 0x58, 0xc3)                  # mov al, 0Ch / out dx, ax / pop dx ax / ret
+
+    # smo_orient (gs:si = an entry; keeps si): al = 80h when its frame is stored facing right (byte +8 of the frame's
+    # entry in the bank is 1, as 9BCA reads it), else 0
+    a.label('smo_orient')
+    a.b(0x65, 0xc4, 0x1c)                                    # les bx, gs:[si]
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0xb4, 0x0a, 0xf6, 0xe4, 0x03, 0xd8)   # mov al, gs:[si+10] / mov ah, 10 / mul ah / add bx, ax
+    a.b(0x26, 0x80, 0x7f, 0x12, 0x01, 0xb0, 0x00); a.short(0x75, 'x136_or_ret'); a.b(0xb0, SMF_ORIENT)   # cmp byte es:[bx+12h], 1 / mov al, 0 / jne / mov al, 80h
+    a.label('x136_or_ret')
+    a.b(0xc3)
+
+    # smo_match (once a tick): how each frame was left by the game's pass (SMF_ORIENT), and each piece's step. Only a
+    # whole object moves (the playtest of 19 Nov 2026: a figure whose pose changes is drawn in place, as the game
+    # draws it; plan 12.5). A piece continues when the piece of the tick before with the same place in its object's
+    # own order (the object record; a shadow is a piece of its object) has the same bank, frame, shadow flag and
+    # facing and is at most SM_FAR away, and the piece is not also drawn into the background. A step is kept only
+    # when every piece its object has this tick continues. smo_moves = 1 when any step is left
+    a.label('smo_match')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_moves'); a.b(0x00)
+    gs_buf(a)
+    a.b(0x2e, 0xa1); a.word('smo_cur'); a.b(0x8b, 0xf0)      # mov ax, cs:[smo_cur] / mov si, ax
+    a.b(0x2e, 0x03, 0x06); a.word('smo_cnt'); a.b(0x2e, 0xa3); a.word('smo_end')   # add ax, cs:[smo_cnt] / mov cs:[smo_end], ax
+    a.b(0x8b, 0xc6, 0x35, *u16(SM_SWAP), 0x2e, 0xa3); a.word('smo_pbase')   # mov ax, si / xor ax, SM_SWAP / the other list
+    a.b(0x2e, 0x03, 0x06); a.word('smo_pcnt'); a.b(0x2e, 0xa3); a.word('smo_pend')
+    a.label('x136_m_loop')
+    a.b(0x2e, 0x3b, 0x36); a.word('smo_end'); a.short(0x72, 'x136_m_go'); a.near(0xe9, 'x136_obj')   # cmp si, cs:[smo_end] / jb / jmp
+    a.label('x136_m_go')
+    a.near(0xe8, 'smo_orient'); a.b(0x65, 0x08, 0x44, E_FLAGS)   # or gs:[si+11], al
+    a.b(0x65, 0xc7, 0x44, E_DX, 0x00, 0x00)                  # mov word gs:[si+15], 0   no step
+    a.b(0x65, 0xf6, 0x44, E_FLAGS, SMF_BG); a.short(0x75, 'x136_m_next')   # test byte gs:[si+11], 4 / jnz
+    a.b(0x2e, 0x8b, 0x3e); a.word('smo_pbase')               # mov di, cs:[smo_pbase]
+    a.label('x136_p_loop')                                   # its object's next piece of the tick before, not yet taken
+    a.b(0x2e, 0x3b, 0x3e); a.word('smo_pend'); a.short(0x73, 'x136_m_next')   # cmp di, cs:[smo_pend] / jae   none: a new piece
+    a.b(0x65, 0xf6, 0x45, E_AUX, 0x02); a.short(0x75, 'x136_p_next')   # test byte gs:[di+17], 2 / jnz   taken
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x65, 0x3b, 0x45, E_OBJ); a.short(0x74, 'x136_p_hit')   # mov ax, gs:[si+8] / cmp ax, gs:[di+8] / je
+    a.label('x136_p_next')
+    a.b(0x83, 0xc7, SM_E); a.short(0xeb, 'x136_p_loop')      # add di, 18 / jmp
+    a.label('x136_m_next')
+    a.b(0x83, 0xc6, SM_E); a.near(0xe9, 'x136_m_loop')       # add si, 18 / jmp
+    a.label('x136_p_hit')                                    # the same picture?
+    a.b(0x65, 0x80, 0x4d, E_AUX, 0x02)                       # or byte gs:[di+17], 2
+    a.b(0x65, 0x8b, 0x04, 0x65, 0x3b, 0x05); a.short(0x75, 'x136_m_next')   # mov ax, gs:[si] / cmp ax, gs:[di] / jne   the bank
+    a.b(0x65, 0x8b, 0x44, 0x02, 0x65, 0x3b, 0x45, 0x02); a.short(0x75, 'x136_m_next')   # ... its segment
+    a.b(0x65, 0x8b, 0x44, E_FRAME, 0x65, 0x33, 0x45, E_FRAME)   # mov ax, gs:[si+10] / xor ax, gs:[di+10]
+    a.b(0xa9, 0xff, SMF_SHADOW | SMF_LEFT); a.short(0x75, 'x136_m_next')   # test ax, 03FFh / jnz   the frame, shadow, facing
+    a.b(0x65, 0x8b, 0x44, E_X, 0x65, 0x2b, 0x45, E_X, 0x8b, 0xd8)   # mov ax, gs:[si+4] / sub ax, gs:[di+4] / mov bx, ax
+    a.b(0x99, 0x33, 0xc2, 0x2b, 0xc2, 0x8b, 0xc8)            # cwd / xor ax, dx / sub ax, dx / mov cx, ax   |dx|
+    a.b(0x65, 0x8b, 0x44, E_Y, 0x65, 0x2b, 0x45, E_Y, 0x8b, 0xf8)   # mov ax, gs:[si+6] / sub ax, gs:[di+6] / mov di, ax
+    a.b(0x99, 0x33, 0xc2, 0x2b, 0xc2, 0x03, 0xc1)            # cwd / xor ax, dx / sub ax, dx / add ax, cx
+    a.b(0x3d, *u16(SM_FAR)); a.short(0x77, 'x136_m_next')    # cmp ax, 48 / ja   too far: as a new piece
+    a.b(0x65, 0x88, 0x5c, E_DX, 0x8b, 0xc7, 0x65, 0x88, 0x44, E_DY)   # mov gs:[si+15], bl / mov ax, di / mov gs:[si+16], al
+    a.b(0x65, 0x80, 0x4c, E_AUX, 0x01)                       # or byte gs:[si+17], 1   it continues
+    a.short(0xeb, 'x136_m_next')
+    # only whole objects move: a step is dropped when a piece of its object in this tick's list does not continue
+    a.label('x136_obj')
+    a.b(0x2e, 0x8b, 0x36); a.word('smo_cur')                 # mov si, cs:[smo_cur]
+    a.label('x136_o_loop')
+    a.b(0x2e, 0x3b, 0x36); a.word('smo_end'); a.short(0x72, 'x136_o_go')   # cmp si, cs:[smo_end] / jb
+    # D143: the walking knights (walk_match, in its overlay group; only with SAVEHOOK.INB in XMS)
+    a.b(0x2e, 0x83, 0x3e); a.word('wk_h'); a.b(0x00); a.short(0x74, 'x136_o_ret')   # cmp word cs:[wk_h], 0 / je
+    a.near(0xe8, 'walk_match')
+    a.label('x136_o_ret')
+    a.b(0xc3)
+    a.label('x136_o_go')
+    a.b(0x65, 0x83, 0x7c, E_DX, 0x00); a.short(0x74, 'x136_o_next')   # cmp word gs:[si+15], 0 / je   no step
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x2e, 0x8b, 0x3e); a.word('smo_cur')   # mov ax, gs:[si+8] / mov di, cs:[smo_cur]
+    a.label('x136_o_scan')
+    a.b(0x2e, 0x3b, 0x3e); a.word('smo_end'); a.short(0x73, 'x136_o_whole')   # cmp di, cs:[smo_end] / jae
+    a.b(0x65, 0x3b, 0x45, E_OBJ); a.short(0x75, 'x136_o_sn')   # cmp ax, gs:[di+8] / jne   another object's
+    a.b(0x65, 0xf6, 0x45, E_AUX, 0x01); a.short(0x74, 'x136_o_part')   # test byte gs:[di+17], 1 / jz   a new piece
+    a.label('x136_o_sn')
+    a.b(0x83, 0xc7, SM_E); a.short(0xeb, 'x136_o_scan')
+    a.label('x136_o_part')
+    a.b(0x65, 0xc7, 0x44, E_DX, 0x00, 0x00); a.short(0xeb, 'x136_o_next')   # mov word gs:[si+15], 0 / jmp   drawn in place
+    a.label('x136_o_whole')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_moves'); a.b(0x01)
+    a.label('x136_o_next')
+    a.b(0x83, 0xc6, SM_E); a.short(0xeb, 'x136_o_loop')
+
+    # sm_hold (1000:0363; replaces call 5A4A, the fight loop's flip): the tick's picture stays in its page, not shown
+    # yet; sm_tick shows it. A fight's first pass here starts the lists
+    a.label('rules_sm_hold')
+    if SM_STATS:                                             # a measuring build: knight 1 walks right for 16 ticks, left for 16
+        right, left = KEY_TABLE + 0x4d, KEY_TABLE + 0x4b
+        a.b(0x06, 0x50, 0x8e, 0x46, 0x04)                    # push es ax / mov es, [bp+4]   MAIN's code segment
+        a.b(0x26, 0xc6, 0x06, *u16(right), 0xff, 0x26, 0xc6, 0x06, *u16(left), 0xff)   # both arrow keys up
+        a.b(0x2e, 0xa0); a.word('smo_stat'); a.b(0xa8, 0x10); a.short(0x75, 'x136_st_left')   # mov al, cs:[ticks] / test al, 10h / jnz
+        a.b(0x26, 0xc6, 0x06, *u16(right), 0x00); a.short(0xeb, 'x136_st_key')
+        a.label('x136_st_left')
+        a.b(0x26, 0xc6, 0x06, *u16(left), 0x00)
+        a.label('x136_st_key')
+        a.b(0x58, 0x07)                                      # pop ax es
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_arm'); a.b(0x00); a.short(0x74, 'x136_arm')
+    a.near(0xe9, 'rules_done')
+    a.label('x136_arm')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_arm'); a.b(0x01)
+    for name in ('smo_cnt', 'smo_pcnt'):
+        a.b(0x2e, 0xc7, 0x06); a.word(name); a.b(0x00, 0x00)
+    for name, v in (('smo_over', 0), ('smo_bg', 0), ('smo_back', 0), ('smo_cost', 0)):
+        a.b(0x2e, 0xc6, 0x06); a.word(name); a.b(v)
+    if SM_STATS:
+        for k in range(SM_STAT_WORDS):
+            a.b(0x2e, 0xc7, 0x06); a.word('smo_stat', 2 * k); a.b(0x00, 0x00)
+    a.near(0xe9, 'rules_done')
+
+    # sm_tick (1000:036C; replaces call 98CA, the fight loop's wait for its tick; ds = MAIN's data). The in-between
+    # pictures, then the tick's own picture and the wait. A picture is made in steps, each a game routine reached
+    # through call_game that returns to this site's int again (smo_phase says where it was): the page restored
+    # (5A72), each piece blitted (5DD4, after 79BC when its frame is stored facing the other way), the frames turned
+    # for it turned back. Picture k of n is due k * 6 / n sub-ticks into the tick and the tick's own at its end.
+    # The governor decides picture by picture, by the last one's cost (smo_cost: the sub-tick boundaries its
+    # drawing crossed, c; a drawing takes less than c + 1 sub-ticks and usually about max(c, 1)). A picture is drawn
+    # only when it cannot end after the tick's end (now + c + 1 <= 6; else there are no more pictures in this tick)
+    # and will usually be ready before the sub-tick after its time is over (now + max(c, 1) <= its time + 1; else
+    # it is left out). A picture ready after its time is shown at once. Should the pictures still make a tick a
+    # whole sub-tick late, there is one picture a tick for SM_BACKOFF ticks. The logic never waits for a picture. With no step at
+    # all (everyone stands) the pictures would all be the tick's own: it is shown at once, as the game shows it
+    a.label('rules_sm_tick')
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_phase'); a.b(0x00); a.short(0x74, 'x136_new')
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_phase'); a.b(0x01); a.short(0x75, 'x136_to_fix'); a.near(0xe9, 'x136_piece')
+    a.label('x136_to_fix')
+    a.near(0xe9, 'x136_fix')
+    a.label('x136_new')
+    for k, op in enumerate((b'\x89\x0e', b'\x89\x16', b'\x89\x36', b'\x89\x3e', b'\x8c\x06')):   # mov cs:[smo_regs + 2k], cx dx si di es
+        a.b(0x2e, op); a.word('smo_regs', 2 * k)
+    a.b(0x8b, 0x46, 0x00, 0x2e, 0xa3); a.word('smo_regs', 10)   # mov ax, [bp] / the game's bp
+    a.b(0x8b, 0x46, 0xfe, 0x2e, 0xa3); a.word('smo_regs', 12)   # mov ax, [bp-2] / its bx
+    a.b(0xa1, 0xb9, 0x80, 0x2e, 0xa3); a.word('smo_b')       # mov ax, [80B9h] / the page with the tick's picture
+    a.b(0xa1, 0xb7, 0x80, 0x2e, 0xa3); a.word('smo_vis')     # mov ax, [80B7h] / the page on the screen
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_drawn'); a.b(0x00)
+    a.b(0xa1, *u16(TICK_TARGET), 0x48, 0x48, 0x8b, 0xd8, 0xd1, 0xe0, 0x03, 0xc3)   # mov ax, [C2F6h] / dec ax (x2) / mov bx, ax / shl ax, 1 / add ax, bx
+    a.b(0x2e, 0xa3); a.word('smo_t0')                        # the tick's start: (its target - 2) * 3
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_over'); a.b(0x00); a.short(0x74, 'x136_fits')
+    a.b(0x2e, 0xc7, 0x06); a.word('smo_cnt'); a.b(0x00, 0x00)   # a list that ran over is not used
+    a.label('x136_fits')
+    a.near(0xe8, 'smo_match')
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_moves'); a.b(0x00); a.short(0x74, 'x136_to_final')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_SMOOTH); a.b(0x01); a.short(0x76, 'x136_to_final')
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_back'); a.b(0x00); a.short(0x74, 'x136_k1')
+    a.b(0x2e, 0xfe, 0x0e); a.word('smo_back')                # dec byte cs:[smo_back]
+    a.label('x136_to_final')
+    a.near(0xe9, 'x136_final')
+    a.label('x136_k1')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_k'); a.b(0x01)
+    a.label('x136_pic')                                      # the next in-between picture, smo_k
+    a.b(0x2e, 0xa0); a.word('smo_k'); a.b(0x2e, 0x3a, 0x06); a.word('rules_table', G_SMOOTH); a.short(0x73, 'x136_to_final')   # mov al, cs:[smo_k] / cmp al, cs:[n] / jae
+    a.b(0xb4, 0x06, 0xf6, 0xe4, 0x2e, 0xf6, 0x36); a.word('rules_table', G_SMOOTH)   # mov ah, 6 / mul ah / div byte cs:[n]
+    a.b(0x32, 0xe4, 0x40, 0x2e, 0xa3); a.word('smo_g')       # xor ah, ah / inc ax / mov cs:[smo_g], ax   the end of its time
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_drawn'); a.b(0x00); a.short(0x74, 'x136_free')
+    a.near(0xe8, 'smo_vsync'); a.short(0x72, 'x136_skip')    # the page it goes into was on the screen until the last flip
+    a.label('x136_free')
+    a.near(0xe8, 'smo_now')
+    a.b(0x2e, 0x8a, 0x1e); a.word('smo_cost'); a.b(0x32, 0xff, 0x03, 0xd8, 0x43)   # mov bl, cs:[smo_cost] / xor bh, bh / add bx, ax / inc bx
+    a.b(0x83, 0xfb, 0x06); a.short(0x7f, 'x136_to_final')    # cmp bx, 6 / jg   it could end after the tick's end: no more pictures
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_cost'); a.b(0x00); a.short(0x74, 'x136_fit'); a.b(0x4b)   # cmp byte cs:[smo_cost], 0 / je / dec bx
+    a.label('x136_fit')
+    a.b(0x2e, 0x3b, 0x1e); a.word('smo_g'); a.short(0x7f, 'x136_skip')   # cmp bx, cs:[smo_g] / jg   not ready within its time: left out
+    a.b(0x2e, 0xff, 0x0e); a.word('smo_g')                   # dec word cs:[smo_g]   when it is shown
+    a.b(0x2e, 0xa3); a.word('smo_c0')                        # its drawing begins
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(*u16(RESTORE_PAGE))   # the page first: the background (5A72)
+    a.b(0xb8, 0x00, 0xec, 0x2e, 0x2b, 0x06); a.word('smo_vis'); a.b(0x2e, 0x2b, 0x06); a.word('smo_b')   # mov ax, EC00h / sub ax, cs:[smo_vis] / sub ax, cs:[smo_b]
+    a.b(0xa3, 0xb9, 0x80)                                    # mov [80B9h], ax   the page neither shown nor holding the tick's picture
+    a.b(0x2e, 0xc7, 0x06); a.word('smo_i'); a.b(0x00, 0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_mir'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_phase'); a.b(0x01)
+    a.label('x136_call')                                     # the game routine in call_target, then this int again
+    a.b(0x2e, 0xc7, 0x06); a.word('call_ret'); a.b(*u16(SM_TICK_SITE))
+    a.near(0xe9, 'call_game')
+    a.label('x136_skip')
+    a.b(0x2e, 0xfe, 0x06); a.word('smo_k'); a.near(0xe9, 'x136_pic')   # inc byte cs:[smo_k] / jmp
+
+    a.label('x136_piece')                                    # phase 1: the next piece
+    gs_buf(a)
+    a.b(0x2e, 0x8b, 0x36); a.word('smo_i'); a.b(0x2e, 0x3b, 0x36); a.word('smo_cnt'); a.short(0x72, 'x136_pc_go')   # mov si, cs:[smo_i] / cmp si, cs:[smo_cnt] / jb
+    a.near(0xe9, 'x136_drawn')
+    a.label('x136_pc_go')
+    a.b(0x2e, 0x03, 0x36); a.word('smo_cur')                 # add si, cs:[smo_cur]
+    a.b(0x65, 0x8a, 0x44, E_AUX, 0xa8, SMX_WALK | SMX_SKIP); a.short(0x74, 'x143_plain')   # mov al, gs:[si+17] / test al, 0Ch / jz
+    a.b(0xa8, SMX_SKIP); a.short(0x74, 'x136_blit')          # test al, 8 / jz   D143: a walker's legs: the in-between body
+    a.label('x143_skip')                                     # ... its torso is part of that picture
+    a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E); a.short(0xeb, 'x136_piece')   # add word cs:[smo_i], 18 / jmp
+    a.label('x143_plain')
+    a.near(0xe8, 'smo_orient')                               # al = 80h: stored facing right
+    a.b(0xd0, 0xc0, 0xd0, 0xc0, 0x34, SMF_LEFT)              # rol al, 1 (x2) / xor al, 2   2 = stored facing left
+    a.b(0x65, 0x32, 0x44, E_FLAGS, 0xa8, SMF_LEFT); a.short(0x74, 'x136_blit')   # xor al, gs:[si+11] / test al, 2 / jz   as its slot faced
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_mir'); a.b(0x01)
+    a.label('x136_mirror')                                   # 79BC turns the frame (es:si = the bank, ax = the frame); the piece again after it
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0x32, 0xe4, 0x65, 0xc4, 0x34)   # mov al, gs:[si+10] / xor ah, ah / les si, gs:[si]
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(*u16(MIRROR_FRAME)); a.near(0xe9, 'x136_call')
+    a.label('x136_blit')                                     # the colour state as rules_draw left it for this piece
+    a.b(0x65, 0x8b, 0x44, E_RC, 0x2e, 0xa2); a.word('recolour'); a.b(0x2e, 0x88, 0x26); a.word('rc_shift')   # mov ax, gs:[si+12] / mov cs:[recolour], al / mov cs:[rc_shift], ah
+    a.b(0x65, 0x8a, 0x44, E_SW, 0x2e, 0xa2); a.word('sw_shift')
+    a.b(0x65, 0x8a, 0x64, E_FLAGS)                           # mov ah, gs:[si+11]
+    a.b(0xf6, 0xc4, SMF_SABER); a.short(0x74, 'x136_plain')  # test ah, 8 / jz
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0x2e, 0xa2); a.word('saber_frame')   # D57: a lightsaber's piece: its frame for saber_glow
+    a.label('x136_plain')
+    for name, shift, mask in (('saber_piece', 3, 1), ('char_piece', 4, 1), ('gore_pass', 5, 3)):
+        a.b(0x8a, 0xc4, 0xc0, 0xe8, shift, 0x24, mask, 0x2e, 0xa2); a.word(name)   # mov al, ah / shr al, n / and al, mask / mov cs:[name], al
+    a.b(0x65, 0xf6, 0x44, E_AUX, SMX_WALK); a.short(0x74, 'x143_own'); a.near(0xe9, 'x143_body')   # test byte gs:[si+17], 4 / jz / jmp
+    a.label('x143_own')
+    # its place: (n - k) / n of its step back
+    a.b(0x2e, 0x8a, 0x0e); a.word('rules_table', G_SMOOTH); a.b(0x8a, 0xe9, 0x2e, 0x2a, 0x2e); a.word('smo_k')   # mov cl, cs:[n] / mov ch, cl / sub ch, cs:[smo_k]
+    a.b(0x65, 0x8a, 0x44, E_DY, 0xf6, 0xed, 0xf6, 0xf9, 0x98)   # mov al, gs:[si+16] / imul ch / idiv cl / cbw
+    a.b(0x65, 0x8b, 0x7c, E_Y, 0x2b, 0xf8)                   # mov di, gs:[si+6] / sub di, ax   y
+    a.b(0x65, 0x8a, 0x44, E_DX, 0xf6, 0xed, 0xf6, 0xf9, 0x98)   # mov al, gs:[si+15] / imul ch / idiv cl / cbw
+    a.b(0x65, 0x8b, 0x54, E_X, 0x2b, 0xd0, 0x89, 0x56, 0xfe)   # mov dx, gs:[si+4] / sub dx, ax / mov [bp-2], dx   x, the game's bx
+    a.b(0x8b, 0xcf)                                          # mov cx, di
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0x32, 0xe4, 0x65, 0xc4, 0x34)   # mov al, gs:[si+10] / xor ah, ah / les si, gs:[si]
+    a.label('x143_go')
+    a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E)        # add word cs:[smo_i], 18
+    a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(*u16(BLITTER)); a.near(0xe9, 'x136_call')
+
+    # D143: a walking knight's body in an in-between picture (gs:si = its legs piece, marked by walk_match; the
+    # colour state is set). Picture k of n shows the pose j = 6 * k / n sixths of the way from the pose of the tick
+    # before: its slot of SAVEHOOK.INB is fetched from XMS into the buffer block (BUF_WALK: two words for the place,
+    # then a bank of one frame), hung on the standing foot (wk_part) and drawn in place of the legs piece. A fetch
+    # that fails leaves the body out of that picture
+    a.label('x143_body')
+    a.b(0xb8, 0x06, 0x00, 0x2e, 0xf6, 0x36); a.word('rules_table', G_SMOOTH)   # mov ax, 6 / div byte cs:[n]
+    a.b(0x2e, 0xf6, 0x26); a.word('smo_k'); a.b(0x8a, 0xc8)  # mul byte cs:[smo_k] / mov cl, al   j
+    a.b(0x65, 0x8a, 0x44, E_AUX, 0xc0, 0xe8, 0x04, 0xb4, WK_STEPS, 0xf6, 0xe4, 0x02, 0xc1)   # mov al, gs:[si+17] / shr al, 4 / mov ah, 5 / mul ah / add al, cl   the slot
+    a.b(0xba, *u16(WK_SLOT), 0xf7, 0xe2)                     # mov dx, WK_SLOT / mul dx
+    a.b(0x2e, 0xa3); a.word('wk_off'); a.b(0x2e, 0x89, 0x16); a.word('wk_off', 2)   # mov cs:[wk_off], ax / mov cs:[wk_off+2], dx
+    a.b(0x2e, 0x8c, 0x2e); a.word('wk_dseg')                 # mov cs:[wk_dseg], gs
+    a.b(0x51, 0x56, 0x1e, 0x0e, 0x1f, 0xbe); a.word('wk_move')   # push cx si ds / push cs / pop ds / mov si, wk_move
+    a.b(0xb4, 0x0b, 0x2e, 0xff, 0x1e); a.word('xms_entry')   # mov ah, 0Bh / call far cs:[xms_entry]
+    a.b(0x1f, 0x5e, 0x59, 0x0b, 0xc0); a.short(0x75, 'x143_got'); a.near(0xe9, 'x143_skip')   # pop ds si cx / or ax, ax / jnz / jmp
+    a.label('x143_got')
+    a.b(0x65, 0xc7, 0x06, *u16(BUF_WALK + WK_BANK + 2), *u16(BUF_WALK + WK_BANK + 20))   # mov word gs:[the bank's data offset], its planes
+    a.b(0x65, 0x8c, 0x2e, *u16(BUF_WALK + WK_BANK + 4))      # mov gs:[... segment], gs
+    a.b(0x65, 0x8a, 0x44, E_DX, 0x65, 0x8b, 0x54, E_X, 0x65, 0x8b, 0x1e, *u16(BUF_WALK))   # mov al, gs:[si+15] / mov dx, gs:[si+4] / mov bx, gs:[cx word]
+    a.near(0xe8, 'wk_part'); a.b(0x89, 0x46, 0xfe)           # call wk_part / mov [bp-2], ax   x, the game's bx
+    a.b(0x65, 0x8a, 0x44, E_DY, 0x65, 0x8b, 0x54, E_Y, 0x65, 0x8b, 0x1e, *u16(BUF_WALK + 2))
+    a.near(0xe8, 'wk_part'); a.b(0x8b, 0xc8)                 # call wk_part / mov cx, ax   y
+    a.b(0x0f, 0xa8, 0x07, 0xbe, *u16(BUF_WALK + WK_BANK), 0x33, 0xc0)   # push gs / pop es / mov si, the bank / xor ax, ax   its frame 0
+    a.near(0xe9, 'x143_go')
+    # wk_part (al = the legs piece's step from the tick before, dx = its coordinate now, bx = the slot's word for
+    # that coordinate, cl = j): ax = the picture's coordinate: the old one + (j * step + the word) / 6 - WK_BIAS,
+    # rounded to the nearest pixel (the word has the half), an exact half to the even one (the word's top bit)
+    a.label('wk_part')
+    a.b(0x98, 0x2b, 0xd0, 0xf6, 0xe9)                        # cbw / sub dx, ax / imul cl
+    a.b(0x8b, 0xfb, 0x80, 0xe7, 0x7f, 0x03, 0xc3)            # mov di, bx / and bh, 7Fh / add ax, bx
+    a.b(0x52, 0x33, 0xd2, 0xbb, 0x06, 0x00, 0xf7, 0xf3, 0x5b)   # push dx / xor dx, dx / mov bx, 6 / div bx / pop bx
+    a.b(0x03, 0xc3, 0x2d, *u16(WK_BIAS))                     # add ax, bx / sub ax, WK_BIAS
+    a.b(0x0b, 0xd2); a.short(0x75, 'x143_part_ret')          # or dx, dx / jnz   not a half
+    a.b(0x0b, 0xff); a.short(0x79, 'x143_part_ret')          # or di, di / jns
+    a.b(0xa8, 0x01); a.short(0x74, 'x143_part_ret'); a.b(0x48)   # test al, 1 / jz / dec ax
+    a.label('x143_part_ret')
+    a.b(0xc3)
+
+    # walk_match (D143, once a tick, after smo_match; ds = MAIN's data; keeps all; in overlay group OVL_WALK): a
+    # knight walks when its first two pieces this tick are a walk pose (wm_pose), its third piece (the sword)
+    # continues, and its first two pieces of the tick before were the pose before it in the loop, of the same look,
+    # facing the same way, the legs at most WK_FAR away in x and in y (the three pieces next to each other in the
+    # list, both ticks). Then the legs piece gets its step and SMX_WALK with its
+    # slots' number, the torso piece SMX_SKIP, and the sword its own step: the in-between pictures show the body
+    # of the pose in between (x143_body) and the sword part of its way
+    a.ovl_begin(OVL_WALK); a.ovl_entry('walk_match', 'call')
+    jn = lambda cc, label: (a.b(0x0f), a.near(0x80 | cc, label))   # a near jcc (386)
+    a.b(0x60); gs_buf(a)                                     # pusha
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_SMOOTH); a.b(0x01); jn(6, 'x143_wm_ret')   # cmp byte cs:[n], 1 / jbe
+    a.b(0x2e, 0x8b, 0x36); a.word('smo_cur')                 # mov si, cs:[smo_cur]
+    a.label('x143_wm_loop')
+    a.b(0x2e, 0x8b, 0x0e); a.word('smo_end'); a.b(0x3b, 0xf1); jn(3, 'x143_wm_ret')   # mov cx, cs:[smo_end] / cmp si, cx / jae
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x2e, 0x8b, 0x1e); a.word('smo_cur')   # mov ax, gs:[si+8] / mov bx, cs:[smo_cur]
+    a.label('x143_wm_first')                                 # its object's first piece in the list: this one?
+    a.b(0x65, 0x3b, 0x47, E_OBJ); a.short(0x74, 'x143_wm_is')   # cmp ax, gs:[bx+8] / je
+    a.b(0x83, 0xc3, SM_E); a.short(0xeb, 'x143_wm_first')    # add bx, 18 / jmp
+    a.label('x143_wm_is')
+    a.b(0x3b, 0xde); jn(5, 'x143_wm_next')                   # cmp bx, si / jne
+    a.near(0xe8, 'x143_pose'); jn(2, 'x143_wm_next')         # call / jc
+    a.b(0x8a, 0xd0)                                          # mov dl, al   look * 8 + this tick's pose
+    a.b(0x8d, 0x5c, 2 * SM_E, 0x3b, 0xd9); jn(3, 'x143_wm_next')   # lea bx, [si+36] / cmp bx, cx / jae   the third piece
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x65, 0x3b, 0x47, E_OBJ); jn(5, 'x143_wm_next')   # mov ax, gs:[si+8] / cmp ax, gs:[bx+8] / jne
+    a.b(0x65, 0xf6, 0x47, E_AUX, 0x01); jn(4, 'x143_wm_next')   # test byte gs:[bx+17], 1 / jz   it does not continue
+    a.b(0x2e, 0x8b, 0x1e); a.word('smo_pbase'); a.b(0x2e, 0x8b, 0x0e); a.word('smo_pend')   # mov bx, cs:[smo_pbase] / mov cx, cs:[smo_pend]
+    a.label('x143_wm_prev')                                  # the object's first piece of the tick before
+    a.b(0x3b, 0xd9); jn(3, 'x143_wm_next')                   # cmp bx, cx / jae
+    a.b(0x65, 0x3b, 0x47, E_OBJ); a.short(0x74, 'x143_wm_found')   # cmp ax, gs:[bx+8] / je
+    a.b(0x83, 0xc3, SM_E); a.short(0xeb, 'x143_wm_prev')     # add bx, 18 / jmp
+    a.label('x143_wm_found')
+    a.near(0xe8, 'x143_pose'); jn(2, 'x143_wm_next')
+    a.b(0xfe, 0xc0, 0x32, 0xc2, 0xa8, 0x0b); jn(5, 'x143_wm_next')   # inc al / xor al, dl / test al, 0Bh / jnz   not the pose before, or the other look
+    a.b(0x65, 0x8a, 0x47, E_FLAGS, 0x65, 0x32, 0x44, E_FLAGS, 0xa8, SMF_LEFT); jn(5, 'x143_wm_next')   # the facing
+    a.b(0x8d, 0x7f, 2 * SM_E, 0x3b, 0xf9); jn(3, 'x143_wm_next')   # lea di, [bx+36] / cmp di, cx / jae   its third piece then
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x65, 0x3b, 0x45, E_OBJ); jn(5, 'x143_wm_next')   # mov ax, gs:[si+8] / cmp ax, gs:[di+8] / jne
+    a.b(0x65, 0x8b, 0x44, E_X, 0x65, 0x2b, 0x47, E_X)        # mov ax, gs:[si+4] / sub ax, gs:[bx+4]   the legs' step
+    a.b(0x65, 0x8b, 0x4c, E_Y, 0x65, 0x2b, 0x4f, E_Y)        # mov cx, gs:[si+6] / sub cx, gs:[bx+6]
+    a.b(0x05, *u16(WK_FAR), 0x3d, *u16(2 * WK_FAR)); jn(7, 'x143_wm_next'); a.b(0x2c, WK_FAR)   # add ax, 40 / cmp ax, 80 / ja / sub al, 40
+    a.b(0x83, 0xc1, WK_FAR, 0x83, 0xf9, 2 * WK_FAR); jn(7, 'x143_wm_next'); a.b(0x80, 0xe9, WK_FAR)   # the same for cx
+    a.b(0x65, 0x88, 0x44, E_DX, 0x65, 0x88, 0x4c, E_DY)      # mov gs:[si+15], al / mov gs:[si+16], cl
+    a.b(0x65, 0x8b, 0x44, 2 * SM_E + E_X, 0x65, 0x2b, 0x45, E_X, 0x65, 0x88, 0x44, 2 * SM_E + E_DX)   # the sword's step: x
+    a.b(0x65, 0x8b, 0x44, 2 * SM_E + E_Y, 0x65, 0x2b, 0x45, E_Y, 0x65, 0x88, 0x44, 2 * SM_E + E_DY)   # ... y
+    a.b(0x8a, 0xc2, 0xfe, 0xc8, 0x24, 0x03)                  # mov al, dl / dec al / and al, 3   the pose of the tick before
+    a.b(0x8a, 0xe2, 0x80, 0xe4, 0x08, 0x0a, 0xc4)            # mov ah, dl / and ah, 8 / or al, ah   the look
+    a.b(0x65, 0xf6, 0x44, E_FLAGS, SMF_LEFT); a.short(0x74, 'x143_wm_right'); a.b(0x0c, 0x04)   # test byte gs:[si+11], 2 / jz / or al, 4
+    a.label('x143_wm_right')
+    a.b(0xc0, 0xe0, 0x04, 0x0c, SMX_WALK, 0x65, 0x08, 0x44, E_AUX)   # shl al, 4 / or al, 4 / or gs:[si+17], al
+    a.b(0x65, 0x80, 0x4c, SM_E + E_AUX, SMX_SKIP)            # or byte gs:[si+18+17], 8
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_moves'); a.b(0x01)    # mov byte cs:[smo_moves], 1
+    a.label('x143_wm_next')
+    a.b(0x83, 0xc6, SM_E); a.near(0xe9, 'x143_wm_loop')      # add si, 18 / jmp
+    a.label('x143_wm_ret')
+    a.b(0x61, 0xc3)                                          # popa / ret
+    # wm_pose (gs:bx = a piece, cx = its list's end; keeps bx, cx, dx, si): CF = 0 and al = look * 8 + pose (0-3: the
+    # legs frames 3, 5, 7, 9) when it and the piece after it are a knight's walk pose: a knight's (type 6 or 8)
+    # legs and torso of KN1.OB or HE1.OB, not a shadow nor drawn into the background, in the same colour state, the
+    # torso where the walk draws it (wk_torso; one pixel either way in x: the walk-in's)
+    a.label('x143_pose')
+    a.b(0x51, 0x8d, 0x7f, SM_E, 0x3b, 0xf9); jn(3, 'x143_no')   # push cx / lea di, [bx+18] / cmp di, cx / jae
+    a.b(0x65, 0xf6, 0x47, E_FLAGS, SMF_SHADOW | SMF_BG); jn(5, 'x143_no')   # test byte gs:[bx+11], 5 / jnz
+    a.b(0x65, 0x8b, 0x7f, E_OBJ, 0x0b, 0xff); jn(4, 'x143_no')   # mov di, gs:[bx+8] / or di, di / jz
+    a.b(0x65, 0x3b, 0x7f, SM_E + E_OBJ); jn(5, 'x143_no')    # cmp di, gs:[bx+18+8] / jne
+    a.b(0x8a, 0x45, 0x35, 0x3c, 0x06); a.short(0x74, 'x143_knight')   # mov al, [di+35h] / cmp al, 6 / je
+    a.b(0x3c, COMPUTER_TYPE); jn(5, 'x143_no')               # cmp al, 8 / jne
+    a.label('x143_knight')
+    a.b(0x65, 0x8b, 0x47, 0x02, 0x65, 0x3b, 0x47, SM_E + 2); jn(5, 'x143_no')   # mov ax, gs:[bx+2] / cmp ax, gs:[bx+18+2] / jne   the bank
+    a.b(0x33, 0xc9, 0x3b, 0x06, *u16(KN1_SEG)); a.short(0x74, 'x143_bank')   # xor cx, cx / cmp ax, [8937h] / je
+    a.b(0xb1, 0x08, 0x3b, 0x06, *u16(HE1_SEG)); jn(5, 'x143_no')   # mov cl, 8 / cmp ax, [894Dh] / jne
+    a.label('x143_bank')
+    a.b(0x65, 0x8b, 0x47, E_RC, 0x65, 0x3b, 0x47, SM_E + E_RC); jn(5, 'x143_no')   # the colour state: recolour, rc_shift
+    a.b(0x65, 0x8a, 0x47, E_SW, 0x65, 0x3a, 0x47, SM_E + E_SW); jn(5, 'x143_no')   # ... sw_shift
+    a.b(0x65, 0x8a, 0x47, E_FLAGS, 0x8a, 0xe8, 0x65, 0x32, 0x47, SM_E + E_FLAGS, 0xa8, 0x7f); jn(5, 'x143_no')   # mov al, gs:[bx+11] / mov ch, al / xor al, gs:[bx+29] / test al, 7Fh / jnz
+    a.b(0x65, 0x8a, 0x47, E_FRAME, 0x8a, 0xe0, 0xfe, 0xcc, 0x65, 0x3a, 0x67, SM_E + E_FRAME); jn(5, 'x143_no')   # mov al, gs:[bx+10] / mov ah, al / dec ah / cmp ah, gs:[bx+28] / jne
+    a.b(0x2c, 0x03); jn(2, 'x143_no'); a.b(0xa8, 0x01); jn(5, 'x143_no')   # sub al, 3 / jb / test al, 1 / jnz
+    a.b(0xd0, 0xe8, 0x3c, 0x03); jn(7, 'x143_no')            # shr al, 1 / cmp al, 3 / ja
+    a.b(0x0a, 0xc8, 0x98, 0xd1, 0xe0)                        # or cl, al / cbw / shl ax, 1
+    a.b(0xf6, 0xc5, SMF_LEFT); a.short(0x74, 'x143_tr'); a.b(0x40)   # test ch, 2 / jz / inc ax
+    a.label('x143_tr')
+    a.b(0xd1, 0xe0, 0x8b, 0xf8)                              # shl ax, 1 / mov di, ax   (pose * 2 + left) * 2
+    a.b(0x2e, 0x0f, 0xbe, 0x85); a.word('wk_torso', 1)       # movsx ax, byte cs:[di+wk_torso+1]   y
+    a.b(0x65, 0x03, 0x47, E_Y, 0x65, 0x3b, 0x47, SM_E + E_Y); jn(5, 'x143_no')   # add ax, gs:[bx+6] / cmp ax, gs:[bx+18+6] / jne
+    a.b(0x2e, 0x0f, 0xbe, 0x85); a.word('wk_torso')          # movsx ax, byte cs:[di+wk_torso]   x
+    a.b(0x65, 0x03, 0x47, E_X, 0x65, 0x2b, 0x47, SM_E + E_X, 0x40, 0x3d, 0x02, 0x00); jn(7, 'x143_no')   # add ax, gs:[bx+4] / sub ax, gs:[bx+18+4] / inc ax / cmp ax, 2 / ja
+    a.b(0x8a, 0xc1, 0x59, 0xf8, 0xc3)                        # mov al, cl / pop cx / clc / ret
+    a.label('x143_no')
+    a.b(0x59, 0xf9, 0xc3)                                    # pop cx / stc / ret
+    a.label('wk_torso')
+    for f in (3, 5, 7, 9):
+        for facing in (0, 1):
+            a.b(*(v & 0xff for v in WK_TORSO[f][facing]))
+    a.ovl_end()
+
+    a.label('x136_drawn')                                    # every piece is on the page
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_mir'); a.b(0x00); a.short(0x74, 'x136_show')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_phase'); a.b(0x02)
+    a.b(0x2e, 0xc7, 0x06); a.word('smo_i'); a.b(0x00, 0x00)
+    a.label('x136_fix')                                      # phase 2: a frame turned for the picture goes back as the game's pass left it
+    gs_buf(a)
+    a.label('x136_fix_loop')
+    a.b(0x2e, 0x8b, 0x36); a.word('smo_i'); a.b(0x2e, 0x3b, 0x36); a.word('smo_cnt'); a.short(0x73, 'x136_show')
+    a.b(0x2e, 0x03, 0x36); a.word('smo_cur')
+    a.near(0xe8, 'smo_orient')
+    a.b(0x65, 0x32, 0x44, E_FLAGS, 0xa8, SMF_ORIENT); a.short(0x74, 'x136_fix_next')   # xor al, gs:[si+11] / test al, 80h / jz
+    a.near(0xe9, 'x136_mirror')
+    a.label('x136_fix_next')
+    a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E); a.short(0xeb, 'x136_fix_loop')
+
+    a.label('x136_show')                                     # the picture is ready: shown at its time
+    a.near(0xe8, 'smo_now'); a.b(0x2e, 0x2b, 0x06); a.word('smo_c0'); a.b(0x2e, 0xa2); a.word('smo_cost')   # sub ax, cs:[smo_c0] / mov cs:[smo_cost], al   its cost
+    a.b(0x8e, 0x06, 0xb9, 0x80); a.near(0xe8, 'smo_show')    # mov es, [80B9h] / the read-outs on it
+    a.near(0xe8, 'smo_wait')
+    a.b(0xa1, 0xb9, 0x80); a.near(0xe8, 'smo_flip')          # mov ax, [80B9h] / on the screen
+    a.b(0x2e, 0xfe, 0x06); a.word('smo_drawn')               # inc byte cs:[smo_drawn]
+    a.near(0xe9, 'x136_skip')
+
+    a.label('x136_final')                                    # the tick's own picture
+    if SM_STATS:
+        a.b(0x2e, 0xff, 0x06); a.word('smo_stat')            # inc word cs:[smo_stat]   ticks
+        a.b(0x2e, 0xa0); a.word('smo_drawn'); a.b(0x32, 0xe4, 0x2e, 0x01, 0x06); a.word('smo_stat', 4)   # the pictures shown
+        a.b(0x2e, 0x80, 0x3e); a.word('smo_moves'); a.b(0x00); a.short(0x74, 'x136_st_still')
+        a.b(0x2e, 0xff, 0x06); a.word('smo_stat', 2)         # ticks with movement ...
+        a.b(0x8b, 0xd8, 0xd1, 0xe3, 0x2e, 0xff, 0x87); a.word('smo_stat', 14)   # mov bx, ax / shl bx, 1 / inc word cs:[bx+...]   by pictures
+        a.label('x136_st_still')
+        a.near(0xe8, 'smo_now'); a.b(0x3d, 0x06, 0x00); a.short(0x7c, 'x136_st_in')   # the tick's end has passed already
+        a.b(0x2e, 0xff, 0x06); a.word('smo_stat', 8)
+        a.b(0x2e, 0x80, 0x3e); a.word('smo_drawn'); a.b(0x00); a.short(0x74, 'x136_st_in')
+        a.b(0x2e, 0xff, 0x06); a.word('smo_stat', 6)         # ... after pictures
+        a.label('x136_st_in')
+        a.b(0x06, 0x33, 0xc0, 0x8e, 0xc0, 0x26, 0xa1, 0x6c, 0x04, 0x07, 0x2e, 0xa3); a.word('smo_stat', 12)   # the BIOS tick now
+        a.b(0x2e, 0x83, 0x3e); a.word('smo_stat', 10); a.b(0x00); a.short(0x75, 'x136_st_end')
+        a.b(0x2e, 0xa3); a.word('smo_stat', 10)
+        a.label('x136_st_end')
+    a.b(0x2e, 0xa1); a.word('smo_b'); a.b(0xa3, 0xb9, 0x80)  # mov ax, cs:[smo_b] / mov [80B9h], ax   the game's page again
+    a.b(0x2e, 0xa1); a.word('smo_cnt'); a.b(0x2e, 0xa3); a.word('smo_pcnt')   # the lists change places
+    a.b(0x2e, 0xc7, 0x06); a.word('smo_cnt'); a.b(0x00, 0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_over'); a.b(0x00)
+    a.b(0x2e, 0x81, 0x36); a.word('smo_cur'); a.b(*u16(SM_SWAP))   # xor word cs:[smo_cur], SM_SWAP
+    a.label('x136_out')
+    a.b(0x2e, 0x8e, 0x06); a.word('smo_b'); a.near(0xe8, 'smo_show')   # mov es, cs:[smo_b] / the read-outs on the tick's picture
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_drawn'); a.b(0x00); a.short(0x74, 'x136_flip')   # no in-between picture: at once, as the game
+    a.near(0xe8, 'smo_now'); a.b(0x3d, 0x07, 0x00); a.short(0x7c, 'x136_end')   # cmp ax, 7 / jl
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_back'); a.b(SM_BACKOFF)   # the pictures made the tick a sub-tick late
+    a.label('x136_end')
+    a.b(0x2e, 0xc7, 0x06); a.word('smo_g'); a.b(0x06, 0x00); a.near(0xe8, 'smo_wait')   # the tick's own picture at the tick's end
+    a.label('x136_flip')
+    a.b(0x2e, 0xa1); a.word('smo_b'); a.near(0xe8, 'smo_flip')
+    a.b(0xa3, 0xb7, 0x80, 0x05, 0x00, 0x04, 0x3d, 0x00, 0xac); a.short(0x75, 'x136_page'); a.b(0xb8, 0x00, 0xa0)   # mov [80B7h], ax / add ax, 400h / cmp ax, AC00h / jne / mov ax, A000h
+    a.label('x136_page')
+    a.b(0xa3, 0xb9, 0x80)                                    # mov [80B9h], ax   the page words as 5A4A leaves them
+    a.b(0x33, 0xc0, 0x8e, 0xc0)                              # xor ax, ax / mov es, ax
+    a.label('x136_tick')                                     # the wait for the tick (98CA)
+    a.b(0xfb, 0x26, 0xa1, 0x6c, 0x04, 0x3b, 0x06, *u16(TICK_TARGET)); a.short(0x72, 'x136_tick')   # sti / mov ax, es:[046Ch] / cmp ax, [C2F6h] / jb
+    # the read-outs' counts, here where the tick has just ended (a steady point for the window): every SM_WINDOW
+    # ticks, from the BIOS ticks they took: 182 * ticks / BIOS ticks = ticks a second
+    # in tenths, 182 * pictures / BIOS ticks = pictures a second. A tick in which nothing moved counts as all its
+    # pictures (they would all be the same one)
+    a.b(0x2e, 0xa0); a.word('smo_drawn'); a.b(0xfe, 0xc0)    # mov al, cs:[smo_drawn] / inc al
+    a.b(0x2e, 0x80, 0x3e); a.word('smo_moves'); a.b(0x00); a.short(0x75, 'x136_cnt')
+    a.b(0x2e, 0xa0); a.word('rules_table', G_SMOOTH)
+    a.label('x136_cnt')
+    a.b(0x2e, 0x00, 0x06); a.word('smo_fl')                  # add cs:[smo_fl], al
+    a.b(0x2e, 0xfe, 0x06); a.word('smo_tk'); a.b(0x2e, 0x80, 0x3e); a.word('smo_tk'); a.b(SM_WINDOW); a.short(0x72, 'x136_counted')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_tk'); a.b(0x00)
+    a.b(0x33, 0xc0, 0x8e, 0xc0, 0x26, 0xa1, 0x6c, 0x04)      # xor ax, ax / mov es, ax / mov ax, es:[046Ch]
+    a.b(0x8b, 0xd8, 0x2e, 0x87, 0x1e); a.word('smo_w0'); a.b(0x2b, 0xc3); a.short(0x74, 'x136_counted')   # mov bx, ax / xchg bx, cs:[smo_w0] / sub ax, bx / jz
+    a.b(0x8b, 0xd8, 0xb8, *u16(182 * SM_WINDOW)); a.near(0xe8, 'x136_rate'); a.b(0x2e, 0xa3); a.word('smo_tps')   # mov bx, ax / mov ax, 1820 / call / mov cs:[smo_tps], ax
+    a.b(0x2e, 0xa0); a.word('smo_fl'); a.b(0xb4, 182, 0xf6, 0xe4); a.near(0xe8, 'x136_rate'); a.b(0x2e, 0xa3); a.word('smo_fps')   # mov al, cs:[smo_fl] / mov ah, 182 / mul ah / call
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_fl'); a.b(0x00)
+    a.label('x136_counted')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_phase'); a.b(0x00)
+    for k, op in enumerate((b'\x8b\x0e', b'\x8b\x16', b'\x8b\x36', b'\x8b\x3e', b'\x8e\x06')):   # mov cx dx si di es, cs:[smo_regs + 2k]
+        a.b(0x2e, op); a.word('smo_regs', 2 * k)
+    a.b(0x2e, 0xa1); a.word('smo_regs', 10); a.b(0x89, 0x46, 0x00)   # the game's bp
+    a.b(0x2e, 0xa1); a.word('smo_regs', 12); a.b(0x89, 0x46, 0xfe)   # ... and bx
+    a.near(0xe9, 'rules_done')
+    a.label('x136_rate')                                     # ax / bx, 999 at most
+    a.b(0x33, 0xd2, 0xf7, 0xf3, 0x3d, 0xe7, 0x03); a.short(0x76, 'x136_rate_ret'); a.b(0xb8, 0xe7, 0x03)   # xor dx, dx / div bx / cmp ax, 999 / jbe / mov ax, 999
+    a.label('x136_rate_ret')
+    a.b(0xc3)
+
+    # smo_show (es = a page not on the screen): the read-outs into its top left corner in the score's digits, draw_FPS
+    # first: pictures a second and ticks a second with one decimal
+    a.label('smo_show')
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_DRAW_OUT); a.b(0x03); a.short(0x75, 'x136_sh_go'); a.b(0xc3)   # test byte cs:[draw_out], 3 / jnz / ret
+    a.label('x136_sh_go')
+    a.b(0x2e, 0xc7, 0x06); a.word('pxy_col'); a.b(SCORE_WHITE, SCORE_SHADOW)   # the digits' colour and their shadow's
+    a.near(0xe8, 'vga_keep')
+    a.b(0xb9, *u16(SM_OUT_X), 0xba, *u16(SM_OUT_Y))          # mov cx, x / mov dx, y
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_DRAW_OUT); a.b(0x01); a.short(0x74, 'x136_sh_tps')
+    a.b(0x2e, 0xa1); a.word('smo_fps'); a.near(0xe8, 'x136_num'); a.b(0x83, 0xc1, SM_OUT_GAP)   # mov ax, cs:[smo_fps] / call / add cx, gap
+    a.label('x136_sh_tps')
+    a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_DRAW_OUT); a.b(0x02); a.short(0x74, 'x136_sh_end')
+    a.b(0x2e, 0xa1); a.word('smo_tps'); a.near(0xe8, 'x136_num')
+    a.label('x136_sh_end')
+    a.near(0xe8, 'vga_back'); a.b(0xc3)
+    a.label('x136_num')                                      # ax = tenths (0-999) at cx, dx: "54.6"
+    a.b(0xb3, 0x0a, 0xf6, 0xf3, 0x50, 0x32, 0xe4); a.near(0xe8, 'pxy_num')   # mov bl, 10 / div bl / push ax / xor ah, ah / the whole part
+    a.b(0x49, 0x49, 0xb0, SM_DOT); a.near(0xe8, 'pxy_digit'); a.b(0x83, 0xe9, 0x04)   # dec cx (x2) / mov al, the point / call / sub cx, 4
+    a.b(0x58, 0x8a, 0xc4); a.near(0xe8, 'pxy_digit'); a.b(0xc3)   # pop ax / mov al, ah / the tenths / ret
+
+
 def rules_data(a, table):
     """The int 63h tables: the sites (return address, job) and the settings from rules.py."""
     base, per = struct.unpack_from('<HH', table or rules_default_table(), G_CYCLES)
@@ -14445,6 +15913,42 @@ def rules_data(a, table):
         a.label(f'fight_tail{n}'); a.b(cycles_tail(fights[n] if on else 0))
     a.label('map_tail'); a.b(cycles_tail(base if on else 0))
     a.label('sped'); a.b(0)                                  # 1 after a fight's speed was set
+    # D136 smooth animation
+    a.label('smo_arm'); a.b(0)                               # 1 = the fight loop's hooks run: rules_draw notes its pieces
+    a.label('smo_bg'); a.b(0)                                # SMF_BG = the piece being drawn went into the background too
+    a.label('smo_over'); a.b(0)                              # 1 = this tick's list ran over
+    a.label('smo_cur'); a.b(*u16(BUF_SM))                    # this tick's list (an offset in the buffer block) ...
+    a.label('smo_cnt'); a.b(0, 0)                            # ... and the bytes of it used
+    a.label('smo_pcnt'); a.b(0, 0)                           # the bytes used in the list of the tick before
+    a.label('smo_end'); a.b(0, 0)                            # smo_match: the end of this tick's list
+    a.label('smo_pbase'); a.b(0, 0)                          # ... the other list
+    a.label('smo_pend'); a.b(0, 0)
+    a.label('smo_phase'); a.b(0)                             # 0 = a tick begins, 1 = a picture's pieces, 2 = its turned frames go back
+    a.label('smo_k'); a.b(0)                                 # the in-between picture being made (1 .. n - 1)
+    a.label('smo_i'); a.b(0, 0)                              # the next piece of it (an offset in the list)
+    a.label('smo_mir'); a.b(0)                               # 1 = a frame was turned for this picture
+    a.label('smo_drawn'); a.b(0)                             # in-between pictures shown in this tick
+    a.label('smo_moves'); a.b(0)                             # 1 = some piece of this tick has a step
+    a.label('smo_back'); a.b(0)                              # ticks left at one picture a tick (the governor)
+    a.label('smo_cost'); a.b(0)                              # sub-tick boundaries the last picture's drawing crossed
+    a.label('smo_g'); a.b(0, 0)                              # the picture's time (sub-ticks from the tick's start)
+    a.label('smo_c0'); a.b(0, 0)                             # when its drawing began
+    a.label('smo_t0'); a.b(0, 0)                             # the tick's start on the sub-tick clock
+    a.label('smo_b'); a.b(0, 0)                              # the page with the tick's own picture
+    a.label('smo_vis'); a.b(0, 0)                            # the page on the screen
+    a.label('smo_regs'); a.b(bytes(14))                      # the game's cx, dx, si, di, es, bp, bx at the tick's wait
+    a.label('wk_move')                                       # D143: the XMS move of a slot of SAVEHOOK.INB into the buffer block:
+    a.b(*struct.pack('<I', WK_SLOT))                         # its length,
+    a.label('wk_h'); a.b(0, 0)                               # the block's handle (the installer's; 0 = no in-between poses),
+    a.label('wk_off'); a.b(0, 0, 0, 0)                       # the slot's place in it,
+    a.b(0, 0, *u16(BUF_WALK)); a.label('wk_dseg'); a.b(0, 0)   # to (handle 0) buf_seg:BUF_WALK
+    a.label('smo_fl'); a.b(0)                                # the read-outs: pictures in the window so far ...
+    a.label('smo_tk'); a.b(0)                                # ... its ticks ...
+    a.label('smo_w0'); a.b(0, 0)                             # ... the BIOS tick it began at
+    a.label('smo_fps'); a.b(0, 0)                            # ... pictures a second, in tenths
+    a.label('smo_tps'); a.b(0, 0)                            # ... ticks a second, in tenths
+    if SM_STATS:
+        a.label('smo_stat'); a.b(bytes(2 * SM_STAT_WORDS))   # a measuring build's counts
     a.label('down'); a.b(bytes(4))                           # K25: 1 = the knight's fall has been started
     a.label('finish_t0'); a.b(0, 0)                          # D90: the BIOS tick the wait for a finishing blow began, 0 = none
     a.label('finish_held'); a.b(0)                           # D90: a knight was held for it (finish_hold -> practice_frame)
@@ -14511,6 +16015,13 @@ def rules_data(a, table):
     a.label('arm_k'); a.b(bytes(4))                          # D37: each knight's armour's enchantment (0 none)
     a.label('arm_w'); a.b(bytes(4))                          # D37: ... the armour (+42h) it is on
     a.label('arm_tp'); a.b(0, 0)                             # D37: the text arm_desc points to
+    a.label('sp_w'); a.b(bytes(5))                           # D139 spec_pick: the holder's five weights (sp_eff)
+    a.label('sp_round'); a.b(0)                              # D139: the kinds drawn in this round (bits, 1 the sword)
+    a.label('sp_all'); a.b(0)                                # D139: the kinds allowed anywhere (the hoard's sp_eff)
+    a.label('sp_list'); a.b(bytes(LAIR_COUNT))               # D139: the lairs that can take a kind (D140: 6 places a quarter)
+    a.label('sp_qn'); a.b(bytes(4))                          # D140: each quarter's lairs listed in sp_list (then: not picked)
+    a.label('sp_quota'); a.b(bytes(4))                       # D140: each quarter's share (right after sp_qn: cleared together)
+    a.label('sp_ql'); a.b(bytes(4))                          # D140: the quarters that can take one more
     a.label('horse_x'); a.b(bytes(2))                        # D38: where the knight on the move last was
     a.label('horse_y'); a.b(bytes(2))
     a.label('horse_tick'); a.b(bytes(2))                     # D38: the BIOS tick of its last step
@@ -14605,6 +16116,7 @@ def rules_data(a, table):
     a.label('cheat_eff'); a.b(0)                             # D76: cheat_flags with ABACABB for gore_level More
     a.label('cheat_flags2'); a.b(0)                          # D48: F2_DARTS, F2_SABER, F2_GUNSHOT (this fight)
     a.label('gun_src'); a.b(GUN_SRC)                         # D64: GUNSHOT's scripts and hit points (GUN_AREA)
+    a.b(DUCK_SRC)                                            # D144: the duck's script (DUCK_AREA, copied with them)
     a.label('df_on'); a.b(0)                                 # D49: DAGGERFALL in this fight
     a.label('df_due'); a.b(0)                                # D49: a dagger to drop in the next pass
     a.label('df_last'); a.b(0, 0)                            # D49: the tick of the last one
@@ -14739,6 +16251,7 @@ def rules_data(a, table):
     a.label('key_pending_any'); a.b(0)
     a.label('buf_bits'); a.b(0, 0, 0)                           # D24: each player's fire noted (bits as 83C0), 0 = none
     a.label('buf_tick'); a.b(0, 0, 0, 0, 0, 0)                     # D24: when
+    a.label('stale_back'); a.b(0, 0)                                 # D142: turn_stale's back key press tick
     a.label('last_hitter'); a.b(bytes(48))                   # D20: by knight or monster slot (victim_slot), what hit it last
     a.label('last_strike'); a.b(bytes(48))                   # D20: ... that object's +28h (low) and type (high)
     a.label('team_t0'); a.b(0, 0)
@@ -14830,12 +16343,24 @@ def rules_data(a, table):
             a.b(site & 0xff, site >> 8)
     a.label('rc_shift'); a.b(RECOLOUR_SHIFT)                 # D15: the shift of the frame being recoloured
     a.label('sw_shift'); a.b(0)                              # D31: the sword's shift in this frame (pixels 1-4), 0 = none
-    a.label('sword_rgb')                                     # D31: entries 48-59
+    a.label('sword_rgb')                                     # D31: entries 48-71
     for _, colours in SWORD_TINTS + ARMOUR_TINTS:
         for rgb in colours:
             a.b(bytes(rgb))
+    if VIOLET != tuple(range(SWORD_FIRST + GEAR_ENTRIES, SWORD_FIRST + GEAR_ENTRIES + 3)):
+        raise ValueError('D119: VIOLET must follow the gear entries (sword_entries writes them in one run)')
+    for word in ENCH_LOOK_RGB:                               # D119: entries 72-74, the violets (a nibble n: 6-bit 4 n)
+        a.b(bytes(((word >> sh) & 15) * 4 for sh in (8, 4, 0)))
     a.label('coop'); a.b(0)                                  # D15: knights in a co-op practice, 0 = none
     a.label('vs_monsters'); a.b(0)                           # D15: 1 = a practice against monsters
+    a.label('st_ticks'); a.b(0, 0)                           # D127: BIOS ticks since the last activity (D132; at most FFFFh)
+    a.label('st_last'); a.b(0)                               # D127: the BIOS tick's low byte at the last frame
+    a.label('st_fled'); a.b(0)                               # D127: 1 = this fight was left by Esc (no winner)
+    a.label('esc_eat'); a.b(0)                               # D127: 1 = that Esc is still held: kept from the game
+    a.label('st_act'); a.b(0)                                # D132: 1 = a key pressed or a human knight's input since the last frame
+    a.label('st_hum'); a.b(0)                                # D132: the knights watched (a bit each record), FFh not known yet
+    a.label('st_hint'); a.b(0)                               # D132: 1 = the hint shows (the exit is open)
+    a.label('st_hp'); a.b(bytes(8))                          # D132: the watched knights' HP last seen
     a.label('quitting'); a.b(0)                              # D15: 1 = Esc has ended this practice fight
     a.label('last_hit'); a.b(bytes(4))                       # K6: BIOS ticks of the last counted hit (0 = none)
     a.label('own_strength'); a.b(0)                          # D15: knight 1's own strength and max HP during combine
@@ -14845,9 +16370,6 @@ def rules_data(a, table):
     a.label('coop_knights')                                  # D15: record, control, colour slot, x
     for rec, control, colour, x in COOP_KNIGHTS:
         a.b(struct.pack('<HBBH', rec, control, colour, x))
-    a.label('spawns')
-    for x, y in SPAWNS:
-        a.b(struct.pack('<HH', x, y))
     a.label('section_ptrs')
     for n in range(len(SECTIONS)):
         a.word('rules_table', n * SECTION_SIZE)
@@ -14866,16 +16388,21 @@ def rules_data(a, table):
 _PLANS = {}                                  # SR2: the relaxation plan of each rules table built so far
 
 
-def make_savehook(rules_table=None):
+def make_savehook(rules_table=None, terrain=None):
     """SAVEHOOK.COM. SR2: built once as written, then again with every jump the plan may shorten shortened, and
-    again without the short ones that no longer reach, until all reach (each table's plan is kept)."""
+    again without the short ones that no longer reach, until all reach (each table's plan is kept). D133: terrain,
+    the packed 80 x 50 table (TZ_CELLS // 2 bytes) or None, rides in SAVEHOOK.OVL's tail (the layout of the code does
+    not depend on it, so the plan is the table's)."""
+    terrain = bytes(terrain or b'')
+    if terrain and len(terrain) != TZ_CELLS // 2:
+        raise ValueError(f'D133: the terrain table must be {TZ_CELLS // 2} bytes')
     key = None if rules_table is None else bytes(rules_table)
     plan = _PLANS.get(key)
     if plan is None:
-        a, code = _build_savehook(rules_table, None)
+        a, code = _build_savehook(rules_table, None, terrain)
         plan = relax_plan(a, code)
         while True:
-            a, code = _build_savehook(rules_table, plan)
+            a, code = _build_savehook(rules_table, plan, terrain)
             if not a.bad:
                 break
             for k in a.bad:
@@ -14885,21 +16412,39 @@ def make_savehook(rules_table=None):
                     del plan[k]
         _PLANS[key] = plan
         return code
-    a, code = _build_savehook(rules_table, plan)
+    a, code = _build_savehook(rules_table, plan, terrain)
     if a.bad:
         raise ValueError(f'SR2: the kept plan no longer reaches ({sorted(a.bad)})')
     return code
 
 
-def _build_savehook(rules_table, plan):
+def _build_savehook(rules_table, plan, terrain=b''):
     a = Asm(0x100, plan)
+    a.terrain = terrain                                      # D133: SAVEHOOK.OVL's tail
+    a.table = bytes(rules_table or rules_default_table())    # D134: the settings the code is built for (the Valley's box)
     a.near(0xe9, 'install')                                  # jmp install
     a.b(SIGNATURE)
     # --- int 66h: fight starts (resident) ---
     a.label('fight_handler')
     a.b(0xc7, 0x06, 0x41, 0x78, 0x00, 0x00)                  # mov word [7841h], 0   (replaced MAIN instruction)
+    # D120: no knight eaten yet. The dragon's bite (1000:3AF9) sets [77F0h] for the eaten knight's handler (3EEA),
+    # which never runs again (98A2 took its animation off; the eating script kills it), so the flag outlived the
+    # fight; only a knight duel (03BE), a lair (0574), a practice lair (1F44) and a new game cleared it, so the next
+    # dragon or Guardian fight's knight killed itself on its first frame and the fight never ended
+    a.b(0xc7, 0x06, 0xf0, 0x77, 0x00, 0x00)                  # mov word [77F0h], 0
     a.b(0x2e, 0xc7, 0x06); a.word('finish_t0'); a.b(0x00, 0x00)   # D90: no wait for a finishing blow yet
+    # D127: the safety timer starts (its ticks counted from the BIOS tick's low byte), nobody has left. D132: no
+    # activity yet, the knights to watch not known yet (the first frame), no hint
+    a.b(0x2e, 0xc7, 0x06); a.word('st_ticks'); a.b(0x00, 0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('st_fled'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('st_act'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('st_hum'); a.b(0xff)
+    a.b(0x2e, 0xc6, 0x06); a.word('st_hint'); a.b(0x00)
+    a.b(0x50, 0x06, 0x33, 0xc0, 0x8e, 0xc0, 0x26, 0xa0, 0x6c, 0x04)   # push ax es / xor ax, ax / mov es, ax / mov al, es:[046Ch]
+    a.b(0x2e, 0xa2); a.word('st_last'); a.b(0x07, 0x58)      # mov cs:[st_last], al / pop es ax
     a.b(0x2e, 0xc6, 0x06); a.word('finish_held'); a.b(0x00)
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_arm'); a.b(0x00)     # D136: the lists start again at the fight's first flip
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_phase'); a.b(0x00)
     a.b(0x2e, 0xc6, 0x06); a.word('dd_on'); a.b(0x00)       # D68: no fire's reach from the fight before
     a.b(0x2e, 0xc7, 0x06); a.word('name_ptr'); a.word('fight_name')   # mov word cs:[name_ptr], fight_name
     a.label('save_state')                                    # shared: save under the name at cs:[name_ptr]
@@ -14996,6 +16541,7 @@ def _build_savehook(rules_table, plan):
     a.b(0xcf)                                                # iret
 
     rules_code(a)
+    smooth_code(a)                                           # D136
     ovl_runtime(a)                                           # SR4
 
     a.label('mcb')                                           # es = memory block of the current PSP
@@ -15172,7 +16718,8 @@ def _build_savehook(rules_table, plan):
     a.label('mine_mode'); a.b(0)                             # ... mine_rect: 0 keep the background, 1 put it back
     a.label('mine_z'); a.b(bytes(2 * MINE_COUNT))
     a.label('snd_id'); a.b(CHEAT_SOUND, 0)                   # the next sound of a fight's frame
-    a.label('map_flags'); a.b(0)                             # SIRWALKSALOT, SIRPICKSALOT (on until typed again)
+    a.label('map_flags'); a.b(0)                             # SIRWALKSALOT, SIRPICKSALOT, D122 SKIPCOMBAT (on until typed again)
+    a.label('skip_xp'); a.b(0)                               # D122: 1 = a skipped lair fight's first win: no XP (lair_loot)
     a.label('key_show'); a.b(0)                              # IDROPPEDMYKEY: the screen's stage, 0 = none
     a.label('keys_shown'); a.b(0)                            # ... 1 = the lairs with keys glow
     a.label('greed_shown'); a.b(0)                           # D115: the Gem of Greed used: each lair's gold on the map until the turn ends
@@ -15205,6 +16752,9 @@ def _build_savehook(rules_table, plan):
     a.label('name_ptr'); a.b(0, 0)
     a.label('reserve'); a.b(0, 0)
     a.label('buf_seg'); a.b(*u16(BUF_TEST_SEG))              # SR1: the buffer block (the installer's)
+    a.label('tz_x'); a.b(0, 0); a.label('tz_y'); a.b(0, 0)   # D133: ad5c's point under the icon (before the shifts)
+    a.label('tz_idx'); a.b(0, 0)                             # D133: its 4 x 4 cell (TZ_CELLS: outside)
+    a.label('tz_on'); a.b(0)                                 # D133: 1 = the installer moved the table into the buffer block
     a.label('cg_ret'); a.b(0, 0)                             # SR2: call_game2's two words
     a.label('save_ss'); a.b(0, 0)
     a.label('save_sp'); a.b(0, 0)
@@ -15286,6 +16836,12 @@ def _build_savehook(rules_table, plan):
     # block allocated next lies there and is zeroed (the code after it only ran from DOSBox-X's code cache)
     a.b(0xbe); a.word('inst_tail_img'); a.b(0xbf); a.word('ovl_window')   # mov si, the tail / mov di, ovl_window
     a.b(0xb9, *u16(len(a.groups[INST_TAIL][0])), 0xfc, 0xf3, 0xa4)   # mov cx, its length / cld / rep movsb
+    # D136: the stack goes into the window too (its end; the tail is at its start). The stack a .COM starts with is
+    # at the top of its 64 KB, and the buffer block allocated next to the resident part now reaches that far: the
+    # XMS move of the terrain table into it wrote over the move's own return address
+    if a.ovl_win - len(a.groups[INST_TAIL][0]) < 256:
+        raise ValueError('D136: the window leaves the installer\'s tail less than 256 bytes of stack')
+    a.b(0xbc); a.word('resident_end'); a.b(0x83, 0xe4, 0xfe)   # mov sp, resident_end / and sp, FFFEh
     a.near(0xe9, 'inst_tail.o')
     a.label('quit')
     a.b(0xb8, 0x00, 0x4c, 0xcd, 0x21)                        # mov ax, 4C00h / int 21h
@@ -15297,7 +16853,8 @@ def _build_savehook(rules_table, plan):
     code = bytearray(a.build())
     if a.labels['lair_potion'] - a.labels['lair_ench'] != POT_HOLDER_OFF or a.labels['look_pot'] != a.labels['look_xlat'] + 32 * (LOOK_POT - 1):
         raise ValueError('D101: lair_potion or look_pot is not where the code expects it')
-    if (a.labels['lair_ring'] - a.labels['lair_ench'] != RING_HOLDER_OFF or a.labels['lair_gem'] - a.labels['lair_ench'] != GEM_HOLDER_OFF):
+    if (a.labels['lair_ring'] - a.labels['lair_ench'] != RING_HOLDER_OFF or a.labels['lair_gem'] - a.labels['lair_ench'] != GEM_HOLDER_OFF
+            or a.labels['arm_lair'] - a.labels['lair_ench'] != LAIR_COUNT + 1 or a.labels['hoard_ench'] != a.labels['lair_ench'] + LAIR_COUNT):   # D139: spec_pick too
         raise ValueError('D113: lair_ring or lair_gem is not where the code expects it (knight_reset clears them with lair_ench)')
     if (a.labels['lair_banish'] - a.labels['lair_ench'] != BANISH_HOLDER_OFF or a.labels['gem_aim'] != a.labels['lair_banish'] + LAIR_COUNT
             or a.labels['aim_place'] != a.labels['gem_aim'] + 1):
@@ -15308,8 +16865,9 @@ def _build_savehook(rules_table, plan):
         struct.pack_into('<H', tail, a.labels[name] - a.win + 1, paras)
     img = a.labels['inst_tail_img'] - 0x100
     code[img:img + len(tail)] = tail
+    struct.pack_into('<I', code, img + a.labels['inst_tzm_off'] - a.win, a.ovl_groups)   # D133: the table's place
     ovl = b''.join(a.ovl_code[g] + bytes(len(a.ovl_code[g]) & 1) if g in a.ovl_code else b''
-                   for g in range(1, max(OVL_GROUPS(a), default=0) + 1))
+                   for g in range(1, max(OVL_GROUPS(a), default=0) + 1)) + a.terrain
     if len(ovl) != a.ovl_size:
         raise ValueError('SR4: the overlays are not the length in ovl_tab')
     struct.pack_into('<H', code, a.labels['ovl_sum_at'] - 0x100,

@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 from patches import PATCHES, image_offset
 
 DEBUG = 'Debug'                                     # the debug aids' section, the ini's last
-DEBUG_SETTINGS = {'dragon_debug_mode', 'input_log', 'pointer_coordinates'}
+DEBUG_SETTINGS = {'dragon_debug_mode', 'input_log', 'pointer_coordinates', 'draw_fps', 'draw_tps'}
 SECTIONS = ['Knight1_blue', 'Knight2_orange', 'Knight3_green', 'Knight4_red', 'Black']
 WEAPONS = {'long_sword': 0x16, 'broadsword': 0x17, 'claymore': 0x18, 'sword_of_sharpness': 0x19}
 ARMOUR_MOVE_DEFAULT = (0, -1, -2, -4)                  # D37: each armour's movement with horses on (a knight's movement: endurance * 2 + 4 + this)
@@ -57,6 +57,12 @@ MOONSTONE_BITS = [('moonstone_new_moon', 1), ('moonstone_full_moon', 2), ('moons
 # start corners. A knight starts (and respawns or reincarnates) at the start corner of its home village.
 HOME_VILLAGES = {'north_west': 0, 'north_east': 1, 'south_west': 2, 'south_east': 3}
 SPAWNS = [(10, 10), (300, 5), (26, 180), (300, 185)]     # start corners (x, y in pixels) set at 1000:0157
+VALLEY_PLACE, VALLEY_SIZE = (152, 97), (13, 10)          # D134: the Valley (place 1Ch) and its icon's box (MI.C frame 28)
+
+
+def valley_box(pos):
+    """D134: x0, x1, y0, y1: the knight positions whose 8 x 10 icon overlaps the Valley's box at pos (1000:0653)."""
+    return pos[0] - 7, pos[0] + VALLEY_SIZE[0] - 1, pos[1] - 9, pos[1] + VALLEY_SIZE[1] - 1
 KNIGHT_NAMES = ['Sir Godber', 'Sir Richard', 'Sir Jeffrey', 'Sir Edward']   # +20h = 0-3 (checked in play)
 # Saves. DOSBox-X takes the save states; SAVEHOOK.COM only triggers the automatic ones (see make_savehook.py), so
 # manual saves cannot be stopped from inside DOS. Instead, in the modes that forbid them, SAVEHOOK keeps a token in
@@ -306,7 +312,53 @@ G_GEM_CHANCE = G_GEMS + 1                     # byte: rare_gem_chance (D113), pe
 GEM_CHANCE_DEFAULT = 10
 G_SLOW = G_GEM_CHANCE + 1                     # byte: slow_gem_percent (D117), the Gem of Slow's cut of the next turn's movement
 SLOW_DEFAULT = 33
-TABLE_SIZE = G_SLOW + 1
+# D137: [Special_items] holds the five kinds' keys (an older ini has them in [Rules] and [Treasure]) and the master
+# switch special_items: off writes the five on-bytes as 0 (the chances stay as read). D139: lairs (on) is the lairs
+# way: special_item_lairs of the 24 lairs hold special items, at least one each (spec_pick in SAVEHOOK.COM at a new
+# game's start); the five chance bytes are written as 100 there and the real chances go into G_SPEC_W
+SPECIAL = 'Special_items'
+SPECIAL_KEYS = {'sword_enchantments': 'Rules', 'sword_enchantment_chance': 'Rules', 'armour_enchantments': 'Rules',
+                'armour_enchantment_chance': 'Rules', 'rare_potions': 'Treasure', 'rare_potion_chance': 'Treasure',
+                'life_potion_hp': 'Treasure', 'rare_rings': 'Treasure', 'rare_ring_chance': 'Treasure',
+                'luck_chest_gold': 'Treasure', 'charisma_discount': 'Treasure', 'charisma_math': 'Treasure',
+                'rare_gems': 'Treasure', 'rare_gem_chance': 'Treasure', 'slow_gem_percent': 'Treasure'}   # key: its older section
+SPEC_CHANCE, SPEC_LAIRS = 1, 2
+SPECIAL_MODES = {'chance': SPEC_CHANCE, 'off': 0, 'lairs': SPEC_LAIRS, 'on': SPEC_LAIRS}   # an older ini without the key: chance
+SPEC_LAIRS_DEFAULT = 8                         # D139, D140: special_item_lairs (also for an ini without it)
+G_SPECIAL_ON = (G_ENCHANT, G_ARM_ENCH, G_POTIONS, G_RINGS, G_GEMS)   # the bytes special_items = off clears
+G_SPEAR_HIT = G_SLOW + 1                      # byte: the spear trogg's pause after a thrust that lands or is blocked, in
+                                              # fight frames (D124; the game's 10, all troggs, at 1000:2F61)
+SPEAR_PAUSE_DEFAULT = 130                     # D124: spear_trogg_attack_pause, percent of the game's pauses (older ini: 130)
+SPEAR_HIT_PAUSE, SPEAR_MISS_PAUSE = 10, 20    # the game's: after a thrust that hit something (2F61), after a miss (2ECE)
+G_SAFETY = G_SPEAR_HIT + 1                    # word: fight_idle_exit (D132, was D127's fight_safety_timer) in BIOS ticks,
+                                              # 0 = off: once no human player in a campaign fight has pressed anything and
+                                              # no human knight's HP has changed for this long, one press of Esc leaves it
+SAFETY_DEFAULT, SAFETY_MAX = 30, 3600         # D132: seconds (an older ini without the key: 30; D127's key is ignored)
+G_TZ_PROBE = G_SAFETY + 2                     # byte: terrain_probe (D133): 5 = the icon's middle (centre), 0 = its feet (the
+                                              # game's point); subtracted from y + 10 before the 4 x 4 cell is taken
+TZ_PROBES = {'centre': 5, 'feet': 0}
+G_SPAWNS = G_TZ_PROBE + 1                     # 4 x (word x, word y): the knights' start corners by home village (D134:
+                                              # the map tool's S1-S4; the game's own without custom places)
+G_VALLEY = G_SPAWNS + 16                      # 4 words: x0, x1, y0, y1: the knight positions that touch the Valley's icon
+                                              # (D134: from its place, the box overlap of 1000:0653)
+G_SMOOTH = G_VALLEY + 8                       # byte: smooth_animation (D136): a fight's pictures a tick, 1 (the game's), 2, 3 or 6
+G_DRAW_OUT = G_SMOOTH + 1                     # byte: the debug read-outs in fights (D136): 1 draw_FPS, 2 draw_TPS
+G_SPEC_MODE = G_DRAW_OUT + 1                  # byte: special_items (D137, D139): 0 off, 1 chance, 2 lairs (SPECIAL_MODES)
+G_SPEC_LAIRS = G_SPEC_MODE + 1                # byte: special_item_lairs (D139), 0-24: the lairs spec_pick gives special items
+G_SPEC_W = G_SPEC_LAIRS + 1                   # 5 bytes: the five chances as read (sword, armour, potion, ring, gem; D139):
+                                              # in the lairs way the rolls and weights of spec_pick (the chance bytes are 100)
+G_DUCK = G_SPEC_W + 5                         # byte: duck_dodge (D144), 1 = on: a knight ducks a thrown dagger
+G_DUCK_WINDOW = G_DUCK + 1                    # byte: duck_window (D144), BIOS ticks from the down key's press
+TABLE_SIZE = G_DUCK_WINDOW + 1
+DUCK_WINDOW_DEFAULT, DUCK_WINDOW_RANGE = 6, (2, 18)   # D144: 6 ticks = 0.33 s, also for an older ini
+SMOOTH_DEFAULT = 6                            # D136: also for an older ini without the key; speedrun mode: 1
+SMOOTH_VALUES = {'1': 1, '2': 2, '3': 3, '6': 6}
+# D136: a fight's cycles while smooth_animation is above 1 (smooth_fight_cycles = auto), by the pictures a tick; any
+# number of knights (a fight waits for the BIOS tick, so more cycles do not make it faster). Measured in DOSBox-X
+# (FIXES D136): at these three knights against the trolls show 93-95 % of their in-between pictures, a knight
+# against a lair's monsters all of them
+SMOOTH_CYCLES = {2: 14000, 3: 20000, 6: 32000}
+SMOOTH_HOOKS = ('sm_hold', 'sm_tick')         # D136: written only with smooth_animation above 1 or a read-out on
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
 INPUT_CHORD_DEFAULT = 2
@@ -338,6 +390,8 @@ SELL_ITEMS = ['dagger', 'broadsword', 'claymore', 'chain_mail', 'plate_mail', 'b
 # and skips it. Code addresses (1000:xxxx) are also offsets in the MAIN.EXE image.
 HOOKS = [
     (0x1fea, '8b7544b81800c60400464875f9', 'init'),     # knight set-up (1000:1FAE): clear the item table
+    (0x0363, 'e8e456', 'sm_hold'),                      # D136: the fight loop's page flip (call 5A4A): held
+    (0x036c, 'e85b95', 'sm_tick'),                      # D136: ... its tick wait (call 98CA): the in-between pictures
     (0x02d3, '83c30a', 'max_hp'),                       # max HP formula (1000:028D): add bx,10
     (0xa12e, '83fa0a7f43', 'falling_dagger_depth'), # falling daggers collide in screen coordinates
     (0xa1a6, 'c706c2c20000', 'falling_dagger_hit'),   # hit points for the rotated dagger
@@ -402,6 +456,8 @@ HOOKS = [
     (0xc55c, '8b3690e4', 'horse_panel'),                # D40: the knight's own horse on its panel
     (0xca76, 'b90d00', 'horse_icons'), (0xcf0c, '8b3688ed', 'horse_buy'),   # D38: horses
     (0xa918, 'be2ac4', 'horse_terrain'),
+    (0xad8b, 'd1e8d1e8d1e8d1ebd1ebd1eb', 'tz_raw'),     # D133: the point under a knight's icon, before the shifts
+    (0xad4b, 'a348cd', 'tz_index'),                     # D133: its 4 x 4 cell, beside the game's 8 x 8 one
     (0xc8d7, 'be266e', 'arm_icon'), (0xc54a, 'a3a4e4', 'arm_name'), (0xce5b, '8b6d42', 'arm_tkar'),   # D37: armour enchantments
     (0xc8ae, '8b366269', 'arm_lair'),                   # D97: a lair chest's armour enchantment (C8D7 is the hoard's only)
     (0xbfad, 'a392ed', 'item_palette'),                 # D98: the enchanted look's colours as the item screen opens
@@ -421,6 +477,7 @@ HOOKS = [
     (0x40ca, '894528', 'td_move'),                      # D46: a knight's move starts: the block's or dodge's time, the fast swing
     (0x441f, '833efc7700', 'td_check'), (0x4d6c, '833efc7700', 'td_check'),   # D46: a knight struck by a knight (a human's, a computer's)
     (0x42d8, '833efc7700', 'td_monster'), (0x432a, '833efc7700', 'td_monster'),   # D46: a knight blocking a trogg, a spear trogg
+    (0x2f61, 'c6454a0a', 'spear_pause'),                # D124: a trogg's pause after its blow hit something (the spear trogg's own)
     (0x4302, '294538', 'td_trogg'), (0x4da1, '294538', 'td_cdmg'),   # D46: damage
     (0x4b85, '8936e877', 'bk_down'),                    # D46: a computer knight whose extended death is over stays down
     (0x4c93, 'c744280800', 'td_bk_block'),              # D46: BKBlock's own block is replaced by the roll at the hit
@@ -455,6 +512,8 @@ HOOKS = [
     # entered invisible (the Hawk's path at 0581, the lair not cleared at 05DD)
     (0x04fc, '807c1200', 'pot_prompt'), (0x0542, '833e78f312', 'pot_cancel'),
     (0x0581, '833ea0cc00', 'lair_hawk'), (0x05dd, '833ea0cc00', 'lair_hawk'),
+    # D140: a lair leaves the map (05DD after its chest) only when its special items are gone too
+    (0x0608, '0bc0750a', 'lair_empty'),
     # D104: Speed: a knight's walk step before its checks, the interpreter's pass (one animation's step and draw)
     (0x3f99, '8b36e877', 'spd_walk'), (0x99c0, 'e80800', 'spd_step'),
     # D105: TakeALL (a computer knight or the dragon takes all a beaten knight with no lives left has): the specials too
@@ -464,9 +523,10 @@ HOOKS = [
     # D107: a dead knight's grave on the map (DisplayOtherKnights): gold while its cross holds something
     (0xa426, 'b82100', 'grave'),
     # D108: special rings: a panel's ring row (DisplayMagic); the stat rings where the game reads an ability: the item
-    # screen's Strength, Endurance, Constitution, the movement at a redraw, a fight's Endurance, a lair's extra monster
-    (0xc5a7, '8b3690e4', 'ring_row'), (0xc2bd, '8a4c2e', 'ring_cl_str'), (0xc2f3, '8a4c30', 'ring_cl_end'),
-    (0xc329, '8a4c2f', 'ring_cl_con'), (0x02e9, '8a5c30', 'ring_bl_end'), (0x356d, '8a4430', 'ring_al_end'),
+    # screen's Strength, Constitution, Endurance numbers (D121: _ablloop C3EB), the movement at a redraw, a fight's
+    # Endurance, a lair's extra monster
+    (0xc5a7, '8b3690e4', 'ring_row'), (0xc3eb, '33c08a00', 'ring_abl'),
+    (0x02e9, '8a5c30', 'ring_bl_end'), (0x356d, '8a4430', 'ring_al_end'),
     (0x283d, '807c2e03', 'ring_lair'),
     # D113: special gems: a panel's gem row (DisplayMagic's first instruction)
     (0xc567, '8b3690e4', 'gem_row'),
@@ -533,6 +593,34 @@ def _fight_cycles(cp, sec, per, bounds):
                          '(including additional_cycles_per_knight)')
     return tuple(vals)
 
+def _smooth_cycles(raw):
+    """smooth_fight_cycles: auto, 0 (keep fight_cycles) or the cycles of every fight."""
+    raw = raw.strip().lower()
+    if raw == 'auto':
+        return raw
+    v = int(raw)
+    lo, hi = RULES_BOUNDS['fight_cycles']
+    if v and not lo <= v <= hi:
+        raise ValueError
+    return v
+_smooth_cycles.allowed = ('auto', '0', '100-65535')
+
+def smooth_hooks(r):
+    """D136: are the fight loop's two sites written? With one picture a tick and no read-out the loop is the game's."""
+    return r.get('smooth', 1) > 1 or r.get('draw_fps') or r.get('draw_tps')
+
+def _tz_cells(raw):
+    if raw.lower() not in ('4x4', '2x2'):
+        raise ValueError(raw)
+    return raw.lower()
+_tz_cells.allowed = ['4x4', '2x2']
+
+def _tz_probe(raw):
+    if raw.lower() not in TZ_PROBES:
+        raise ValueError(raw)
+    return raw.lower()
+_tz_probe.allowed = ['centre', 'feet']
+
 def _bk_ai(raw):
     return {'classic': 0, 'smart': 1}[raw.lower()]
 _bk_ai.allowed = ['classic', 'smart']
@@ -596,9 +684,17 @@ RULES_BOUNDS = {'hawk_curse_chance': (0, 100), 'protection_curse_chance': (0, 10
                 'healer_price': (0, 127), 'move_damage': (0, 100), 'max_daggers': (1, 99), 'frog_days': (0, 100),
                 'irritation_after_visit': (0, 150), 'irritation_drop_per_day': (0, 127), 'chance': (0, 100),
                 'treasure_gold': (0, 1000), 'donation': (1, 20000), 'monster_hp': (1, 999),
-                'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50),
+                'monster_damage': (0, 127), 'target_margin': (0, 200), 'hit_recovery': (0, 50), 'attack_pause': (50, 300),
                 'default_cycles': (100, 65535), 'additional_cycles_per_knight': (0, 20000),
                 'fight_cycles': (100, 65535)}
+
+def safety_ticks(seconds):
+    """D132: fight_idle_exit in BIOS ticks (18.2 a second, at most 65535), 0 = off."""
+    return min(0xffff, round(seconds * 1193182 / 65536)) if seconds else 0
+
+def spear_pause(frames, percent):
+    """D124: one of the spear trogg's pauses between its thrusts (fight frames), scaled by spear_trogg_attack_pause."""
+    return max(1, min(255, (frames * percent + 50) // 100))
 
 def ticks(tenths):
     """Tenths of a second -> BIOS ticks (18.2 a second), as SAVEHOOK.COM counts them."""
@@ -628,9 +724,13 @@ def read_ini(path):
         r.update(cheats=0, catchup=0, anticheese=0)        # no cheat codes; the game's own loot and AI (its exploits)
         r.update(speedrun=1, hoard=HOARD_MODES['keep'], hit_rest=(0, 0), exploit_fixes=0, cross=0,   # D106: the game's loot
                  terrain=0,                             # D110: the game's own map
+                 tz_cells='2x2', tz_probe='feet',       # D133: the game's own cells and point (exactly the original)
+                 places=0, layout=None,                 # D134: the game's own places, starts and lairs
                  hawk_curse=0, protection_curse=0, haste_curse=0, wyrm_curse=0,   # no curses: luck should not end a run
                  cycles=(CYCLES_DEFAULT[0], 0),         # D17 off: the game's own speed
-                 fight_cycles=(CYCLES_DEFAULT[0],) * 4)
+                 fight_cycles=(CYCLES_DEFAULT[0],) * 4,
+                 smooth=1, draw_fps=0, draw_tps=0,      # D136: the game's one picture a tick, no read-outs
+                 special_items=0)                       # D137: no enchantments or special items
         return r
     r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES, 'age': age[0], 'age_lock': age[1]}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
@@ -671,15 +771,33 @@ def read_ini(path):
     r['timed_defence'] = _get(cp, g, 'timed_defence', _onoff) if cp.has_option(g, 'timed_defence') else 0
     for key, default in TD_DEFAULTS.items():
         r[key] = _get(cp, g, key, int, 0, 100) if cp.has_option(g, key) else default
-    r['enchant'] = _get(cp, g, 'sword_enchantments', _onoff) if cp.has_option(g, 'sword_enchantments') else 1
-    r['arm_enchant'] = _get(cp, g, 'armour_enchantments', _onoff) if cp.has_option(g, 'armour_enchantments') else 1
-    r['arm_chance'] = _get(cp, g, 'armour_enchantment_chance', int, 0, 100) if cp.has_option(g, 'armour_enchantment_chance') else ENCH_CHANCE_DEFAULT
-    r['ench_chance'] = (_get(cp, g, 'sword_enchantment_chance', int, 0, 100) if cp.has_option(g, 'sword_enchantment_chance')
-                        else ENCH_CHANCE_DEFAULT)
+    # D137: the special items' keys: [Special_items], in an older ini [Rules] or [Treasure] (both: [Special_items] wins)
+    sp = lambda key, old: SPECIAL if cp.has_option(SPECIAL, key) else old
+    def spv(key, conv, default, *bounds):                # a key of SPECIAL_KEYS, or its default when in neither place
+        sec = sp(key, SPECIAL_KEYS[key])
+        return _get(cp, sec, key, conv, *bounds) if cp.has_option(sec, key) else default
+    r['special_items'] = (_get(cp, SPECIAL, 'special_items', _choice(SPECIAL_MODES))   # an older ini: chance
+                          if cp.has_option(SPECIAL, 'special_items') else SPECIAL_MODES['chance'])
+    r['spec_lairs'] = (_get(cp, SPECIAL, 'special_item_lairs', int, 0, 24)   # D139
+                       if cp.has_option(SPECIAL, 'special_item_lairs') else SPEC_LAIRS_DEFAULT)
+    r['enchant'] = spv('sword_enchantments', _onoff, 1)
+    r['arm_enchant'] = spv('armour_enchantments', _onoff, 1)
+    r['arm_chance'] = spv('armour_enchantment_chance', int, ENCH_CHANCE_DEFAULT, 0, 100)
+    r['ench_chance'] = spv('sword_enchantment_chance', int, ENCH_CHANCE_DEFAULT, 0, 100)
     r['cycles'] = (_get(cp, g, 'default_cycles', int, *rb['default_cycles']),
                    _get(cp, g, 'additional_cycles_per_knight', int, *rb['additional_cycles_per_knight']))
     r['fight_cycles'] = (_fight_cycles(cp, g, r['cycles'][1], rb['fight_cycles'])
                          if cp.has_option(g, 'fight_cycles') else FIGHT_CYCLES_DEFAULT)
+    # D136: a fight's pictures a tick; above 1 the fights run at smooth_fight_cycles (auto = SMOOTH_CYCLES, 0 = keep
+    # fight_cycles)
+    r['smooth'] = (_get(cp, g, 'smooth_animation', _choice(SMOOTH_VALUES)) if cp.has_option(g, 'smooth_animation')
+                   else SMOOTH_DEFAULT)
+    r['smooth_cycles'] = (_get(cp, g, 'smooth_fight_cycles', _smooth_cycles) if cp.has_option(g, 'smooth_fight_cycles')
+                          else 'auto')
+    if r['smooth'] > 1 and r['smooth_cycles']:
+        r['fight_cycles'] = (SMOOTH_CYCLES[r['smooth']] if r['smooth_cycles'] == 'auto' else r['smooth_cycles'],) * 4
+    r['draw_fps'] = _get(cp, DEBUG, 'draw_fps', _choice({'no': 0, 'yes': 1})) if cp.has_option(DEBUG, 'draw_fps') else 0
+    r['draw_tps'] = _get(cp, DEBUG, 'draw_tps', _choice({'no': 0, 'yes': 1})) if cp.has_option(DEBUG, 'draw_tps') else 0
     r['save_mode'] = _get(cp, g, 'save_mode', _choice(SAVE_MODES))
     r['fate'] = _get(cp, g, 'prevent_savescumming', _onoff)
     r['hardcore'] = _get(cp, g, 'hardcore_autosave_mode', _onoff) if cp.has_option(g, 'hardcore_autosave_mode') else 1   # D78
@@ -715,6 +833,11 @@ def read_ini(path):
     c = 'Combat'
     r['moves'] = {name: _get(cp, c, name, int, *rb['move_damage']) for name, _ in MOVES}
     r['max_daggers'] = _get(cp, c, 'max_daggers', int, *rb['max_daggers'])
+    r['safety'] = (_get(cp, c, 'fight_idle_exit', int, 0, SAFETY_MAX) if cp.has_option(c, 'fight_idle_exit')
+                 else SAFETY_DEFAULT)                # D132 (older ini: 30 s; D127's fight_safety_timer read and ignored)
+    r['duck_dodge'] = _get(cp, c, 'duck_dodge', _onoff) if cp.has_option(c, 'duck_dodge') else 1   # D144: an older ini: on
+    r['duck_window'] = (_get(cp, c, 'duck_window', int, *DUCK_WINDOW_RANGE) if cp.has_option(c, 'duck_window')
+                        else DUCK_WINDOW_DEFAULT)
     p = 'Prices'
     r['shop'] = {name: _get(cp, p, name, int, *rb['shop_price']) for name, *_ in SHOP}
     r['temple'] = {name: _get(cp, p, f'temple_{name}', int, *rb['temple_price']) for name, _ in TEMPLE}
@@ -734,29 +857,30 @@ def read_ini(path):
     r['items'] = [_get(cp, t, name, float, *rb['chance']) for name in TREASURE_ITEMS]
     r['hoard'] = _get(cp, t, 'dragon_hoard', _choice(HOARD_MODES))
     # D101: special potions (an older ini without the keys: on, 10 %, 20 HP)
-    r['potions'] = _get(cp, t, 'rare_potions', _onoff) if cp.has_option(t, 'rare_potions') else 1
-    r['pot_chance'] = (_get(cp, t, 'rare_potion_chance', int, 0, 100) if cp.has_option(t, 'rare_potion_chance')
-                       else POT_CHANCE_DEFAULT)
-    r['life_hp'] = _get(cp, t, 'life_potion_hp', int, 0, 100) if cp.has_option(t, 'life_potion_hp') else LIFE_HP_DEFAULT
+    r['potions'] = spv('rare_potions', _onoff, 1)
+    r['pot_chance'] = spv('rare_potion_chance', int, POT_CHANCE_DEFAULT, 0, 100)
+    r['life_hp'] = spv('life_potion_hp', int, LIFE_HP_DEFAULT, 0, 100)
     # D106: the loot rules and the dead knight's cross (an older ini without the key: on)
     r['cross'] = _get(cp, t, 'dead_knights_cross', _onoff) if cp.has_option(t, 'dead_knights_cross') else 1
     # D108: special rings (an older ini without the keys: on, 10 %)
-    r['rings'] = _get(cp, t, 'rare_rings', _onoff) if cp.has_option(t, 'rare_rings') else 1
-    r['ring_chance'] = (_get(cp, t, 'rare_ring_chance', int, 0, 100) if cp.has_option(t, 'rare_ring_chance')
-                        else RING_CHANCE_DEFAULT)
-    r['luck_gold'] = _get(cp, t, 'luck_chest_gold', int, 0, 99) if cp.has_option(t, 'luck_chest_gold') else LUCK_GOLD_DEFAULT   # D111
+    r['rings'] = spv('rare_rings', _onoff, 1)
+    r['ring_chance'] = spv('rare_ring_chance', int, RING_CHANCE_DEFAULT, 0, 100)
+    r['luck_gold'] = spv('luck_chest_gold', int, LUCK_GOLD_DEFAULT, 0, 99)   # D111
     # D112: the Ring of Charisma (an older ini without the keys: 5 gp, 50 %)
-    r['charisma'] = (_get(cp, t, 'charisma_discount', int, 0, 50) if cp.has_option(t, 'charisma_discount')
-                     else CHARISMA_DEFAULT)
-    r['cha_math'] = _get(cp, t, 'charisma_math', int, 0, 100) if cp.has_option(t, 'charisma_math') else CHA_MATH_DEFAULT
+    r['charisma'] = spv('charisma_discount', int, CHARISMA_DEFAULT, 0, 50)
+    r['cha_math'] = spv('charisma_math', int, CHA_MATH_DEFAULT, 0, 100)
     # D113: special gems (an older ini without the keys: on, 10 %)
-    r['gems'] = _get(cp, t, 'rare_gems', _onoff) if cp.has_option(t, 'rare_gems') else 1
-    r['gem_chance'] = (_get(cp, t, 'rare_gem_chance', int, 0, 100) if cp.has_option(t, 'rare_gem_chance')
-                       else GEM_CHANCE_DEFAULT)
-    r['slow'] = (_get(cp, t, 'slow_gem_percent', int, 0, 100) if cp.has_option(t, 'slow_gem_percent')   # D117 (older ini: 33)
-                 else SLOW_DEFAULT)
+    r['gems'] = spv('rare_gems', _onoff, 1)
+    r['gem_chance'] = spv('rare_gem_chance', int, GEM_CHANCE_DEFAULT, 0, 100)
+    r['slow'] = spv('slow_gem_percent', int, SLOW_DEFAULT, 0, 100)   # D117 (older ini: 33)
     # D110: the terrain zones of tools/terrain_zones.csv (an older ini without the section: on)
     r['terrain'] = _get(cp, 'Map', 'custom_terrain', _onoff) if cp.has_option('Map', 'custom_terrain') else 1
+    # D133: the cells the game applies (4x4, or the 8 x 8 blocks 2x2) and the point it measures (an older ini: 4x4, centre)
+    r['tz_cells'] = _get(cp, 'Map', 'terrain_cells', _tz_cells) if cp.has_option('Map', 'terrain_cells') else '4x4'
+    r['tz_probe'] = _get(cp, 'Map', 'terrain_probe', _tz_probe) if cp.has_option('Map', 'terrain_probe') else 'centre'
+    # D134: the map tool's places, starts and lairs (tools/places.csv, lairs.csv; an older ini: on; no files: the game's)
+    r['places'] = _get(cp, 'Map', 'custom_places', _onoff) if cp.has_option('Map', 'custom_places') else 1
+    r['layout'] = places_layout() if r['places'] else None
     pr = 'Practice'
     def lair_or_knight(raw):
         if raw.lower() == 'black_knight':
@@ -794,6 +918,9 @@ def read_ini(path):
     r['dragon_parts'] = (monster('dragon_parts_hp', 'monster_hp'), monster('dragon_parts_damage', 'monster_damage'))
     r['talisman_min'] = monster('talisman_min_damage', 'monster_damage')
     r['hit_rest'] = tuple(ticks(monster(f'{who}_hit_recovery', 'hit_recovery')) for who in ('dragon', 'guardian'))
+    monster_keys.add('spear_trogg_attack_pause')         # D124 (older ini: 130)
+    r['spear_pause'] = (_get(cp, mo, 'spear_trogg_attack_pause', int, *rb['attack_pause'])
+                        if cp.has_option(mo, 'spear_trogg_attack_pause') else SPEAR_PAUSE_DEFAULT)
     check_treasure(r)
     for sec in SECTIONS:
         if not cp.has_section(sec):
@@ -816,7 +943,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'smooth_animation', 'smooth_fight_cycles', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
                  'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
                  *(f'{old}_horse_{what}' for old in HORSE_OLD_KEYS.values() for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
@@ -824,12 +951,13 @@ def read_ini(path):
                  'xp_per_stat_1_player',
                  'xp_per_stat_2_players', 'xp_per_stat_3_players', 'xp_per_stat_4_players'},
              w: set(WEAPONS), a: {f'{name}_hp' for name in ARMOURS} | {f'{name}_movement_penalty_with_horses' for name in ARMOURS} | {f'{name}_movement_bonus_without_horses' for name in ARMOURS} | {'ring_of_protection_hp'},
-             c: {name for name, _ in MOVES} | {'max_daggers'},
+             c: {name for name, _ in MOVES} | {'max_daggers', 'fight_idle_exit', 'fight_safety_timer', 'duck_dodge', 'duck_window'},
              p: {name for name, *_ in SHOP} | {f'temple_{name}' for name, _ in TEMPLE}
                 | {'healer_full_heal', 'healer_life_point'},
              m: {'frog_days', 'irritation_after_visit', 'irritation_drop_per_day'} | {f'{n}_chance' for n, _ in MATH},
              t: {f'lair_{name}' for name in LAIR_TYPES} | {'gold_min', 'gold_max', 'dragon_hoard', 'rare_potions', 'rare_potion_chance', 'life_potion_hp', 'dead_knights_cross', 'rare_rings', 'rare_ring_chance', 'luck_chest_gold', 'charisma_discount', 'charisma_math', 'rare_gems', 'rare_gem_chance', 'slow_gem_percent'} | set(TREASURE_ITEMS),
-             'Map': {'custom_terrain'},
+             SPECIAL: {'special_items', 'special_item_lairs', *SPECIAL_KEYS},  # D137, D139 (the old names in [Rules] and [Treasure]: an older ini)
+             'Map': {'custom_terrain', 'terrain_cells', 'terrain_probe', 'custom_places'},
              y: {f'band{n}_up_to' for n in range(1, MYTHRAL_BANDS)}
                 | {f'band{n}_chance' for n in range(1, MYTHRAL_BANDS + 1)},
              mo: monster_keys,
@@ -926,6 +1054,8 @@ def table(r=None):
                     (G_TD_PURPLE, 'purple_knight_defence'), (G_TD_PURPLE + 1, 'purple_knight_mistimed'), (G_TD_BLACK, 'black_knight_defence'),
                     (G_TD_BLACK + 1, 'black_knight_mistimed'), (G_TD_PAUSE, 'computer_defence_pause')):
         t[at] = r.get(key, TD_DEFAULTS[key]) if r else TD_DEFAULTS[key]
+    t[G_DUCK] = r.get('duck_dodge', 1) if r else 0          # D144: without custom rules the game's (no duck)
+    t[G_DUCK_WINDOW] = r.get('duck_window', DUCK_WINDOW_DEFAULT) if r else DUCK_WINDOW_DEFAULT
     t[G_ENCHANT] = r.get('enchant', 1) if r else 0
     t[G_ENCH_CHANCE] = r.get('ench_chance', ENCH_CHANCE_DEFAULT) if r else 0
     struct.pack_into('<4b', t, G_ARMOUR_MOVE, *(r.get('armour_move', ARMOUR_MOVE_DEFAULT) if r else (0, 2, 0, 2)))
@@ -953,6 +1083,25 @@ def table(r=None):
     t[G_GEMS] = r.get('gems', 1) if r else 0              # D113
     t[G_GEM_CHANCE] = r.get('gem_chance', GEM_CHANCE_DEFAULT) if r else 0
     t[G_SLOW] = r.get('slow', SLOW_DEFAULT) if r else SLOW_DEFAULT   # D117
+    if r and not r.get('special_items', 1):              # D137: the master switch off: none of the five kinds
+        for at in G_SPECIAL_ON:
+            t[at] = 0
+    G_CHANCES = (G_ENCH_CHANCE, G_ARM_CHANCE, G_POT_CHANCE, G_RING_CHANCE, G_GEM_CHANCE)
+    t[G_SPEC_W:G_SPEC_W + 5] = bytes(t[at] for at in G_CHANCES)   # D139: the chances as read
+    t[G_SPEC_MODE] = r.get('special_items', SPEC_CHANCE) if r else 0
+    t[G_SPEC_LAIRS] = r.get('spec_lairs', SPEC_LAIRS_DEFAULT) if r else 0
+    if t[G_SPEC_MODE] == SPEC_LAIRS:                     # D139: the lairs way: a byte left 0 by spec_pick is an item
+        for at in G_CHANCES:                             # of its kind at the first look (dl 0-99 < 100)
+            t[at] = 100
+    t[G_SPEAR_HIT] = spear_pause(SPEAR_HIT_PAUSE, r.get('spear_pause', SPEAR_PAUSE_DEFAULT) if r else SPEAR_PAUSE_DEFAULT)   # D124
+    struct.pack_into('<H', t, G_SAFETY, safety_ticks(r.get('safety', SAFETY_DEFAULT)) if r else 0)   # D132: off without rules
+    t[G_TZ_PROBE] = TZ_PROBES[r.get('tz_probe', 'centre')] if r else 0   # D133: without rules the game's point
+    lay = r.get('layout') if r else None                   # D134: the starts and the Valley from the map tool's places
+    struct.pack_into('<8H', t, G_SPAWNS, *(v for k in ('S1', 'S2', 'S3', 'S4') for v in lay[k]) if lay else
+                     (v for xy in SPAWNS for v in xy))
+    struct.pack_into('<4H', t, G_VALLEY, *valley_box(lay['VY'] if lay else VALLEY_PLACE))
+    t[G_SMOOTH] = r.get('smooth', SMOOTH_DEFAULT) if r else 1   # D136: without rules the game's one picture
+    t[G_DRAW_OUT] = (r.get('draw_fps', 0) | r.get('draw_tps', 0) << 1) if r else 0
     horses = r.get('horse_list') if r else None
     horses = horses or [(text, price, move, soft, hard) for _, text, price, move, soft, hard in HORSES]
     for i, (text, price, move, soft, hard) in enumerate(horses):
@@ -1020,6 +1169,8 @@ def main_patches(r, img):
         out.append((where, bytes(img[where:where + size]), struct.pack('<' + fmt, value)))
     for where, old, kind in HOOKS:
         if r['speedrun'] and kind in SPEEDRUN_GAME:
+            continue
+        if kind in SMOOTH_HOOKS and not smooth_hooks(r):   # D136: one picture a tick: the game's own loop
             continue
         new, _ = hook_bytes(where, old, kind)
         out.append((where, bytes.fromhex(old), new))
@@ -1139,7 +1290,15 @@ def main_patches(r, img):
         imm(site, 2, hp)
     imm(0x43e0, 2, damage)
     imm(0x440b, 2, r['talisman_min']); imm(0x4410, 2, r['talisman_min'])   # dragon damage >> talismans, at least 5
-    grid = terrain_grid(img, r.get('terrain', 1))          # D110: the terrain zones (the rocks marked with TERRAIN_ROCKS)
+    imm(0x2ed1, 1, spear_pause(SPEAR_MISS_PAUSE, r['spear_pause']))   # D124: mov byte [si+4Ah],14h at the spear trogg's thrust
+    grid = terrain_grid(img, r)                            # D110: the terrain zones (the rocks marked); D133: their 8 x 8 blocks
+    if r.get('layout'):                                    # D134: the map tool's places, starts and lairs
+        out += places_patches(img, r['layout'])
+    if r.get('map_len', 0) > MAP_GAME_LEN:                 # D135: a longer MAP.CMP (the map tool's): the stash copies
+        if r['map_len'] > MAP_LIMIT:                       # (8A88 at the load, 914B at each showing) take all of it
+            raise RulesError(f'DISKB/MAP.CMP is {r["map_len"]:,} bytes; the game takes at most {MAP_LIMIT:,}: '
+                             'Restore original map in the map tool, or import a picture that packs smaller')
+        imm(0x8a89, 2, r['map_len']); imm(0x914c, 2, r['map_len'])
     out.append((TERRAIN_IMG, bytes(img[TERRAIN_IMG:TERRAIN_IMG + TERRAIN_CELLS]), grid))
     if r['ratmen_disease']:                              # undo K17
         for where, old, new in PATCHES['K17']['bytes']:
@@ -1151,37 +1310,134 @@ def main_patches(r, img):
 # grid is always written here: the rocks cells get the bit TERRAIN_ROCKS (value 6), which SAVEHOOK's horse_terrain
 # masks off for the game (and 6 is not 3 for the horses: the forest-and-swamp group), so that the walk rings know a
 # rock from a swamp. custom_terrain = on: the kinds of tools/terrain_zones.csv (0-4, 4 rocks); off: the game's grid
-# with its value-2 cells of rows 0-13 as rocks (the rings plan's row split)
+# with its value-2 cells of rows 0-13 as rocks (the rings plan's row split).
+# D133: the zones are 80 x 50 cells of 4 x 4 pixels (a 40 x 25 file is read as each cell 2 x 2). SAVEHOOK gets them
+# packed (two cells a byte, the even cell in the low nibble) in SAVEHOOK.OVL's tail and reads them at the knight's
+# 4 x 4 cell (tz_get); the 40 x 25 grid above stays, made from them (each 8 x 8 block's most common kind, a tie to the
+# earlier cell), for the game's other readers and as the fallback without XMS. terrain_cells = 2x2: the table is made
+# from that grid too, so the game applies 8 x 8 blocks
 TERRAIN_W, TERRAIN_H = 40, 25
 TERRAIN_CELLS = TERRAIN_W * TERRAIN_H
+TZ_W, TZ_H = 80, 50                                      # D133
 TERRAIN_IMG = 0x123b * 16 + 0xc42a                      # the grid in MAIN.EXE's load image (DS = 123Bh from its start)
 TERRAIN_ROCKS = 4
 TERRAIN_SPLIT_ROWS = 14                                  # off: value 2 above this row is rocks
 TERRAIN_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'terrain_zones.csv')
 
-def terrain_kinds(path=TERRAIN_CSV):
-    """The zone kinds of the CSV: 25 rows of 40 numbers 0-4; RulesError if missing or malformed."""
+def _expand2(rows):
+    out = []
+    for r in rows:
+        wide = [v for v in r for _ in (0, 1)]
+        out += [wide, list(wide)]
+    return out
+
+def _block_kind(cells):
+    """An 8 x 8 block's kind: the most common of its four, a tie going to the earlier (top-left first)."""
+    best = max(cells.count(v) for v in cells)
+    return next(v for v in cells if cells.count(v) == best)
+
+def _reduce2(rows):
+    return [[_block_kind((rows[2 * y][2 * x], rows[2 * y][2 * x + 1], rows[2 * y + 1][2 * x], rows[2 * y + 1][2 * x + 1]))
+             for x in range(TERRAIN_W)] for y in range(TERRAIN_H)]
+
+# D134: the places, the knights' starts, the Black Knights' starts and the lairs from the map tool (tools/places.csv,
+# tools/lairs.csv; tools/map_mod.py checks and reads them): the tables DS:0498 (the places: id, x, y, in the game's
+# order) and DS:0ACA (the lairs: x, y), the starts' and the Black Knights' immediates in InitNewGame, the computer
+# knights' shopping cells and targets (they follow the towns), and in SAVEHOOK the starts by home village and the
+# Valley's box. custom_places = off, or no files: none of it is written (the game's own, bit for bit)
+PLACES_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'places.csv')
+LAIRS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lairs.csv')
+PLACES_IMG, LAIRS_IMG = 0x123b * 16 + 0x0498, 0x123b * 16 + 0x0aca
+
+def places_layout(places=None, lairs=None):
+    """The map tool's layout ({key: (x, y)}), or None without the two files; RulesError for a bad file."""
+    places, lairs = places or PLACES_CSV, lairs or LAIRS_CSV
+    if not (os.path.exists(places) and os.path.exists(lairs)):
+        return None
+    import map_mod
+    try:
+        with open(places, encoding='ascii') as a, open(lairs, encoding='ascii') as b:
+            return map_mod.parse_layout(a.read(), b.read(), places)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        raise RulesError(f'{e}; fix it with the map tool (Terrain_editor.bat) or set [Map] custom_places = off')
+
+# D135: the game copies its map file (35,331 bytes, the immediates at 8A89 and 914C) into a stash of 35,840 bytes
+# ([88FD], 0x8C0 paragraphs at 867A) and back each time the map is shown. A longer MAP.CMP (the map tool's Apply) gets
+# its length there; a shorter one needs nothing (the decoder stops at the length in its header)
+MAP_GAME_LEN, MAP_LIMIT = 35331, 35840
+
+def map_length(game):
+    """The longer of the game folder's two MAP.CMP files (0 if there is none)."""
+    return max([os.path.getsize(p) for p in (os.path.join(game, d, 'MAP.CMP') for d in ('DISKB', 'DISKC'))
+                if os.path.exists(p)] or [0])
+
+def places_patches(img, lay):
+    """D134: (where, old, new) for the places' and lairs' tables and the immediates of the starts, the Black
+    Knights and the computer knights' shopping (map_mod.IMM)."""
+    import map_mod
+    out = []
+    ids = {v[0]: k for k, v in map_mod.PLACES.items()}
+    old = bytes(img[PLACES_IMG:PLACES_IMG + 6 * len(ids)])
+    new = bytearray(old)
+    for n in range(len(ids)):
+        pid = struct.unpack_from('<H', old, 6 * n)[0]
+        struct.pack_into('<HH', new, 6 * n + 2, *lay[ids[pid]])
+    out.append((PLACES_IMG, old, bytes(new)))
+    old = bytes(img[LAIRS_IMG:LAIRS_IMG + 4 * len(map_mod.LAIRS)])
+    out.append((LAIRS_IMG, old, b''.join(struct.pack('<HH', *lay[map_mod.lair_key(i)]) for i in range(len(map_mod.LAIRS)))))
+    words = [(a, v) for k in list(map_mod.STARTS) + list(map_mod.BLACK_KNIGHTS) for a, v in zip(map_mod.IMM[k], lay[k])]
+    targets, cells = map_mod.shop_targets(lay)
+    words += list(zip(map_mod.IMM['shop_cells'], cells['HW'] + cells['WD']))
+    words += list(zip(map_mod.IMM['shop_hw'], targets['HW'])) + list(zip(map_mod.IMM['shop_wd'], targets['WD']))
+    for a, v in words:
+        out.append((a, bytes(img[a:a + 2]), struct.pack('<H', v)))
+    return out
+
+def terrain_kinds(path=None):
+    """The zone kinds of the CSV as 80 x 50 = 4,000 (row 0 first): 50 rows of 80 numbers 0-4, or 25 rows of 40 (each
+    cell 2 x 2); RulesError if missing or malformed."""
+    path = path or TERRAIN_CSV
     try:
         text = open(path, encoding='ascii').read()
     except (OSError, UnicodeDecodeError) as e:
         raise RulesError(f'{path}: cannot be read ({e}); set [Map] custom_terrain = off to use the map of the game')
-    rows = [line for line in text.replace(chr(13), '').split(chr(10)) if line.strip()]
-    if len(rows) != TERRAIN_H:
-        raise RulesError(f'{path}: {len(rows)} rows of cells, must be {TERRAIN_H}')
-    kinds = []
-    for n, line in enumerate(rows, 1):
+    lines = [line for line in text.replace(chr(13), '').split(chr(10)) if line.strip()]
+    if len(lines) not in (TZ_H, TERRAIN_H):
+        raise RulesError(f'{path}: {len(lines)} rows of cells, must be {TZ_H} (rows of {TZ_W}) or {TERRAIN_H} (rows of {TERRAIN_W})')
+    w = TZ_W if len(lines) == TZ_H else TERRAIN_W
+    rows = []
+    for n, line in enumerate(lines, 1):
         cells = [c.strip() for c in line.split(',')]
-        if len(cells) != TERRAIN_W or not all(c in ('0', '1', '2', '3', '4') for c in cells):
-            raise RulesError(f'{path}: row {n} must be {TERRAIN_W} kinds 0-4 separated by commas')
-        kinds += [int(c) for c in cells]
-    return kinds
+        if len(cells) != w or not all(c in ('0', '1', '2', '3', '4') for c in cells):
+            raise RulesError(f'{path}: row {n} must be {w} kinds 0-4 separated by commas ({len(lines)} rows: {w} each)')
+        rows.append([int(c) for c in cells])
+    rows = rows if w == TZ_W else _expand2(rows)
+    return [k for r in rows for k in r]
 
-def terrain_grid(img, custom):
-    """The grid's 1,000 bytes for MAIN.EXE: the game's values, the rocks with TERRAIN_ROCKS."""
-    if custom:
-        return bytes(2 | TERRAIN_ROCKS if k == 4 else k for k in terrain_kinds())
-    game = img[TERRAIN_IMG:TERRAIN_IMG + TERRAIN_CELLS]
-    return bytes(2 | TERRAIN_ROCKS if v == 2 and i < TERRAIN_SPLIT_ROWS * TERRAIN_W else v for i, v in enumerate(game))
+def terrain_rows(img, r):
+    """The 80 x 50 zones as the game's values (rocks 2 | TERRAIN_ROCKS) for the rules r, rows of 80: the CSV's kinds or
+    (custom_terrain = off) the game's grid with the row split, each cell 2 x 2; terrain_cells = 2x2: made of 8 x 8 blocks.
+    r may also be D110's custom flag alone (1 or 0)."""
+    r = r if isinstance(r, dict) else {'terrain': r}
+    if r.get('terrain', 1):
+        k = terrain_kinds()
+        rows = [k[y * TZ_W:(y + 1) * TZ_W] for y in range(TZ_H)]
+    else:
+        game = img[TERRAIN_IMG:TERRAIN_IMG + TERRAIN_CELLS]
+        rows = _expand2([[4 if v == 2 and y < TERRAIN_SPLIT_ROWS else v for v in game[y * TERRAIN_W:(y + 1) * TERRAIN_W]]
+                         for y in range(TERRAIN_H)])
+    if r.get('tz_cells', '4x4') == '2x2':
+        rows = _expand2(_reduce2(rows))
+    return [[2 | TERRAIN_ROCKS if k == 4 else k for k in row] for row in rows]
+
+def terrain_grid(img, r):
+    """The 40 x 25 grid's 1,000 bytes for MAIN.EXE: the 8 x 8 blocks of the zones (the game's values, rocks marked)."""
+    return bytes(v for row in _reduce2(terrain_rows(img, r)) for v in row)
+
+def terrain_table(img, r):
+    """D133: the 80 x 50 values packed for SAVEHOOK.OVL's tail: 2,000 bytes, the even cell in the low nibble."""
+    v = [x for row in terrain_rows(img, r) for x in row]
+    return bytes(v[i] | v[i + 1] << 4 for i in range(0, len(v), 2))
 
 def price_text(text, value):
     """text ('Buy ... for 10 GP') with its price replaced by value, NUL-terminated and NUL-padded to the original
@@ -1210,8 +1466,9 @@ def build(game, r):
     from make_savehook import make_savehook
     exe = open(os.path.join(game, '_fixes', 'fixed', 'MAIN.EXE'), 'rb').read()
     header = struct.unpack('<H', exe[8:10])[0] * 16
+    r = dict(r, map_len=map_length(game))                  # D135
     img = apply(exe[header:], main_patches(r, exe[header:]))
-    return exe[:header] + img, make_savehook(table(r))
+    return exe[:header] + img, make_savehook(table(r), terrain_table(exe[header:], r))   # D133: the 80 x 50 zones
 
 def install(game, setup=False):
     """install_lock around _install (below)."""
@@ -1403,7 +1660,7 @@ def write_stamp(game):
         mode += ' (a change did not finish)'
     lines = [f'Moonstone Rebuilt {version}', f'source revision: {revision}', f'tools: {tools.hexdigest()[:16]}',
              f'mode: {mode}', f'age limit: K{age_limit(game)}']
-    for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', 'SAVEHOOK.OVL', os.path.join('DISKB', 'KN3.OB'), os.path.join('DISKB', 'HE3.OB'),
+    for name in ('MAIN.EXE', 'INTR.EXE', 'SAVEHOOK.COM', 'SAVEHOOK.OVL', 'SAVEHOOK.INB', os.path.join('DISKB', 'KN3.OB'), os.path.join('DISKB', 'HE3.OB'),
                  os.path.join('DISKB', 'KH.CEL'), os.path.join('DISKB', 'MH.C'), 'custom_rules.ini'):
         lines.append(f'{name.replace(os.sep, "/")}: {_sha(os.path.join(game, name))}')
     try:

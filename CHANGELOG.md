@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+* **The block stops a ratman's bite and claw** (D145; the fixed game, also without custom rules: run Setup.bat
+  again). In the ratmen fight a knight blocking (back + down + hit) and facing the ratman takes no damage and no
+  disease from its bite or claw; the ratman finishes its blow, as a trogg does. From behind, or with any other move,
+  the blow lands as before. With timed defence on, the block has to come in time, as against the troggs.
+* **Ducking a thrown dagger** (D144; custom rules, `[Combat] duck_dodge = on`, `duck_window = 6`): press down just
+  before a dagger strikes your knight (down alone, as for a step down; held or let go) and the knight ducks: the
+  dagger flies over it, at any depth. The knight must be standing or walking, not attacking, defending or staggered;
+  down held from earlier (walking down) does not duck. Computer knights duck a dagger now and then (one in four). Not
+  GUNSHOT's ball, DAGGERFALL's daggers or a knight played with a joystick. The game's own dodge (down + hit) is unchanged.
+* **The ratmen fight: up + hit is the straight upward thrust, back + down + hit the block** (D142; the fixed game,
+  also without custom rules: run Setup.bat again). The game gave back + down + hit the straight upward thrust in
+  this fight; now up + hit is that thrust (in place of the slow overhead chop) and kills a ratman on the ground at
+  once, and back + down + hit is the block, as in the other fights. Down + hit is still the downward stab. On the
+  keyboard, back + down counts only when down is pressed together with the back key: walking with down held and
+  then back + hit gives the quick backward thrust.
+* **Smooth animation: the knight's walk** (D143; custom rules, with `smooth_animation` 2, 3 or 6): a walking knight is
+  now shown in poses in between the game's four walk poses, up to five for each step, so the walk no longer jumps
+  12 pixels with every pose. The in-between poses are made by Setup from your own game files (`SAVEHOOK.INB`; pixels
+  are only moved, nothing is drawn or shipped) and shown one step late: the knight's picture is at most about 12
+  pixels (a ninth of a second) behind where the game has it, and the game itself (its logic, hits and pace) is
+  unchanged. Starting, stopping, turning round and blows look as before. Run Setup.bat once to make the file; without
+  it, or without XMS memory, the walk looks as in D136.
+* **Switching sides with down held turns the knight** (D141): a knight lunging or walking with down (or up) held
+  that presses the other side's direction and hits now turns and lunges that way, as in the original game. Rebuilt's
+  quick back + down / back + up reading (the block, the dagger) had kept the old facing, so in the ratmen fight the
+  hit became the straight upward thrust. Back + down pressed together is still the block (in the ratmen fight the
+  game's own straight upward thrust).
+* **Special items in only some lairs** (D139, D140; custom rules, `special_items = lairs`, the new default, with
+  `special_item_lairs = 8`): only that many of the 24 lairs hold enchantments or special potions, rings and gems,
+  spread evenly over the map's four quarters (two in each), and each of them at least one (each kind rolled at its
+  chance; when none comes, one is drawn, every kind once before any twice). Which lairs and kinds is fixed when the
+  game starts. At the defaults a game has about 9 special items (about 12.5 before), and the number of lairs with one
+  no longer swings from 6 to 14. The dragon's hoard is as before. `special_items = chance` is the old way, and an
+  older custom_rules.ini without the key keeps it.
+* **A lair stays on the map while a special item is left in it** (D140; custom rules): before, a lair whose gold and
+  items were all taken left the map even with a special potion, ring or gem still in its chest (one a knight with no
+  free place could not take), and the item was lost.
+* **Rebirth and the Black Knights' four keys lead to the real Stonehenge** (D138; custom rules): a knight saved by
+  Rebirth armour now wakes at Stonehenge, and a computer knight with all four keys walks to Stonehenge and waits there.
+  Both used to go to Water Deep by mistake. A Stonehenge moved with the map tool is followed; with `custom_places =
+  off` it is the game's own.
+* **The special items' settings in one place** (D137; custom rules): the sword and armour enchantments, the special
+  potions, rings and gems now have their keys together in a new section `[Special_items]`, right after `[Treasure]`,
+  with a master switch `special_items = chance` (as before) or `off` (none of them at all). An older custom_rules.ini
+  with the keys in `[Rules]` and `[Treasure]` is read as before. **Fix:** speedrun mode now has no enchantments or
+  special items, as the docs said.
+* **Smooth animation in fights** (D136; custom rules, `smooth_animation = 6`, the default, also for an older
+  custom_rules.ini; `1` = the original): between two of the game's own pictures a fight now shows up to five more, in
+  which what moves without changing its picture is drawn part of the way: thrown daggers, the dragon's body parts and
+  figures pushed or thrown back move in small steps, up to 54.6 pictures a second instead of 9.1. A knight or monster
+  whose pose changes (walking, blows) is drawn as before. The game itself is unchanged: its logic keeps its 9.1
+  ticks a second, a key is read and a blow lands exactly when it did, and a pose still changes once a tick (in-between
+  poses are a later stage). `2` and `3` show one or two extra pictures a tick. The extra pictures need a faster
+  emulated CPU, so fights then run at `smooth_fight_cycles` (`auto`); a fight waits for the game's clock, so it does
+  not get faster, but the heaviest fights (the dragon, many knights), which used to run slow, now keep the full pace.
+  A picture the CPU has no time for is left out; the game is never slowed for one. Speedrun mode keeps one picture a
+  tick. `[Debug] draw_FPS` and `draw_TPS` show the pictures and the ticks a second in a fight's corner.
 * **Special gems** (D113; custom rules, `rare_gems = on`, `rare_gem_chance = 10`): a lair chest or the dragon's hoard
   may hold a special gem, shown after its Gems of Seeing in its own colours (the stand tells the group, the ball the
   gem). A knight carries three in its gem row's first places, its Gems of Seeing after them; take, swap, sell (the
@@ -46,6 +103,89 @@
 * **Spellproof armour protects from the Gem of Frog** (D118; custom rules): the Gem of Frog cannot hit a player's
   knight in Spellproof armour, as scrolls cannot target it; fire on it does nothing and the gem is kept. The other
   gems are unchanged (Spying still shows that knight; Change Places and Slow still work on it).
+* **Fix:** the pointer on the item screen was violet since the enchanted gear's look (D98): it has the game's own
+  colours again on every item screen (your own, a chest, the dragon's hoard, another knight's, the merchant, the High
+  Temple), also in a game saved before this fix (D119). The violet enchanted swords and armours and the special potions,
+  rings and gems look as before.
+* **Fix:** after the dragon had eaten a knight, the next dragon or Guardian fight (with no lair or knight fight
+  between) made its knight vanish at once and never ended; this was in the original game too. Every fight now starts
+  with no knight eaten. And the dragon that beats or robs a knight now flies off with what it took and comes back from
+  the map's edge, instead of waiting where it caught the knight: a knight that was the only one left was attacked again
+  at the start of its next turn, before it could move (D120; also without custom rules).
+* **Fix:** the Rings of Strength, Constitution and Endurance now show their +1 on the item screen (the ability's
+  number counts one higher for each ring carried, two of a kind +2), and it goes back down when the ring is lost by
+  any route; before, the bonus worked in fights, hit points and movement but the number did not change. The bonus is
+  on top of the base ability and never blocks raising it: a knight at 5 with a Ring of Strength shows 6 and can still
+  raise its base by experience, Math, Mythral and the potions as any knight at 5. A ring now always adds its +1, also
+  over 9 (D121; custom rules, `rare_rings = on`).
+* **Math and Mythral never raise an ability that is 5 or more** (D123; the fixed game, also without custom rules; run
+  Setup.bat again). Before, only an ability of exactly 5 was left alone, so one taken above 5 by the Potions of
+  Strength, Endurance and Constitution (or a high start value in `custom_rules.ini`) could still be raised, also past 9.
+  The stat rings do not count (base 4 with a Ring of Strength, shown 5, can still be raised). With every ability at 5
+  or more nothing changes from the game: Math gives another gift, Mythral says you have nothing left to learn.
+* **The computer knights' level-up never raises an ability that is 5 or more either** (D126; the fixed game, also
+  without custom rules; run Setup.bat again), as Math and Mythral since D123. With every ability at 5 or more, losing
+  to the Guardian and a Mythral donation that goes wrong no longer change a byte of the knight's record that is not an
+  ability: the Guardian takes the lives as before but no ability, and Mythral says his powers are weak.
+* **Losing to the Guardian may lower any ability, never below 1** (D130; the fixed game, also without custom rules;
+  run Setup.bat again). Before, the ability that fell was never one of exactly 5, and with every ability at 5 or more
+  none fell. Now one of the abilities above 1 falls by 1, each as likely; only a knight with all three at 1 loses none.
+  The rings do not count (the base falls; base 1 with a ring is not lowered).
+* **The spear trogg attacks a little slower** (D124; custom rules, `[Monsters] spear_trogg_attack_pause = 130`): it
+  waits 30 % longer between its thrusts (13 frames instead of 10 after a thrust that lands or is blocked, 26 instead of
+  20 after a miss), so a knight standing in its reach is thrust at every 1.8 s instead of every 1.4 s. The thrust itself
+  looks and hits as before. 100 gives the game's pace; older ini files get 130.
+* **A riposte that lands at the same moment as the troll's blow from above now stops it** (D125; custom rules,
+  `timed_defence = on`). Before, when the quick thrust and the troll's chop landed in the same frame, the troll
+  ignored the thrust (no damage, no flinch) and its chop still hit; the axe and hammer troggs flinched but their blow
+  still hurt. Now the knight's blow wins such a tie: the monster flinches and its blow does not land. A riposte that
+  lands first worked already; a chop that is not interrupted still does its damage and the troll's crush.
+* **The troll's blow from above lands where its club is drawn** (D131; the fixed game, also without custom rules; run
+  Setup.bat again). The club had a thin line of collision points, so at many distances it passed through gaps in the
+  knight's picture, and a knight standing where the troll stopped could be missed by every blow (from the left the
+  troll stops about where the blow always missed). Setup now writes `DISKB\COLLFIX.HIT`, the game's collision file
+  with 14 more points on the club, and the fixed game reads it. The blow's reach, damage, timing and the crush are as
+  before; it now also strikes a knight holding the block in those spots (it never could be blocked).
+* **Finer terrain zones, measured where the knight stands** (D133; custom rules, `[Map] terrain_cells = 4x4`, `terrain_probe = centre`): the map's movement zones (open ground, forest, swamp and water, rocks, mountains) are
+  now cells of 4 x 4 pixels (80 x 50) instead of 8 x 8, so they can follow the map picture's forests and rivers, and
+  the zone a knight is in is read under the middle of its icon instead of below its feet, so the slowing starts where
+  the picture shows the zone under the icon. `tools/terrain_zones.csv` is 80 x 50 (an older 40 x 25 file still
+  works: each cell becomes 2 x 2). `terrain_cells = 2x2` applies the zones in the original 8 x 8 blocks and
+  `terrain_probe = feet` measures at the original point; speedrun mode is the original. Without XMS the zones work
+  in 8 x 8 blocks.
+* **The map tool** (D133-D135; `Terrain_editor.bat`, needs Python 3 with Pillow): paints the terrain zones (brush,
+  fill, 4 x 4 or 8 x 8 cells), moves the places, lairs and starts, imports your own 320 x 200 map picture (the
+  colours become the nearest of the map's palette; six of its colours are free to set) and applies it all to the game
+  in one step, keeping the original map as `MAP.CMP.orig`; *Restore original map* puts the game's own map, places and
+  terrain back. `tools/map_palette.png` shows the map's 32 colours as squares to paint with. Projects are saved as one ZIP; the game's own map is never put in one. A map file up to 35,840 bytes
+  is taken (the rules build tells the game a longer file's length).
+* **Move the places and lairs** (D134; custom rules, `[Map] custom_places = on`): the map tool can move the home
+  villages with the knights' starts, the two towns, Stonehenge, the Valley, Math's tower, the 24 lairs and the Black
+  Knights' starts; the rules build puts them into the game, and the computer knights follow (they shop at the moved
+  towns and walk to the moved lairs). A lair keeps its monsters and region by its number. Without the tool's files,
+  or with `custom_places = off`, the game is exactly as before.
+* **A way out of a stuck campaign fight** (D127, D132; custom rules, `[Combat] fight_idle_exit = 30`): when for 30
+  seconds no player in the fight has pressed a key or a joystick control (a key held down counts as pressing) and no
+  player's knight in it has lost or gained hit points, "ESC LEAVES THE FIGHT" shows at the top of the screen and one
+  press of Esc leaves the fight. Any key, control or hit takes the hint away and starts the time again. Nobody wins: no
+  loot, no experience, the lair keeps all its monsters, the knights keep their wounds, the turn is over; the dragon
+  flies off. A knight already down still loses its life. A computer knight's own fight never offers it. Otherwise Esc
+  does nothing in a fight, as before; practice keeps its own Esc. 0 turns it off; older ini files get 30 (D127's
+  earlier `fight_safety_timer`, a fight-length timer, is gone; the line is ignored if an ini still has it).
+* **The Players choice in the first menu goes round** (D129; also without the custom rules): right after *1* comes
+  *1 + CPU* again, and left from *1 + CPU* goes to *1*: *1 + CPU*, *2 + CPU*, *3 + CPU*, *4*, *3*, *2*, *1*, *1 + CPU*, ...
+  With `computer_knights = off` the ring is *4*, *3*, *2*, *1*. Before, the choice stopped at both ends.
+* **The Gem of Change Places teleports when there is nobody to change places with** (D128; custom rules,
+  `rare_gems = on`): when no other knight on the map could be hit by it (the others dead, out of the game, or hidden
+  by Concealment or Invisibility), firing the ball anywhere puts your knight there, the gem used, and the turn goes on
+  with the movement and Haste you had left, as after a swap. Not into the Valley of the Gods (the shot does nothing
+  there and the gem stays), and not without moving the ball. While any knight could be hit, the gem works as before.
+* **SKIPCOMBAT**, a new map code (D122; custom rules, `cheat_codes = yes`): typed on the map it skips fights until it
+  is typed again. A human knight entering a lair goes straight to its chest as after a won fight (the lair won, its
+  special items rolled at that first look, the catchup loot, the turn's movement used up) but gains no experience;
+  co-op lairs share the chest as after a win. The dragon is beaten at once (its hoard, no experience). Knight duels,
+  the Guardian, computer knights' own lair fights and the practice are fought as ever. Made for trying out the special
+  items in lair chests quickly.
 
 * The **Ring of Charisma**, the thirteenth and last special ring (D112; custom rules, `rare_rings = on`): each one takes
   `charisma_discount` (5) gp off what its knight pays at the merchant (weapons, armours, daggers, horses), the High
@@ -64,7 +204,7 @@
   from `tools/terrain_zones.csv`, painted with the terrain editor: open ground, forest, swamp and water, mountains and
   the map's edges, rocks (slowing as swamp). Off: the game's own map.
 * Special rings, more of them (D109; custom rules, `rare_rings = on`): the **Ring of Undying** saves a knight from death once: when it would lose its last life (a fight, the Guardian, the disease) it wakes in its home village with 1 life and full HP and the ring is gone (a second ring saves once more; Rebirth armour acts first). The **Ring of Vampirism** gives 1 HP (two rings 2) for each sword blow or thrown dagger that hurts a knight or a monster, never above max HP. The **Ring of Absorb Soul** gives a life (up to `max_lives`) for each knight its bearer kills in a fight. They now turn up in chests too.
-* Special rings (D108; custom rules, `rare_rings = on`): a lair chest or the dragon's hoard may hold one (`rare_ring_chance`, 10 %), each in its own colours (the band tells the group, the stone the ring), named on hover. A knight carries up to two in its ring row's first two places, its Rings of Protection after them; take them from chests and from other knights (with two already each click swaps). The High Temple buys one for a Ring of Protection's price, Stonehenge takes one as an offering, and a computer knight or the dragon may take them by the loot rules (they do nothing for a computer knight; win them back). Built so far: the Rings of Strength, Constitution and Endurance: the ability counts one higher while the ring is carried, also over 5 (two of a kind +2, at most 9); Math and Mythral still see the real value. More rings follow.
+* Special rings (D108; custom rules, `rare_rings = on`): a lair chest or the dragon's hoard may hold one (`rare_ring_chance`, 10 %), each in its own colours (the band tells the group, the stone the ring), named on hover. A knight carries up to two in its ring row's first two places, its Rings of Protection after them; take them from chests and from other knights (with two already each click swaps). The High Temple buys one for a Ring of Protection's price, Stonehenge takes one as an offering, and a computer knight or the dragon may take them by the loot rules (they do nothing for a computer knight; win them back). Built so far: the Rings of Strength, Constitution and Endurance: the ability counts one higher while the ring is carried, also over 5 (two of a kind +2, at most 9); Math and Mythral still see the real value (D121: now shown on the item screen, with no cap). More rings follow.
 * The loot rules and the dead knight's cross (D106; custom rules, `dead_knights_cross = on`): a computer knight or the dragon that beats a knight with lives left still takes one item, the first in the game's order, but that item can now be a special potion (the one in the first place, just before the Potion of Healing in the order) if the winner has room for it (a computer knight carries three, the dragon's hoard one). At the last life a computer knight takes everything that fits: all the gold up to `max_gold`, daggers up to 10, the better sword and the better armour with their enchantments (its own worse ones stay with the dead knight), every magic item, the keys and Moonstones and the special potions it has room for. The dragon takes half the gold as before and everything else into its hoard except the swords, armour and daggers (their enchantments and one special potion go into the hoard if its place is free). What is not taken stays at the dead knight's grave, as the original game already allowed: walk onto it with another knight and take everything you want on the loot screen; a computer knight may come and take it too. A computer knight's sword or armour enchantment taken this way has no effect for it, but shows on its panel and goes with the item to the knight who beats it. Reincarnation now also clears the knight's special potions, their effects, its enchantments and its horse (they were kept by mistake); respawn keeps the leftovers as before. Off in speedrun mode. **Run Setup.bat again.**
 * The dead knight's cross on the map (D107; custom rules, `dead_knights_cross = on`): a dead knight's grave is drawn as a gold cross while it still holds something worth fetching: gold, daggers, a magic item, a key, a Moonstone, a special potion or the Sword of Sharpness. A sword, armour (also enchanted) and the horse alone do not count; when nothing else is left the game's grey grave is drawn. Standing on it shows the pink outline as before. Not with respawn or reincarnation (no cross), not in speedrun mode. The dragon that takes a knight's last life takes the Sword of Sharpness into its hoard again, as in the original game (D106 had left it at the grave), unless the hoard already has one. IDROPPEDMYKEY names a key at a grave as "<knight>'s grave".
 * Special potions (D101-D105; custom rules, `rare_potions = on`): a lair chest or the dragon's hoard may hold one (`rare_potion_chance`, 10 %), each in its own colours. A knight carries up to three in the first places of its potion row, its Potions of Healing after them; click one on the knight's own item screen to drink it. All twelve: Danu (HP + the max HP, up to twice the max, and a life), Full Restoration (full HP and lives), Strength, Endurance and Constitution (+1 each for good, also above 5) and Life (+20 max HP for good, `life_potion_hp`, and as much HP at once). HP above the max after Danu stays until damage brings it down. Might and Fire Resistance (D102) work in the knight's next fight: Might makes its blows as strong as Strength 7 and pushes the one struck back a little (not the dragon or the Guardian), Fire Resistance lets the dragon's fire do only 1 damage, and Speed (D104) makes the knight walk half again as fast and its attacks about a fifth faster (not its blocks); a practice fight neither uses nor ends them, and a second of the same kind cannot be drunk while one waits. The map potions (D103): Recall takes the knight home to its village with full HP and lives as the village gives them, and its turn ends; Levitation, from the first forest, hill or other slowing ground the knight steps on, lets it walk at full speed to the end of that turn; Invisibility hides the knight's map icon from the others' turns until it enters a lair alone: then the lair's chest opens with no fight (as after the Hawk) and the invisibility ends. An invisible knight attacked by another knight or the dragon is not fought (and is visible again), and a knight holding Invisibility or Recall gets the attack prompt, as with the Scroll of Protection, to drink one and avoid the fight (Recall takes it home). Take one from another knight with three already and they cycle. The High Temple buys one for what a Potion of Healing sells for (it never sells them), and Stonehenge takes one as an offering, as a Potion of Healing (D105). They are lost with the knight's last life, unless a computer knight wins that fight: it takes up to three, never drinks them, and a human who beats it can take them back (D105); the dragon takes none. Without XMS memory they are off, as the cheat codes are.

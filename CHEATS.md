@@ -94,6 +94,7 @@ With one human knight in the fight:
 | IDROPPEDMYKEY (or IDROPPEDMYKEYS) | Shows who holds each of the four keys: a knight, the dragon, the High Temple or a lair. The lairs holding one glow on the map until the turn ends |
 | SIRPICKSALOT | The Valley of the Gods opens with any number of keys, also none, on until typed again |
 | LOADEDDICE (or LOADEDDIE) | Loaded dice: every throw in the tavern's dice game wins, until the knight leaves the tavern. Also typed in the tavern itself, where it holds from the throw being made on. Which win comes is still random, at the game's own odds (a triple is rarer than a pair); the bet and the payout are the game's |
+| SKIPCOMBAT | Fights are skipped, on until typed again (the same sound both times). A human knight entering a lair wins at once: no fight, straight to the chest, the lair counts as won (its monsters beaten; the chest's special items are rolled at this first look as after a fight), the catchup loot as after a win, the turn's movement used up as after a fight, but no experience. The dragon that catches a human knight is beaten at once: its hoard, the dragon dead, no experience, no Scroll of Protection used. Not skipped: a knight against a knight (human or computer), the Guardian in the Valley, computer knights' own lair fights and the practice. As SIRWALKSALOT, it stays on over a new game until typed again or DOSBox-X is restarted, and a save state keeps it as it was when saved (D122) |
 
 ## In the tavern (clicks on the picture)
 
