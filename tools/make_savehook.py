@@ -874,9 +874,16 @@ TIMER_THIRD, SHADOW_SLOT = 0x7c19, 0x95e6             # DS: the timer handler's 
 # A measuring build only (the environment variable MOONSTONE_SM_STATS set; research/smooth-animation-2026-11-19/
 # fps_measure.py reads them from a DOSBox-X save): smo_stat counts a fight's ticks, its ticks with movement, the
 # in-between pictures shown, the ticks the pictures made late, the ticks over when their own picture was due, the
-# first and last BIOS tick, then the ticks with movement by the pictures shown (0-5); and knight 1 walks to and fro
+# first and last BIOS tick, then the ticks with movement by the pictures shown (0-5), then the attack pictures
+# fetched (D146); and knight 1 walks to and fro, or with MOONSTONE_SM_STATS=atk walks and strikes (8 ticks each: a
+# walk right, the swing, the chop, the lunge, D147: the backward thrust, the upward thrust, the dagger throw, the
+# block, then a walk left and the same with the dodge for the block)
 SM_STATS = bool(os.environ.get('MOONSTONE_SM_STATS'))
-SM_STAT_WORDS = 7 + 6
+SM_STATS_ATK = os.environ.get('MOONSTONE_SM_STATS') == 'atk'
+SM_STAT_WORDS = 7 + 6 + 1
+SM_ATK_KEYS = ((0x4d, 1), (0x4b, 2), (0x48, 4), (0x50, 8), (0x1c, 16))   # right, left, up, down, Enter (player 1)
+SM_ATK_PHASES = (1, 16 | 1, 16 | 4, 16 | 8 | 1, 16 | 2, 16 | 4 | 1, 16 | 4 | 2, 16 | 8 | 2,      # (16 phases, D147)
+                 2, 16 | 2, 16 | 4, 16 | 8 | 2, 16 | 1, 16 | 4 | 2, 16 | 4 | 1, 16 | 8)
 # D143 the walk's in-between poses (docs/smooth-animation-plan-2026-11-19.md, 13 and 14): SAVEHOOK.INB, made by
 # tools/walk_frames.py from the user's own KN1.OB and HE1.OB, is WK_SLOTS slots of WK_SLOT bytes. Slot 0 is the header
 # (WK_MAGIC, then the words WK_SLOT and WK_SLOTS). Slot 1 + ((look * 2 + facing) * 4 + pose) * 5 + (j - 1) is the body
@@ -899,8 +906,101 @@ WK_SUM = 0x4b57                                       # the file's words add up 
 SMX_WALK, SMX_SKIP = 4, 8                             # E_AUX: a walker's legs piece (its slots' number in bits 4-7: (look * 2
                                                       # + facing) * 4 + pose) and its torso piece (not drawn in between)
 KN1_SEG, HE1_SEG = 0x8937, 0x894d                     # DS: the segments of KN1.OB and HE1.OB in the knights' bank tables
+# D146 the knight's attacks' in-between poses (plan sections 15 and 16): the swing, the overhead chop and the lunge
+# (with the fast swing and the riposte that share their pictures). ATK_POSES: each pose a frame of the game's knight
+# scripts draws, its pieces in the game's order as (bank, frame, dy, dx): the bank is the slot's bank table's byte
+# offset / 4 (0 KN1.OB or HE1.OB, 1 KN2.OB or HE2.OB, 3 KN4.OB, the sword and the motion arcs), the place relative to
+# the slot's root, facing right (a knight facing left: x = root - dx - the frame's width). ATK_CHANGES: the pose
+# changes that have in-between pictures (old pose, new pose; tools/attack_frames.py holds their recipe); ATK_K: the
+# slots of SAVEHOOK.INB a picture of that change takes at most (each slot a bank of strips, ATK_* below)
+ATK_POSES = [
+    ((0, 1, 45, -13), (0, 0, -9, -9), (3, 1, -6, 4)),                                           # 0 standing
+    ((0, 32, 44, -22), (0, 31, -4, -18), (3, 3, 25, -22)),                                      # 1 swing: wind-up
+    ((0, 34, -3, 4), (0, 33, 24, -14), (3, 4, 21, 15), (3, 14, 34, 10)),                        # 2 swing: low cut
+    ((0, 35, 27, -14), (0, 36, 7, 17), (0, 37, 22, 35), (0, 38, 45, 33), (3, 5, 23, 60), (3, 15, 25, 41)),   # 3 the reach
+    ((0, 39, 20, -12), (3, 1, -7, 18), (0, 40, 2, 15), (3, 16, -6, 34), (3, 17, 3, 61)),        # 4 swing: the raise
+    ((0, 41, -1, -13), (0, 42, 21, 15), (3, 18, -21, -23), (3, 6, -22, -25)),                   # 5 swing: high hold
+    ((0, 41, -1, -13), (0, 42, 21, 15), (3, 6, -22, -25)),                                      # 6 ... its arc dropped
+    ((0, 19, 44, -21), (0, 18, -7, -14), (3, 1, -15, 12)),                                      # 7 ready (0C92)
+    ((0, 53, -7, -18), (3, 5, 26, -7)),                                                         # 8 lunge: stance
+    ((0, 35, 27, -14), (0, 36, 7, 17), (0, 37, 22, 35), (0, 38, 45, 33), (3, 5, 23, 60)),       # 9 lunge: the reach
+    ((0, 54, 25, -12), (0, 55, 10, 26), (0, 56, 25, 50), (0, 38, 46, 40), (3, 5, 26, 66)),      # 10 lunge: stretch
+    ((0, 54, 25, -12), (0, 57, 10, 26), (0, 58, 25, 58), (0, 38, 46, 40), (3, 5, 27, 66)),      # 11
+    ((0, 54, 25, -12), (0, 59, 18, 26), (0, 56, 26, 49), (0, 38, 46, 40), (3, 5, 27, 65)),      # 12
+    ((0, 43, -8, -16), (3, 7, -17, -45)),                                                       # 13 chop: raised behind
+    ((0, 45, 25, -14), (0, 44, -17, -2), (3, 0, -48, 4), (3, 20, -48, -7), (3, 19, -44, -32)),  # 14 chop: sword up
+    ((0, 46, 21, -12), (0, 37, 10, 26), (0, 47, -5, 12), (3, 5, 11, 49), (3, 22, -21, 71), (3, 21, -39, 45)),   # 15 stroke
+    ((0, 48, 25, -6), (0, 49, 13, 21), (0, 50, 3, 36), (3, 8, 37, 52)),                         # 16 chop: the cut
+    ((0, 48, 25, -6), (0, 49, 13, 21), (0, 51, 5, 36), (3, 8, 37, 52)),                         # 17
+    ((0, 48, 25, -6), (0, 49, 13, 21), (0, 52, 12, 34), (3, 8, 37, 52)),                        # 18
+    ((0, 22, 45, -19), (0, 21, 19, -17), (0, 20, -8, -6), (3, 2, 9, 14)),                       # 19 the block pose
+    # D147
+    ((0, 22, 45, -19), (0, 21, 19, -17), (0, 20, -8, -6), (3, 2, 9, 14), (3, 11, -6, 27)),      # 20 back thrust: block pose, arc
+    ((0, 24, 46, -43), (0, 23, -7, -23), (3, 12, 19, -53), (3, 24, 17, -54)),                   # 21 back thrust: the thrust back
+    ((0, 24, 46, -43), (0, 23, -7, -23), (3, 24, 17, -54)),                                     # 22 ... its arc dropped
+    ((1, 3, 22, -15), (1, 4, -2, 5), (1, 5, -9, 20), (3, 1, -35, 29)),                          # 23 upward thrust (KN2.OB first)
+    ((0, 27, 16, -14), (0, 25, -14, -20), (0, 26, 6, 0), (3, 0, -21, 11), (3, 9, -23, -29)),    # 24 dagger throw: raised
+    ((0, 30, 45, -10), (0, 28, 20, -8), (0, 29, -5, 3), (0, 29, -5, 3)),                        # 25 dagger throw: thrown (no KN4)
+    ((1, 8, 45, -23), (1, 7, 20, -17), (1, 6, -5, -32), (3, 0, -22, -32)),                      # 26 the dodge (KN2.OB first)
+]
+ATK_CHANGES = [  # (old pose, new pose): the swing, the fast swing, the lunge, the riposte, the chop; 'hit': to 0C92
+    (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 0), (1, 7), (2, 7), (3, 7), (4, 7), (5, 7),   # swing
+    (0, 2),                                                                                                   # fast swing
+    (0, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 8), (8, 0), (8, 7), (9, 7), (10, 7), (11, 7), (12, 7),  # lunge
+    (0, 9),                                                                                                   # riposte
+    (0, 7), (7, 13), (13, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 0), (13, 7), (14, 7), (15, 7),    # chop
+    (16, 7), (17, 7), (18, 7),
+    (19, 2),                                                                                                  # fast swing from the block
+    # D147: the backward thrust (0D7C) and its hit endings, the fast backward thrust (0DB6), the upward thrust (10F8), the
+    # dagger throw (0DFE), the block (11E8), the dodge (11CE), the throw again (the key held: thrown straight to raised)
+    (7, 20), (20, 21), (21, 22), (22, 7), (20, 7), (21, 7), (0, 21), (7, 23), (23, 7), (0, 24), (24, 25), (25, 0),
+    (0, 19), (19, 0), (0, 26), (26, 0), (25, 24),
+    # D148: moves begun straight from a held pose (the keys changed): from the block, the dodge, the thrown pose into
+    # the swing's wind-up, the lunge's stance, the riposte's reach, ready, the thrust back, the raised dagger, the other
+    (19, 1), (19, 8), (19, 9), (19, 7), (19, 21), (19, 24), (19, 26),
+    (26, 1), (26, 8), (26, 9), (26, 7), (26, 21), (26, 24), (26, 19),
+    (25, 1), (25, 8), (25, 9), (25, 7), (25, 21), (25, 19), (25, 26)]
+ATK_K = [2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2,
+         2, 2, 1,
+         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,   # D147
+         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]   # D148                             # (measured on the game's files: attack_frames.py prints them)
+# SAVEHOOK.INB's attack part follows the walk's slots: for each change c, each look and facing (combo = look * 2 +
+# facing) and each sixth j (1-5) ATK_K[c] slots, from slot ATK_BASE[c] + (combo * 5 + j - 1) * ATK_K[c]. A slot: the
+# count of its frames n, 1 when the picture goes on in the next slot; n records (ATK_REC bytes: the frame's place from
+# the knight's first piece as the game draws it this tick, dx and dy, then 0 = drawn in the body's colour state or
+# 1 = in the sword's); a bank of the n frames (its data offset and segment written when the slot is fetched, the
+# frames' offsets from the slot's start); their planes. A file with the walk's slots only is the walk's (atk_on = 0)
+ATK_REC, ATK_RECS = 6, 4                              # a record's bytes; the records a slot has room for
+ATK_BANK = ATK_REC * ATK_RECS                         # the slot's bank (its data offset is BUF_WALK: the frames' offsets
+                                                      # are from the slot's start; its segment written when fetched)
+ATK_LAST, ATK_MORE = 0x40, 0x80                       # a record's flags (with its frame, 0-3): the slot's last frame; then
+                                                      # the picture goes on in the next slot
+ATK_BASE = [WK_SLOTS + 20 * sum(ATK_K[:c]) for c in range(len(ATK_CHANGES))]
+INB_SLOTS = WK_SLOTS + 20 * sum(ATK_K)
+SMX_ATK = SMX_WALK | SMX_SKIP                         # E_AUX: an attacking knight's first piece (bits 4-6: its sword piece's
+                                                      # place in the knight's pieces; E_DX word: its slots, (K - 1) << 14 | slot)
+ATK_SWORDS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 24)              # KN4.OB: the sword at its angles (11-23: the motion arcs)
+
+
+def atk_hash(key):
+    """D146: a pose's identity as atk_match works it out from the pieces drawn: each piece's bank and frame and its y
+    from the first piece's, then their count, each step rol 5 and xor (16 bits)."""
+    rol = lambda h: (h << 5 | h >> 11) & 0xffff
+    h, dy0 = 0, key[0][2]
+    for b, n, dy, dx in key:
+        h = rol(h) ^ (b << 8 | n)
+        h = rol(h) ^ ((dy - dy0) & 0xffff)
+    return rol(h) ^ (SM_E * len(key))
+
+
+def atk_sword(key):
+    """D146: the place of a pose's sword piece among its pieces (its colour state is the sword part's); D147: 0 for a
+    pose with no KN4 piece (the thrown dagger's: its pictures have no sword part)."""
+    return next((i for i, (b, n, dy, dx) in enumerate(key) if b == 3 and n in ATK_SWORDS), 0)
+
 BUF_WALK = BUF_SM + 2 * SM_LIST                       # D143: the walk's in-between pose being drawn (a slot of SAVEHOOK.INB)
 BUF_ILOG = BUF_WALK + WK_SLOT                         # D24: input_log's entries (6 bytes each)
+WK_SUM = (WK_SUM + BUF_WALK) & 0xffff                 # D146: the sum depends on BUF_WALK too (the attack slots' banks hold it)
 BUF_PARAS = (BUF_ILOG + 15) // 16
 BUF_ILOG_PARAS = (BUF_ILOG + 6 * ILOG_MAX + 15) // 16
 BUF_TEST_SEG = 0x9000                                 # buf_seg before the installer runs (the Unicorn suites' block)
@@ -931,6 +1031,7 @@ OVL_RING = 7                                          # D108: the special rings'
 OVL_GEM, OVL_GEM_FX = 8, 9                            # D113: the special gems' row, roll and clicks (kind_code); their use on the item screen
 OVL_GEM_MAP = 10                                      # D115: the special gems' map effects (the Gem of Greed's amounts)
 OVL_WALK = 11                                         # D143: the walk's in-between poses: which knights walk (walk_match, once a tick)
+OVL_ATK = 12                                          # D146: the attacks' in-between poses: which knights strike (atk_match, once a tick)
 OVL_CHEATS, OVL_COLD = 1, 2                        # the groups: the cheat codes' work; IDROPPEDMYKEY's screen, LOADEDDICE's throw, BLACKDEATH's work and SKIPCOMBAT's skips (D122)
 WINDOW_MAX = 4096                                     # the largest group allowed (the window is the largest one's size)
 OVL_PATH = b'C:\\SAVEHOOK.OVL\0'
@@ -1058,14 +1159,21 @@ def ovl_install(a):
     a.b(0xc6, 0x06); a.word('ovl_ok'); a.b(0x01, 0xc6, 0x06); a.word('ovl_cur'); a.b(0x00)
     # D143: SAVEHOOK.INB (the walk's in-between poses, made by Setup from the user's files) into a block of its own:
     # its length and word sum must be right, or the block is freed and the walk is drawn in place (wk_h stays 0)
-    size = WK_SLOT * WK_SLOTS
-    a.b(0xb4, 0x09, 0xba, *u16((size + 1023) // 1024), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
-    a.b(0x0b, 0xc0); a.short(0x74, 'io_done')                # or ax, ax / jz
+    # D146: a file of the walk's and the attacks' slots (INB_SLOTS) sets atk_on too; the walk's slots alone are the walk's
+    size, full = WK_SLOT * WK_SLOTS, WK_SLOT * INB_SLOTS
+    a.b(0xb4, 0x09, 0xba, *u16((full + 1023) // 1024), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
+    a.b(0x0b, 0xc0); a.short(0x75, 'inb_block'); a.near(0xe9, 'io_done')   # or ax, ax / jnz / jmp
+    a.label('inb_block')
     a.b(0x89, 0x16); a.word('xi_dh')                         # mov [xi_dh], dx
     a.b(0xba); a.word('inb_path'); a.near(0xe8, 'io_load'); a.short(0x72, 'inb_free')
+    a.b(0x81, 0x3e); a.word('xi_sum'); a.b(*u16(WK_SUM)); a.short(0x75, 'inb_free')
+    a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(full & 0xffff)); a.short(0x75, 'inb_walk')
+    a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(full >> 16); a.short(0x75, 'inb_walk')
+    a.b(0xc6, 0x06); a.word('atk_on'); a.b(0x01); a.short(0xeb, 'inb_ok')   # mov byte [atk_on], 1
+    a.label('inb_walk')
     a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(size & 0xffff)); a.short(0x75, 'inb_free')
     a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(size >> 16); a.short(0x75, 'inb_free')
-    a.b(0x81, 0x3e); a.word('xi_sum'); a.b(*u16(WK_SUM)); a.short(0x75, 'inb_free')
+    a.label('inb_ok')
     a.b(0xa1); a.word('xi_dh'); a.b(0xa3); a.word('wk_h')    # mov ax, [xi_dh] / mov [wk_h], ax
     a.short(0xeb, 'io_done')
     a.label('inb_free')
@@ -15510,6 +15618,8 @@ def smooth_code(a):
     # D143: the walking knights (walk_match, in its overlay group; only with SAVEHOOK.INB in XMS)
     a.b(0x2e, 0x83, 0x3e); a.word('wk_h'); a.b(0x00); a.short(0x74, 'x136_o_ret')   # cmp word cs:[wk_h], 0 / je
     a.near(0xe8, 'walk_match')
+    a.b(0x2e, 0x80, 0x3e); a.word('atk_on'); a.b(0x00); a.short(0x74, 'x136_o_ret')   # D146: the striking knights (atk_match)
+    a.near(0xe8, 'atk_match')
     a.label('x136_o_ret')
     a.b(0xc3)
     a.label('x136_o_go')
@@ -15531,7 +15641,16 @@ def smooth_code(a):
     # sm_hold (1000:0363; replaces call 5A4A, the fight loop's flip): the tick's picture stays in its page, not shown
     # yet; sm_tick shows it. A fight's first pass here starts the lists
     a.label('rules_sm_hold')
-    if SM_STATS:                                             # a measuring build: knight 1 walks right for 16 ticks, left for 16
+    if SM_STATS_ATK:                                         # a measuring build (D146): knight 1 walks and strikes
+        a.b(0x06, 0x50, 0x53, 0x8e, 0x46, 0x04)              # push es ax bx / mov es, [bp+4]   MAIN's code segment
+        for scan, bit in SM_ATK_KEYS:
+            a.b(0x26, 0xc6, 0x06, *u16(KEY_TABLE + scan), 0xff)   # the key up
+        a.b(0x2e, 0xa0); a.word('smo_stat'); a.b(0xc0, 0xe8, 0x03, 0x8a, 0xd8, 0x83, 0xe3, len(SM_ATK_PHASES) - 1)   # mov al, cs:[ticks] / shr al, 3 / mov bl, al / and bx, 15
+        a.b(0x2e, 0x8a, 0x9f); a.word('sm_atk_phase')        # mov bl, cs:[bx+sm_atk_phase]
+        for scan, bit in SM_ATK_KEYS:
+            a.b(0xf6, 0xc3, bit, 0x74, 0x06, 0x26, 0xc6, 0x06, *u16(KEY_TABLE + scan), 0x00)   # test bl, bit / jz / the key down
+        a.b(0x5b, 0x58, 0x07)                                # pop bx ax es
+    elif SM_STATS:                                           # a measuring build: knight 1 walks right for 16 ticks, left for 16
         right, left = KEY_TABLE + 0x4d, KEY_TABLE + 0x4b
         a.b(0x06, 0x50, 0x8e, 0x46, 0x04)                    # push es ax / mov es, [bp+4]   MAIN's code segment
         a.b(0x26, 0xc6, 0x06, *u16(right), 0xff, 0x26, 0xc6, 0x06, *u16(left), 0xff)   # both arrow keys up
@@ -15627,6 +15746,8 @@ def smooth_code(a):
     a.label('x136_pc_go')
     a.b(0x2e, 0x03, 0x36); a.word('smo_cur')                 # add si, cs:[smo_cur]
     a.b(0x65, 0x8a, 0x44, E_AUX, 0xa8, SMX_WALK | SMX_SKIP); a.short(0x74, 'x143_plain')   # mov al, gs:[si+17] / test al, 0Ch / jz
+    a.short(0x7b, 'x146_no'); a.near(0xe9, 'x146_atk')       # jpo / jmp   D146: both bits: a striking knight's picture
+    a.label('x146_no')
     a.b(0xa8, SMX_SKIP); a.short(0x74, 'x136_blit')          # test al, 8 / jz   D143: a walker's legs: the in-between body
     a.label('x143_skip')                                     # ... its torso is part of that picture
     a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E); a.short(0xeb, 'x136_piece')   # add word cs:[smo_i], 18 / jmp
@@ -15639,14 +15760,7 @@ def smooth_code(a):
     a.b(0x65, 0x8a, 0x44, E_FRAME, 0x32, 0xe4, 0x65, 0xc4, 0x34)   # mov al, gs:[si+10] / xor ah, ah / les si, gs:[si]
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(*u16(MIRROR_FRAME)); a.near(0xe9, 'x136_call')
     a.label('x136_blit')                                     # the colour state as rules_draw left it for this piece
-    a.b(0x65, 0x8b, 0x44, E_RC, 0x2e, 0xa2); a.word('recolour'); a.b(0x2e, 0x88, 0x26); a.word('rc_shift')   # mov ax, gs:[si+12] / mov cs:[recolour], al / mov cs:[rc_shift], ah
-    a.b(0x65, 0x8a, 0x44, E_SW, 0x2e, 0xa2); a.word('sw_shift')
-    a.b(0x65, 0x8a, 0x64, E_FLAGS)                           # mov ah, gs:[si+11]
-    a.b(0xf6, 0xc4, SMF_SABER); a.short(0x74, 'x136_plain')  # test ah, 8 / jz
-    a.b(0x65, 0x8a, 0x44, E_FRAME, 0x2e, 0xa2); a.word('saber_frame')   # D57: a lightsaber's piece: its frame for saber_glow
-    a.label('x136_plain')
-    for name, shift, mask in (('saber_piece', 3, 1), ('char_piece', 4, 1), ('gore_pass', 5, 3)):
-        a.b(0x8a, 0xc4, 0xc0, 0xe8, shift, 0x24, mask, 0x2e, 0xa2); a.word(name)   # mov al, ah / shr al, n / and al, mask / mov cs:[name], al
+    a.near(0xe8, 'smo_state')
     a.b(0x65, 0xf6, 0x44, E_AUX, SMX_WALK); a.short(0x74, 'x143_own'); a.near(0xe9, 'x143_body')   # test byte gs:[si+17], 4 / jz / jmp
     a.label('x143_own')
     # its place: (n - k) / n of its step back
@@ -15659,7 +15773,19 @@ def smooth_code(a):
     a.b(0x65, 0x8a, 0x44, E_FRAME, 0x32, 0xe4, 0x65, 0xc4, 0x34)   # mov al, gs:[si+10] / xor ah, ah / les si, gs:[si]
     a.label('x143_go')
     a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E)        # add word cs:[smo_i], 18
+    a.label('x146_go')
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(*u16(BLITTER)); a.near(0xe9, 'x136_call')
+    # smo_state (gs:si = an entry; keeps all but ax): the colour state as rules_draw left it for its piece
+    a.label('smo_state')
+    a.b(0x65, 0x8b, 0x44, E_RC, 0x2e, 0xa2); a.word('recolour'); a.b(0x2e, 0x88, 0x26); a.word('rc_shift')   # mov ax, gs:[si+12] / mov cs:[recolour], al / mov cs:[rc_shift], ah
+    a.b(0x65, 0x8a, 0x44, E_SW, 0x2e, 0xa2); a.word('sw_shift')
+    a.b(0x65, 0x8a, 0x64, E_FLAGS)                           # mov ah, gs:[si+11]
+    a.b(0xf6, 0xc4, SMF_SABER); a.short(0x74, 'x136_plain')  # test ah, 8 / jz
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0x2e, 0xa2); a.word('saber_frame')   # D57: a lightsaber's piece: its frame for saber_glow
+    a.label('x136_plain')
+    for name, shift, mask in (('saber_piece', 3, 1), ('char_piece', 4, 1), ('gore_pass', 5, 3)):
+        a.b(0x8a, 0xc4, 0xc0, 0xe8, shift, 0x24, mask, 0x2e, 0xa2); a.word(name)   # mov al, ah / shr al, n / and al, mask / mov cs:[name], al
+    a.b(0xc3)
 
     # D143: a walking knight's body in an in-between picture (gs:si = its legs piece, marked by walk_match; the
     # colour state is set). Picture k of n shows the pose j = 6 * k / n sixths of the way from the pose of the tick
@@ -15667,15 +15793,17 @@ def smooth_code(a):
     # then a bank of one frame), hung on the standing foot (wk_part) and drawn in place of the legs piece. A fetch
     # that fails leaves the body out of that picture
     a.label('x143_body')
-    a.b(0xb8, 0x06, 0x00, 0x2e, 0xf6, 0x36); a.word('rules_table', G_SMOOTH)   # mov ax, 6 / div byte cs:[n]
-    a.b(0x2e, 0xf6, 0x26); a.word('smo_k'); a.b(0x8a, 0xc8)  # mul byte cs:[smo_k] / mov cl, al   j
+    a.b(0x2e, 0x8a, 0x0e); a.word('smo_g')                   # mov cl, cs:[smo_g]   j (6 * k / n while a picture is drawn)
     a.b(0x65, 0x8a, 0x44, E_AUX, 0xc0, 0xe8, 0x04, 0xb4, WK_STEPS, 0xf6, 0xe4, 0x02, 0xc1)   # mov al, gs:[si+17] / shr al, 4 / mov ah, 5 / mul ah / add al, cl   the slot
+    a.near(0xe8, 'wk_fetch'); a.short(0x75, 'x143_got'); a.near(0xe9, 'x143_skip')   # call / jnz / jmp
+    # wk_fetch (ax = a slot of SAVEHOOK.INB; keeps cx, si, ds): the slot into BUF_WALK; ZF = 1 when the move failed
+    a.label('wk_fetch')
     a.b(0xba, *u16(WK_SLOT), 0xf7, 0xe2)                     # mov dx, WK_SLOT / mul dx
     a.b(0x2e, 0xa3); a.word('wk_off'); a.b(0x2e, 0x89, 0x16); a.word('wk_off', 2)   # mov cs:[wk_off], ax / mov cs:[wk_off+2], dx
     a.b(0x2e, 0x8c, 0x2e); a.word('wk_dseg')                 # mov cs:[wk_dseg], gs
     a.b(0x51, 0x56, 0x1e, 0x0e, 0x1f, 0xbe); a.word('wk_move')   # push cx si ds / push cs / pop ds / mov si, wk_move
     a.b(0xb4, 0x0b, 0x2e, 0xff, 0x1e); a.word('xms_entry')   # mov ah, 0Bh / call far cs:[xms_entry]
-    a.b(0x1f, 0x5e, 0x59, 0x0b, 0xc0); a.short(0x75, 'x143_got'); a.near(0xe9, 'x143_skip')   # pop ds si cx / or ax, ax / jnz / jmp
+    a.b(0x1f, 0x5e, 0x59, 0x0b, 0xc0, 0xc3)                  # pop ds si cx / or ax, ax / ret
     a.label('x143_got')
     a.b(0x65, 0xc7, 0x06, *u16(BUF_WALK + WK_BANK + 2), *u16(BUF_WALK + WK_BANK + 20))   # mov word gs:[the bank's data offset], its planes
     a.b(0x65, 0x8c, 0x2e, *u16(BUF_WALK + WK_BANK + 4))      # mov gs:[... segment], gs
@@ -15698,6 +15826,41 @@ def smooth_code(a):
     a.b(0xa8, 0x01); a.short(0x74, 'x143_part_ret'); a.b(0x48)   # test al, 1 / jz / dec ax
     a.label('x143_part_ret')
     a.b(0xc3)
+
+    # D146: a striking knight in an in-between picture (gs:si = its first piece, marked by atk_match: E_AUX SMX_ATK,
+    # E_DX its first slot for this look and facing; the second piece's E_DX byte K, its E_DY byte the sword piece's
+    # offset from the first; the knight's other pieces are skipped). Picture k of n shows the picture j = 6 * k / n
+    # (smo_g while a picture is drawn) sixths of the way from the pose of the tick before: its slots of SAVEHOOK.INB,
+    # from slot E_DX + (j - 1) * K, are fetched one at a time into BUF_WALK, and each frame of a slot (a strip of the
+    # body's part or of the sword's) is blitted with the colour state of the piece it comes from (the first piece or
+    # the sword piece), at the first piece's place + its own. The state machine comes back here for each frame (atk_f:
+    # the next record's offset, 0 = fetch the slot atk_s). A fetch that fails leaves the rest of the knight out
+    a.label('x146_atk')
+    a.b(0x2e, 0x8b, 0x1e); a.word('atk_f'); a.b(0x0b, 0xdb); a.short(0x75, 'x146_frame')   # mov bx, cs:[atk_f] / or bx, bx / jnz
+    a.b(0x2e, 0xa1); a.word('smo_g'); a.b(0x48)              # mov ax, cs:[smo_g] / dec ax   j - 1
+    a.b(0x65, 0xf6, 0x64, SM_E + E_DX, 0x65, 0x03, 0x44, E_DX)   # mul byte gs:[si+18+15] / add ax, gs:[si+15]
+    a.b(0x2e, 0x03, 0x06); a.word('atk_s')                   # add ax, cs:[atk_s]   the slot
+    a.near(0xe8, 'wk_fetch'); a.short(0x75, 'x146_got')
+    a.b(0x2e, 0xc7, 0x06); a.word('atk_s'); a.b(0x00, 0x00); a.near(0xe9, 'x143_skip')   # mov word cs:[atk_s], 0 / jmp
+    a.label('x146_got')
+    if SM_STATS:
+        a.b(0x2e, 0xff, 0x06); a.word('smo_stat', 26)        # inc word cs:[smo_stat+26]   an attack picture's slot fetched
+    a.b(0x65, 0x8c, 0x2e, *u16(BUF_WALK + ATK_BANK + 4), 0x33, 0xdb)   # mov gs:[the bank's data segment], gs / xor bx, bx
+    a.label('x146_frame')                                    # bx = the frame's record in the slot
+    a.b(0x56, 0x65, 0xf6, 0x87, *u16(BUF_WALK + 4), 0x01); a.short(0x74, 'x146_body')   # push si / test byte gs:[bx+its part], 1 / jz
+    a.b(0x65, 0x8a, 0x44, SM_E + E_DY, 0x98, 0x03, 0xf0)     # mov al, gs:[si+18+16] / cbw / add si, ax   the sword piece
+    a.label('x146_body')
+    a.near(0xe8, 'smo_state'); a.b(0x5e)                     # call / pop si
+    a.b(0x65, 0x8b, 0x44, E_X, 0x65, 0x03, 0x87, *u16(BUF_WALK), 0x89, 0x46, 0xfe)   # mov ax, gs:[si+4] / add ax, gs:[bx+its dx] / mov [bp-2], ax   x, the game's bx
+    a.b(0x65, 0x8b, 0x4c, E_Y, 0x65, 0x03, 0x8f, *u16(BUF_WALK + 2))   # mov cx, gs:[si+6] / add cx, gs:[bx+its dy]   y
+    a.b(0x65, 0x8a, 0x97, *u16(BUF_WALK + 5), 0x83, 0xc3, ATK_REC)   # mov dl, gs:[bx+its flags] / add bx, 6   the next record
+    a.b(0xf6, 0xc2, ATK_LAST); a.short(0x74, 'x146_keep')    # test dl, 40h / jz   not the slot's last frame
+    a.b(0x33, 0xdb, 0x2e, 0xff, 0x06); a.word('atk_s')       # xor bx, bx / inc word cs:[atk_s]
+    a.b(0xf6, 0xc2, ATK_MORE); a.short(0x75, 'x146_keep')    # test dl, 80h / jnz   the picture goes on in the next slot
+    a.b(0x2e, 0x89, 0x1e); a.word('atk_s'); a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E)   # mov cs:[atk_s], bx / add word cs:[smo_i], 18   the knight is drawn
+    a.label('x146_keep')
+    a.b(0x2e, 0x89, 0x1e); a.word('atk_f'); a.b(0x8a, 0xc2, 0x25, 0x03, 0x00)   # mov cs:[atk_f], bx / mov al, dl / and ax, 3   its frame
+    a.b(0xbe, *u16(BUF_WALK + ATK_BANK), 0x0f, 0xa8, 0x07); a.near(0xe9, 'x146_go')   # mov si, the bank / push gs / pop es / jmp
 
     # walk_match (D143, once a tick, after smo_match; ds = MAIN's data; keeps all; in overlay group OVL_WALK): a
     # knight walks when its first two pieces this tick are a walk pose (wm_pose), its third piece (the sword)
@@ -15790,6 +15953,132 @@ def smooth_code(a):
     for f in (3, 5, 7, 9):
         for facing in (0, 1):
             a.b(*(v & 0xff for v in WK_TORSO[f][facing]))
+    a.ovl_end()
+
+    # atk_match (D146, once a tick, after walk_match; ds = MAIN's data; keeps all; in overlay group OVL_ATK): a knight
+    # strikes when its pieces this tick and the tick before are two poses of ATK_POSES (x146_pose) that make a change
+    # of ATK_CHANGES, of the same look, facing the same way, at the same root, and no Speed potion works on it (D104:
+    # its extra steps leave frames out). Then its first piece gets SMX_ATK with its sword piece's place and the word
+    # of its slots (E_DX: (K - 1) << 14 | the change's first slot + (facing * 2 + look) * 5 * K), its other pieces
+    # SMX_SKIP: the in-between pictures show its picture of SAVEHOOK.INB (x146_atk) in their place
+    a.ovl_begin(OVL_ATK); a.ovl_entry('atk_match', 'call')
+    jn = lambda cc, label: (a.b(0x0f), a.near(0x80 | cc, label))   # a near jcc (386)
+    a.b(0x66, 0x60, 0x06); gs_buf(a)                         # pushad / push es
+    a.b(0x2e, 0x8b, 0x36); a.word('smo_cur')                 # mov si, cs:[smo_cur]
+    a.label('x146_m_loop')
+    a.b(0x2e, 0x3b, 0x36); a.word('smo_end'); jn(3, 'x146_m_ret')   # cmp si, cs:[smo_end] / jae
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x2e, 0x8b, 0x1e); a.word('smo_cur')   # mov ax, gs:[si+8] / mov bx, cs:[smo_cur]
+    a.label('x146_m_first')                                  # its object's first piece in the list: this one?
+    a.b(0x65, 0x3b, 0x47, E_OBJ); a.short(0x74, 'x146_m_is'); a.b(0x83, 0xc3, SM_E); a.short(0xeb, 'x146_m_first')
+    a.label('x146_m_is')
+    a.b(0x3b, 0xde); jn(5, 'x146_m_next')                    # cmp bx, si / jne
+    a.b(0x65, 0xf6, 0x44, E_AUX, SMX_ATK); jn(5, 'x146_m_next')   # test byte gs:[si+17], 0Ch / jnz   a walker
+    a.b(0x2e, 0x8b, 0x0e); a.word('smo_end'); a.near(0xe8, 'x146_pose'); jn(2, 'x146_m_next')   # mov cx, cs:[smo_end] / call / jc
+    a.b(0x8b, 0xe8, 0x52, 0x57)                              # mov bp, ax / push dx di   this tick's pose and root
+    a.b(0x65, 0x8b, 0x44, E_OBJ, 0x2e, 0x8b, 0x1e); a.word('smo_pbase'); a.b(0x2e, 0x8b, 0x0e); a.word('smo_pend')
+    a.label('x146_m_prev')                                   # the object's first piece of the tick before
+    a.b(0x3b, 0xd9); jn(3, 'x146_m_drop')                    # cmp bx, cx / jae
+    a.b(0x65, 0x3b, 0x47, E_OBJ); a.short(0x74, 'x146_m_found'); a.b(0x83, 0xc3, SM_E); a.short(0xeb, 'x146_m_prev')
+    a.label('x146_m_found')
+    a.near(0xe8, 'x146_pose'); jn(2, 'x146_m_drop')
+    a.b(0x5b, 0x59, 0x3b, 0xfb); jn(5, 'x146_m_next'); a.b(0x3b, 0xd1); jn(5, 'x146_m_next')   # pop bx cx / cmp di, bx / jne / cmp dx, cx / jne   the root
+    a.b(0x8b, 0xcd, 0x3a, 0xe5); jn(5, 'x146_m_next')        # mov cx, bp / cmp ah, ch / jne   the look and the facing
+    a.b(0x8a, 0xe1, 0x0e, 0x07, 0xbf); a.word('x146_pairs')  # mov ah, cl / push cs / pop es / mov di, the changes
+    a.b(0xb9, *u16(len(ATK_CHANGES)), 0xfc, 0xf2, 0xaf); jn(5, 'x146_m_next')   # mov cx, n / cld / repne scasw / jne   not a change of ATK_CHANGES
+    a.b(0x56, 0x65, 0x8b, 0x74, E_OBJ); a.near(0xe8, 'spd_on'); a.b(0x5e); jn(3, 'x146_m_next')   # push si / mov si, gs:[si+8] / call / pop si / jnc   Speed on it
+    a.b(0xbb, *u16(len(ATK_CHANGES) - 1), 0x2b, 0xd9, 0xd1, 0xe3)   # mov bx, n - 1 / sub bx, cx / shl bx, 1   the change * 2
+    a.b(0x2e, 0x8b, 0x87); a.word('x146_base')               # mov ax, cs:[bx+x146_base]
+    a.b(0x8a, 0xcc, 0xc0, 0xe9, 0x06, 0xfe, 0xc1, 0x80, 0xe4, 0x3f)   # mov cl, ah / shr cl, 6 / inc cl   K / and ah, 3Fh
+    a.b(0x65, 0x88, 0x4c, SM_E + E_DX)                       # mov gs:[si+18+15], cl   K
+    a.b(0x50, 0x8b, 0xc5, 0x8a, 0xc4, 0xb4, 0x05, 0xf6, 0xe4, 0xf6, 0xe1)   # push ax / mov ax, bp / mov al, ah / mov ah, 5 / mul ah / mul cl
+    a.b(0x5a, 0x03, 0xc2, 0x65, 0x89, 0x44, E_DX)            # pop dx / add ax, dx / mov gs:[si+15], ax   its first slot
+    a.b(0x8b, 0xdd, 0x32, 0xff, 0x2e, 0x8a, 0x87); a.word('x146_sw')   # mov bx, bp / xor bh, bh / mov al, cs:[bx+x146_sw]   its sword piece
+    a.b(0xb4, SM_E, 0xf6, 0xe4, 0x65, 0x88, 0x44, SM_E + E_DY)   # mov ah, 18 / mul ah / mov gs:[si+18+16], al   ... its offset
+    a.b(0x65, 0x80, 0x4c, E_AUX, SMX_ATK)                    # or byte gs:[si+17], 0Ch
+    a.b(0x8b, 0xde, 0x65, 0x8b, 0x44, E_OBJ)                 # mov bx, si / mov ax, gs:[si+8]
+    a.label('x146_m_skip')                                   # its other pieces: not drawn in between
+    a.b(0x83, 0xc3, SM_E, 0x2e, 0x3b, 0x1e); a.word('smo_end'); a.short(0x73, 'x146_m_moved')   # add bx, 18 / cmp bx, cs:[smo_end] / jae
+    a.b(0x65, 0x3b, 0x47, E_OBJ); a.short(0x75, 'x146_m_moved')   # cmp ax, gs:[bx+8] / jne
+    a.b(0x65, 0x80, 0x4f, E_AUX, SMX_SKIP); a.short(0xeb, 'x146_m_skip')   # or byte gs:[bx+17], 8
+    a.label('x146_m_moved')
+    a.b(0x2e, 0xc6, 0x06); a.word('smo_moves'); a.b(0x01)    # mov byte cs:[smo_moves], 1
+    a.label('x146_m_next')
+    a.b(0x83, 0xc6, SM_E); a.near(0xe9, 'x146_m_loop')       # add si, 18 / jmp
+    a.label('x146_m_drop')
+    a.b(0x59, 0x59); a.short(0xeb, 'x146_m_next')            # pop cx (x2)
+    a.label('x146_m_ret')
+    a.b(0x07, 0x66, 0x61, 0xc3)                              # pop es / popad / ret
+    # x146_pose (gs:bx = an object's first piece, cx = its list's end; keeps bx, cx, si, bp): CF = 0 when it and the
+    # pieces after it with its object are a pose of ATK_POSES drawn for a knight (type 6 or 8): the first piece of
+    # KN1.OB or HE1.OB (D147: or KN2.OB, HE2.OB), the others of the same look's KN1/KN2 or HE1/HE2.OB or of KN4.OB, none a shadow nor drawn into
+    # the background, no lightsaber's (D51) or charred knight's (K42), the body pieces in the first piece's colour state
+    # and the KN4 pieces in the first KN4 piece's. Then al = the pose, ah = its facing (2: left) | its look (1: HE*.OB),
+    # dx = its root's x (facing right: x - dx0; left: x + the frame's width + dx0), di = its root's y and depth
+    # (y - dy0). The pose is told by atk_hash() of its pieces' banks, frames and y from the first piece's, and their
+    # count (x146_hash: no other pose of the game's knight scripts has one of these, test_attack_frames.py)
+    a.label('x146_pose')
+    a.b(0x53, 0x51, 0x56, 0x55, 0x8b, 0xf3)                  # push bx cx si bp / mov si, bx
+    a.b(0x65, 0x8b, 0x7c, E_OBJ, 0x0b, 0xff); jn(4, 'x146_p_no')   # mov di, gs:[si+8] / or di, di / jz
+    a.b(0x8a, 0x45, 0x35, 0x3c, 0x06); a.short(0x74, 'x146_p_kn'); a.b(0x3c, COMPUTER_TYPE); jn(5, 'x146_p_no')   # mov al, [di+35h] / cmp al, 6 / je / cmp al, 8 / jne
+    a.label('x146_p_kn')
+    a.b(0x65, 0x8b, 0x44, 0x02, 0xbd, *u16(KNIGHT_BANK), 0x3b, 0x06, *u16(KNIGHT_BANK + 4)); a.short(0x74, 'x146_p_look')   # mov ax, gs:[si+2] / mov bp, 8933h / cmp ax, [8937h] / je
+    a.b(0x3b, 0x06, *u16(KNIGHT_BANK + 8)); a.short(0x74, 'x146_p_look')   # cmp ax, [893Bh] / je   D147: or of KN2.OB (the upward thrust, the dodge)
+    a.b(0xbd, *u16(HE_BANK), 0x3b, 0x06, *u16(HE_BANK + 4)); a.short(0x74, 'x146_p_look')   # mov bp, 8949h / cmp ax, [894Dh] / je
+    a.b(0x3b, 0x06, *u16(HE_BANK + 8)); jn(5, 'x146_p_no')   # cmp ax, [8951h] / jne   (HE2.OB)
+    a.label('x146_p_look')
+    a.b(0x33, 0xd2, 0x33, 0xff)                              # xor dx, dx   the hash / xor di, di   the first KN4 piece
+    a.label('x146_p_loop')
+    a.b(0x3b, 0xd9); a.short(0x73, 'x146_p_end')             # cmp bx, cx / jae
+    a.b(0x65, 0x8b, 0x47, E_OBJ, 0x65, 0x3b, 0x44, E_OBJ); a.short(0x75, 'x146_p_end')   # mov ax, gs:[bx+8] / cmp ax, gs:[si+8] / jne   another object's
+    a.b(0x65, 0xf6, 0x47, E_FLAGS, SMF_SHADOW | SMF_BG | SMF_SABER | SMF_CHAR); jn(5, 'x146_p_no')
+    a.b(0x65, 0x8b, 0x47, 0x02, 0x51, 0xb1, 0x00)            # mov ax, gs:[bx+2] / push cx / mov cl, 0   its bank: KN1 / HE1 0
+    a.b(0x3e, 0x3b, 0x46, 0x04); a.short(0x74, 'x146_p_body')   # cmp ax, ds:[bp+4] / je
+    a.b(0x41, 0x3e, 0x3b, 0x46, 0x08); a.short(0x74, 'x146_p_body')   # inc cx / cmp ax, ds:[bp+8] / je   KN2 / HE2 1
+    a.b(0xb1, 0x03, 0x3e, 0x3b, 0x46, 0x10); jn(5, 'x146_p_nopop')   # mov cl, 3 / cmp ax, ds:[bp+16] / jne   KN4 3
+    a.b(0x0b, 0xff); a.short(0x75, 'x146_p_kn4'); a.b(0x8b, 0xfb)   # or di, di / jnz / mov di, bx
+    a.label('x146_p_kn4')
+    a.b(0x8b, 0xc7); a.short(0xeb, 'x146_p_state')           # mov ax, di / jmp
+    a.label('x146_p_body')
+    a.b(0x8b, 0xc6)                                          # mov ax, si
+    a.label('x146_p_state')                                  # the colour state as that piece's (but its frame's turn)
+    a.b(0x53, 0x8b, 0xd8, 0x66, 0x65, 0x8b, 0x47, E_FLAGS, 0x5b, 0x66, 0x65, 0x33, 0x47, E_FLAGS)   # push bx / mov bx, ax / mov eax, gs:[bx+11] / pop bx / xor eax, gs:[bx+11]
+    a.b(0x66, 0x25, 0x7f, 0xff, 0xff, 0xff); jn(5, 'x146_p_nopop')   # and eax, FFFFFF7Fh / jnz
+    a.b(0x8a, 0xe1, 0x65, 0x8a, 0x47, E_FRAME, 0xc1, 0xc2, 0x05, 0x33, 0xd0)   # mov ah, cl / mov al, gs:[bx+10] / rol dx, 5 / xor dx, ax   its bank and frame
+    a.b(0x65, 0x8b, 0x47, E_Y, 0x65, 0x2b, 0x44, E_Y, 0xc1, 0xc2, 0x05, 0x33, 0xd0)   # mov ax, gs:[bx+6] / sub ax, gs:[si+6] / rol dx, 5 / xor dx, ax   its y
+    a.b(0x59, 0x83, 0xc3, SM_E); a.short(0xeb, 'x146_p_loop')   # pop cx / add bx, 18 / jmp
+    a.label('x146_p_end')
+    a.b(0x8b, 0xc3, 0x2b, 0xc6, 0xc1, 0xc2, 0x05, 0x33, 0xd0)   # mov ax, bx / sub ax, si / rol dx, 5 / xor dx, ax   the count (x 18)
+    a.b(0x06, 0x0e, 0x07, 0xbf); a.word('x146_hash'); a.b(0x8b, 0xc2, 0xb9, *u16(len(ATK_POSES)), 0xfc, 0xf2, 0xaf, 0x07)   # push es / push cs / pop es / mov di, hash / mov ax, dx / mov cx, n / cld / repne scasw / pop es
+    jn(5, 'x146_p_no')
+    a.b(0xbb, *u16(len(ATK_POSES) - 1), 0x2b, 0xd9)          # mov bx, n - 1 / sub bx, cx   the pose
+    a.b(0x2e, 0x0f, 0xbe, 0x87); a.word('x146_dy0'); a.b(0x65, 0x8b, 0x7c, E_Y, 0x2b, 0xf8)   # movsx ax, byte cs:[bx+x146_dy0] / mov di, gs:[si+6] / sub di, ax   the root's y
+    a.b(0x2e, 0x0f, 0xbe, 0x97); a.word('x146_dx0'); a.b(0x65, 0x8b, 0x44, E_X)   # movsx dx, byte cs:[bx+x146_dx0] / mov ax, gs:[si+4]
+    a.b(0x65, 0xf6, 0x44, E_FLAGS, SMF_LEFT); a.short(0x75, 'x146_p_left'); a.b(0x2b, 0xc2); a.short(0xeb, 'x146_p_x')   # test byte gs:[si+11], 2 / jnz / sub ax, dx / jmp
+    a.label('x146_p_left')
+    a.b(0x03, 0xc2, 0x06, 0x53, 0x50, 0x65, 0xc4, 0x1c)      # add ax, dx / push es bx ax / les bx, gs:[si]   + the first piece's width:
+    a.b(0x65, 0x8a, 0x44, E_FRAME, 0xb4, 0x0a, 0xf6, 0xe4, 0x03, 0xd8, 0x26, 0x8b, 0x57, 0x0e, 0x86, 0xf2)   # mov al, gs:[si+10] / mov ah, 10 / mul ah / add bx, ax / mov dx, es:[bx+14] / xchg dh, dl
+    a.b(0x58, 0x03, 0xc2, 0x5b, 0x07)                        # pop ax / add ax, dx / pop bx es
+    a.label('x146_p_x')
+    a.b(0x92, 0x8a, 0xc3, 0x65, 0x8a, 0x64, E_FLAGS, 0x80, 0xe4, SMF_LEFT)   # xchg dx, ax / mov al, bl / mov ah, gs:[si+11] / and ah, 2
+    a.b(0x81, 0xfd, *u16(HE_BANK)); a.short(0x75, 'x146_p_ok'); a.b(0x80, 0xcc, 0x01)   # cmp bp, 8949h / jne / or ah, 1
+    a.label('x146_p_ok')
+    a.b(0x5d, 0x5e, 0x59, 0x5b, 0xf8, 0xc3)                  # pop bp si cx bx / clc / ret
+    a.label('x146_p_nopop')
+    a.b(0x59)                                                # pop cx
+    a.label('x146_p_no')
+    a.b(0x5d, 0x5e, 0x59, 0x5b, 0xf9, 0xc3)                  # pop bp si cx bx / stc / ret
+    a.label('x146_hash')
+    for key in ATK_POSES:
+        a.b(*u16(atk_hash(key)))
+    a.label('x146_dx0'); a.b(*(key[0][3] & 0xff for key in ATK_POSES))
+    a.label('x146_dy0'); a.b(*(key[0][2] & 0xff for key in ATK_POSES))
+    a.label('x146_sw'); a.b(*(atk_sword(key) for key in ATK_POSES))
+    a.label('x146_pairs')
+    for pa, pb in ATK_CHANGES:
+        a.b(pa, pb)
+    a.label('x146_base')
+    for c in range(len(ATK_CHANGES)):
+        a.b(*u16(ATK_BASE[c] | (ATK_K[c] - 1) << 14))
     a.ovl_end()
 
     a.label('x136_drawn')                                    # every piece is on the page
@@ -15942,6 +16231,9 @@ def rules_data(a, table):
     a.label('wk_h'); a.b(0, 0)                               # the block's handle (the installer's; 0 = no in-between poses),
     a.label('wk_off'); a.b(0, 0, 0, 0)                       # the slot's place in it,
     a.b(0, 0, *u16(BUF_WALK)); a.label('wk_dseg'); a.b(0, 0)   # to (handle 0) buf_seg:BUF_WALK
+    a.label('atk_on'); a.b(0)                                # D146: 1 = SAVEHOOK.INB has the attacks' slots
+    a.label('atk_f'); a.b(0, 0)                              # ... the next frame's record in BUF_WALK (0: the slot to fetch)
+    a.label('atk_s'); a.b(0, 0)                              # ... the slot of the picture being drawn (0 = its first)
     a.label('smo_fl'); a.b(0)                                # the read-outs: pictures in the window so far ...
     a.label('smo_tk'); a.b(0)                                # ... its ticks ...
     a.label('smo_w0'); a.b(0, 0)                             # ... the BIOS tick it began at
@@ -15949,6 +16241,7 @@ def rules_data(a, table):
     a.label('smo_tps'); a.b(0, 0)                            # ... ticks a second, in tenths
     if SM_STATS:
         a.label('smo_stat'); a.b(bytes(2 * SM_STAT_WORDS))   # a measuring build's counts
+        a.label('sm_atk_phase'); a.b(*SM_ATK_PHASES)
     a.label('down'); a.b(bytes(4))                           # K25: 1 = the knight's fall has been started
     a.label('finish_t0'); a.b(0, 0)                          # D90: the BIOS tick the wait for a finishing blow began, 0 = none
     a.label('finish_held'); a.b(0)                           # D90: a knight was held for it (finish_hold -> practice_frame)

@@ -21,7 +21,7 @@ Usage: python -I tools/walk_frames.py <game dir> [<folder for SAVEHOOK.INB>]"""
 import os, struct, sys
 from fractions import Fraction
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR
+from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR, ATK_K, INB_SLOTS
 from death_frames import read_bank, frame_pixels, frame_planes
 
 BANKS = ('KN1.OB', 'HE1.OB')               # look 0, look 1 (in DISKB)
@@ -214,14 +214,23 @@ def slot_bytes(entry):
     return s + bytes(WK_SLOT - len(s))
 
 
-def build(game):
-    """SAVEHOOK.INB's bytes from the game folder's DISKB/KN1.OB and HE1.OB."""
+def build(game, attacks=True):
+    """SAVEHOOK.INB's bytes from the game folder's DISKB/KN1.OB and HE1.OB; D146: then the attack part
+    (attack_frames.py, from KN1/KN2.OB, HE1/HE2.OB and KN4.OB), or the walk's slots alone when those files are not
+    the game's pieces (the attacks are then drawn in place; SAVEHOOK.COM tells the two by the file's length)."""
     slots = [None] * WK_SLOTS
-    slots[0] = (WK_MAGIC + struct.pack('<HH', WK_SLOT, WK_SLOTS)).ljust(WK_SLOT, b'\0')
     for look, name in enumerate(BANKS):
         with open(os.path.join(game, 'DISKB', name), 'rb') as fh: bank = fh.read()
         for (facing, fa, j), entry in look_frames(bank).items():
             slots[slot_number(look, facing, fa, j)] = slot_bytes(entry)
+    if attacks:
+        import attack_frames
+        try:
+            more = attack_frames.build(game, ATK_K)
+            if WK_SLOTS + len(more) == INB_SLOTS: slots += more
+        except (attack_frames.AttackError, OSError, ValueError, IndexError, KeyError, ZeroDivisionError, struct.error):
+            pass
+    slots[0] = (WK_MAGIC + struct.pack('<HH', WK_SLOT, len(slots))).ljust(WK_SLOT, b'\0')
     data = bytearray(b''.join(slots))
     # the header's fifth word makes the file's words add up to WK_SUM: SAVEHOOK.COM's check of the file and its layout
     total = sum(struct.unpack(f'<{len(data) // 2}H', data)) & 0xffff
@@ -231,8 +240,14 @@ def build(game):
 
 def install(game, folder=None):
     """Writes SAVEHOOK.INB (into the game folder, or folder). Returns its path, or None when the files are not the
-    game's walk pieces (an old file is removed: the walk is then drawn in place)."""
+    game's walk pieces (an old file is removed: the walk is then drawn in place). D147: first turns the held dagger
+    in the game folder's KN4.OB to be held by its hilt (attack_frames.held_dagger)."""
     path = os.path.join(folder or game, INB_NAME)
+    try:                                                     # D147: the no-spin throw's dagger, held by its hilt
+        import attack_frames
+        attack_frames.held_dagger(game)
+    except Exception:                                        # (not the game's KN4.OB: left as it is)
+        pass
     try:
         data = build(game)
     except (WalkError, OSError, ValueError, IndexError, struct.error):

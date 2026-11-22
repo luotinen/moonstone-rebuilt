@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+* **Smooth animation: moves begun straight from a held block, dodge or throw** (D148; custom rules, with
+  `smooth_animation` 2, 3 or 6): when the keys change while a knight holds the block, the dodge or the thrown pose,
+  he now goes into the next move in poses in between too; from the dodge into the swing or the fast backward thrust
+  the sword sweeps down in front, as from standing. Run Setup.bat once (`SAVEHOOK.INB` is now about 5.3 MB).
+* **Smooth animation: the remaining blows, and a no-spin dagger throw** (D147; custom rules, with `smooth_animation`
+  2, 3 or 6): the backward thrust (also the fast one), the upward thrust, the dagger throw, the block and the dodge are
+  now shown in poses in between too, as the swing, the chop and the lunge are; the upward thrust keeps its sword on its
+  line, and the fast backward thrust sweeps down in front as the backward thrust does. The dagger throw is now a
+  no-spin throw: the knight holds the dagger by its hilt with the point away from him until he lets go (the game's own
+  raised frame is turned, also in the original game). Run Setup.bat once (`SAVEHOOK.INB` is now about 3.9 MB).
+* **Smooth animation: the swing, the overhead chop and the lunge** (D146; custom rules, with `smooth_animation` 2, 3
+  or 6): these blows (with the quick swing after a block and the riposte) are now shown in poses in between, up to
+  five a tick, as the walk is: the body turns and leans, the sword sweeps and its arc grows with it, and a blow that
+  strikes straightens back to the ready pose. They are shown one tick late, like the walk, and the game itself (its
+  logic, hits, timing windows and pace) is unchanged. Setup makes the pictures from your own game files into
+  `SAVEHOOK.INB` (about 3 MB, a few seconds): run Setup.bat once. The other blows, the hit reactions and a knight
+  under a Potion of Speed look as before.
 * **The block stops a ratman's bite and claw** (D145; the fixed game, also without custom rules: run Setup.bat
   again). In the ratmen fight a knight blocking (back + down + hit) and facing the ratman takes no damage and no
   disease from its bite or claw; the ratman finishes its blow, as a trogg does. From behind, or with any other move,

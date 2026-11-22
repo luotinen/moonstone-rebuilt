@@ -200,7 +200,11 @@ def _main(arg=None):
         write(os.path.join(folder, 'SAVEHOOK.OVL'), overlay_of(hook))
     from walk_frames import install as install_walk
     # D143: SAVEHOOK.INB, the in-between poses of the knight's walk, made from the copied KN1.OB and HE1.OB (read by
-    # SAVEHOOK.COM into XMS; without it the walk is drawn as the game draws it)
+    # SAVEHOOK.COM into XMS; without it the walk is drawn as the game draws it); D146: and of the swing, the overhead
+    # chop and the lunge, from KN1.OB, HE1.OB and KN4.OB (tools/attack_frames.py, a few seconds; without them the
+    # file has the walk's poses only and the blows are drawn as the game draws them); D147: and of the remaining
+    # attacks, after turning the dagger throw's held dagger in the copied KN4.OB to be held by its hilt; D148: and of
+    # the moves begun straight from a held block, dodge or thrown pose (the file about 5.3 MB)
     if not install_walk(HERE):
         say("  SAVEHOOK.INB not made (KN1.OB or HE1.OB is not the game's): the walk has no in-between poses")
     if not os.path.exists(os.path.join(HERE, 'MOON.CFG')):

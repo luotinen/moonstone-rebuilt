@@ -29,15 +29,15 @@ Tests that need a setting say which one. Settings are in `custom_rules.ini` (com
 The cheat codes' work, IDROPPEDMYKEY's screen and LOADEDDICE's throw now live in a new file, `SAVEHOOK.OVL`, which
 SAVEHOOK copies into extended memory when DOSBox-X starts. Needs `cheat_codes = yes`.
 
-- [ ] Start the game: the DOSBox-X window shows no line "no XMS, or no SAVEHOOK.OVL of this build" before the game.
-- [ ] On the map, type a map code (WEPL, HOMESICK, ONEMORETURN, now SIRNEVERTIRED): each does what CHEATS.md says, as before.
-- [ ] On the map, IDROPPEDMYKEY: the screen of who holds each key, fire, the map again, the lairs with keys glow.
-- [ ] In the item screen, an item code (IDKFA, PUTARINGONIT): the items come, max HP follows.
-- [ ] Type a fight code on the map (IDDQD or another from CHEATS.md), then start a fight: the code is on in it.
-- [ ] In the tavern, LOADEDDICE, then the dice game: every throw wins, until you leave.
-- [ ] Type IDROPPEDMYKEY, end the turn, and on your next turn press F11+S (a save). Close DOSBox-X, start the game
+- [x] Start the game: the DOSBox-X window shows no line "no XMS, or no SAVEHOOK.OVL of this build" before the game.
+- [x] On the map, type a map code (WEPL, HOMESICK, ONEMORETURN, now SIRNEVERTIRED): each does what CHEATS.md says, as before.
+- [x] On the map, IDROPPEDMYKEY: the screen of who holds each key, fire, the map again, the lairs with keys glow.
+- [x] In the item screen, an item code (IDKFA, PUTARINGONIT): the items come, max HP follows.
+- [x] Type a fight code on the map (IDDQD or another from CHEATS.md), then start a fight: the code is on in it.
+- [x] In the tavern, LOADEDDICE, then the dice game: every throw wins, until you leave.
+- [x] Type IDROPPEDMYKEY, end the turn, and on your next turn press F11+S (a save). Close DOSBox-X, start the game
       again, press F11+L: the game goes on where it was saved; type IDROPPEDMYKEY and WEPL again: both work.
-- [ ] Move `SAVEHOOK.OVL` out of the game folder, start the game: the line "no XMS, or no SAVEHOOK.OVL of this
+- [x] Move `SAVEHOOK.OVL` out of the game folder, start the game: the line "no XMS, or no SAVEHOOK.OVL of this
       build: the cheat codes are off" shows, and the game plays normally without cheat codes (autosaves still work).
       Put the file back (or run `Custom_rules_on.bat`) and start again: no line, codes work.
 
@@ -1414,3 +1414,90 @@ Run Setup.bat again first (the fixed game changed). Custom rules on or off. A ra
 - [ ] Custom rules on with `timed_defence = on`: a block started just before the bite stops it; a block held for a
       while (started long before) does not, as against the troggs. With `timed_defence = off` a held block holds.
 
+## D146 – Smooth animation: in-between poses for the swing, the overhead chop and the lunge
+
+Run Setup.bat first (it makes `SAVEHOOK.INB` again, now with the attacks' in-between poses, about 3 MB, from your own
+game files), then Custom_rules_on.bat. `[Rules] smooth_animation = 6` as in D136. The dev install `rebuilt` already
+has the file. What to judge is the look in the real game: the attacks were approved from the sample page, not yet in
+play. The poses are shown one tick late, as the walk's (your decision of 20 Nov 2026).
+
+- [ ] Start the game: the DOSBox-X window shows no new error line, and the walk's in-between poses (D143) still show.
+- [ ] Practice (first menu, key 9, the trolls): swing (forward + hit) facing left and facing right. The knight winds
+      up, sweeps forward and raises the sword in one motion; the arc grows with the sword; no doubled or missing knight
+      for a moment, the colours of the armour and the sword as in the game's own pictures.
+- [ ] The overhead chop (up + hit) and the lunge (forward + down + hit), both facings: the chop raises the sword behind
+      the head and brings it over the top and down; the lunge stretches out and comes back to its stance.
+- [ ] Strike a troll (or another knight in a teams practice): the blow that lands goes back to the ready pose smoothly,
+      and the struck figure's reaction is as before (it has no in-between poses).
+- [ ] A two-player or teams practice, the second knight (the green, HE look) striking both ways: the same.
+- [ ] Block in time (back + down + hit), then the quick swing; dodge (down + hit), then the riposte: they look like the swing
+      and the lunge; the timing windows feel as before (in-between pictures are only drawn, never hit).
+- [ ] Walk, then strike without stopping: the blow's first pose appears at once (no in-between from the walk into
+      it), then the blow runs smoothly.
+- [ ] The backward thrust, the upward thrust, the dagger throw, the block and the dodge themselves look as before (they
+      are the next step).
+- [ ] `smooth_animation = 2` and `3`: the same blows with one or two in-between pictures a tick.
+- [ ] Optional: the fight's pace with several knights striking at once (`draw_TPS = yes`): about 9 ticks a second, as
+      before.
+
+The pictures changed after your review of every picture on 21 Nov 2026 (the fixes you approved from the side-by-side
+page, "Fixed, with 5(a)"). Run Setup.bat again (the file is now about 2.8 MB); the dev install `rebuilt` has it.
+
+- [ ] The swing and the fast swing: the motion trail only behind the sword (where it has been), never ahead of it,
+      and no stray trail pieces; the sword the arm's straight extension.
+- [ ] The overhead chop: the sword a straight extension of the arm in every picture, the trail only behind it.
+- [ ] The lunge: the blade comes up from the stance and stays at or just below the line of the reach; no break at the
+      waist, the hands with the sword.
+- [ ] The riposte (dodge, then the riposte): a faster lunge, the blade turned level before the arm reaches out, then
+      at the lunge's own height.
+- [ ] The hit endings of the lunge (strike a troll with the lunge): still back to the ready pose smoothly.
+
+## D147 – Smooth animation: in-between poses for the remaining attacks, and the no-spin dagger throw
+
+Run Setup.bat first (it makes `SAVEHOOK.INB` again, now about 3.9 MB, and turns the held dagger in your `KN4.OB`),
+then Custom_rules_on.bat. `[Rules] smooth_animation = 6` as in D136. The dev install `rebuilt` already has both. What
+to judge is the look in the real game: the remaining attacks were approved from the review page (21 Nov 2026), not yet
+in play. The poses are shown one tick late, as the walk's and D146's.
+
+- [ ] The backward thrust (back + hit) facing left and facing right, as the KN (blue) and the HE (green) knight: the
+      sword goes down in front and back in one motion; no doubled or missing knight for a moment.
+- [ ] With timed defence on the backward thrust is always the fast one: the sword sweeps down in front and back
+      (not over the knight's back), then comes up to the ready pose.
+- [ ] The upward thrust (forward + up + hit): the knight leans into the thrust with the sword on its line, the sword
+      the arm's straight extension in every picture.
+- [ ] The dagger throw (back + up + hit): the knight holds the dagger by its hilt, the point up and back (also with
+      `smooth_animation = 1`: this is the game's own frame, changed); through the throw the point stays away from the
+      knight, the dagger in the forward fist until the release; then it flies as before.
+- [ ] Hold the throw key: the throws follow one another smoothly (from the thrown pose straight back to the raised one).
+- [ ] The dagger's and the sword's colours with an enchanted weapon (D31's tint) as in the game's own frames.
+- [ ] The block and the dodge (back + down + hit, down + hit): in and out smoothly; the dodge's sword changes hands at
+      mid-tick (the game's two frames hold it in different hands).
+- [ ] Strike a troll with the backward thrust: back to the ready pose smoothly.
+- [ ] The timing windows of the block and the dodge (timed defence) feel as before (in-between pictures are only
+      drawn, never hit).
+- [ ] A move begun straight from a held block, dodge or the thrown pose (a new key while holding) still changes its
+      pose at once (no in-between poses there yet), and nothing flickers.
+- [ ] Optional: `Fixes_Off.bat` (the original game) also shows the dagger held by its hilt (your choice: the frame
+      is changed in place).
+- [ ] Optional: the fight's pace with several knights striking at once (`draw_TPS = yes`): about 9 ticks a second, as
+      before.
+
+## D148 – Smooth animation: moves begun straight from a held block, dodge or thrown pose
+
+Run Setup.bat first (it makes `SAVEHOOK.INB` again, now about 5.3 MB), then Custom_rules_on.bat.
+`[Rules] smooth_animation = 6` as in D136. The dev install `rebuilt` already has it. What to judge is the look in the
+real game: these moves were approved from the review page (21 Nov 2026), not yet in play. The poses are shown one
+tick late, as D146's and D147's.
+
+- [ ] Hold the block (back + down + hit) and, still holding, change the keys to another blow (the lunge, the chop,
+      the dagger throw, the dodge): the knight goes from the block into the new move in poses in between, not at once.
+- [ ] The same from a held dodge (down + hit): into the chop, the dagger throw and the fast backward thrust.
+- [ ] From the dodge into the swing or the fast backward thrust: the sword goes over the head forward, down in
+      front and back (not a jump), as the same blow from standing does.
+- [ ] Throw a dagger and change the keys at once to the swing or the block: from the thrown pose the knight goes
+      into the new move in poses in between; the sword appears with the new pose.
+- [ ] As the KN (blue) and the HE (green) knight, facing left and facing right; no doubled or missing knight for a
+      moment, and the sword's colours with an enchanted weapon as in the game's own frames.
+- [ ] The timing windows of the block and the dodge (timed defence) feel as before.
+- [ ] The game starts as before (SAVEHOOK reads the bigger file in a few seconds), and the fights' pace is as
+      before (`draw_TPS = yes`: about 9 ticks a second).
