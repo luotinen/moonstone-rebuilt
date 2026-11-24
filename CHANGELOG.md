@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+* **Turns come at once; combos still work** (D160; custom rules): a back key no longer waits one game read (110 ms)
+  for a possible combo. The knight turns at once, and if fire follows within `input_chord` ticks the turn is undone and
+  the combo (backward thrust, dagger, block) goes the way the knight faced before. Left-right taps turn the knight up
+  to the game's limit of about nine times a second.
+* **Fast left-right taps turn the knight every time** (D159; custom rules): each back tap waited one game read for a
+  possible chord, and a tap of the other key in that wait cancelled the turn, so the knight turned only about twice a
+  second. Right after a turn the next back tap now turns at once, and a tap during the wait turns the knight and the
+  next one is queued: about six turns a second.
+* **Cheat codes no longer swallow the players' keys in a fight** (D158; custom rules): with cheat codes on, a key
+  that went on with a fight code (A after D: DARTS, DAGGERFALL; B after A; N in LUNAR) was kept from the game, so the
+  green knight walking right could not turn left and went straight up instead of up-left. In a fight the players'
+  direction keys, fire keys, N, Esc and Shift now always reach the game; the codes still work.
 * **A dropped key press still turns the knight; diagonal turns go diagonally at once** (D157; custom rules): some
   keyboards do not send a key's press while another key is held (seen with A while D was held), only its release; in a
   fight such a direction key's release now counts as a tap, so the knight turns. And a turn with up or down (a

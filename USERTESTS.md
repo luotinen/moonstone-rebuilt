@@ -1654,3 +1654,40 @@ helps (a fight played to its end writes INPUT.LOG).
       straight up first. The same for down-right to up-left, up-left to down-right.
 - [ ] A plain turn (back key alone) still turns in place without a step.
 - [ ] Typing a cheat code in a fight with A, D, W or S in it does not move or turn the green knight.
+
+## D158 – Cheat codes no longer swallow the players' keys in a fight
+
+Custom rules on, `cheat_codes = yes`. The dev install `rebuilt` already has it (no Setup.bat needed).
+
+- [ ] Green knight (W A S D): walk right with D, then tap A (D still held or just let go): the knight turns left at once.
+- [ ] Green knight: walk right, then go up-left (W + A): the knight goes up-left at once, not straight up first.
+- [ ] Third key set (I J K L, B, N): fire with B and the secondary button N work at once also right after A or L, U.
+- [ ] A fight code typed in a fight (e.g. DARTS) still works; the knights may move while it is typed (retest of D157's
+      last line: control letters now reach the game).
+- [ ] On the map a code with E in it (HEREBEDRAGONS) still does not end the turn.
+
+## D159 – Fast left-right taps turn the knight every time
+
+Custom rules on. The dev install `rebuilt` already has it (no Setup.bat needed). Any fight or practice; `input_log = on`
+helps (a fight played to its end writes INPUT.LOG).
+
+- [ ] Blue knight (arrows), standing: tap Left and Right in turn as fast as you can: the knight turns at every tap
+      (about 6 a second), without stepping.
+- [ ] The same with the green knight (W A S D, `cheat_codes = yes`).
+- [ ] A single back tap after standing still a while still turns (with the short chord wait).
+- [ ] Back + Up + fire together (the dagger throw) still works when the knight has not just turned.
+- [ ] Walking one way, a tap the other way still turns the knight (retest of D156).
+
+## D160 – A back key turns the knight at once; a fire right after undoes the turn
+
+Custom rules on (`input_chord = 2` as before). The dev install `rebuilt` already has it (no Setup.bat needed).
+
+- [ ] Standing, one tap the other way: the knight turns at once (a little sooner than before).
+- [ ] Back + fire pressed nearly together: the backward thrust, the knight keeps its facing (it may show turned for one
+      picture).
+- [ ] Back + up + fire nearly together: the dagger throw the way the knight faced.
+- [ ] Back + down + fire nearly together: the block the way the knight faced.
+- [ ] Back, then fire clearly later (a quarter second or more): the knight turns and attacks the new way.
+- [ ] Left and right tapped in turn as fast as possible: a turn at every tap (retest of D159).
+- [ ] Walking down, then back and fire: as before (D141/D142: the backward thrust when pressed together, else the turn
+      and the lunge the new way).

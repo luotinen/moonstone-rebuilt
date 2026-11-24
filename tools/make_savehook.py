@@ -637,7 +637,10 @@ TURN_GRACE = 5                                       # D25: an attack with up or
 PLAYER_KEYS = ((0x1c, ((0x48, 8), (0x50, 4), (0x4b, 2), (0x4d, 1))), (0x0f, ((0x11, 8), (0x1f, 4), (0x1e, 2), (0x20, 1))),
                (0x30, ((0x17, 8), (0x25, 4), (0x24, 2), (0x26, 1))))   # players 1, 2 and the third key set (I K J L, B)
 KEYS3_CONTROL, KEYS3_SECONDARY = 7, 0x31              # knight +9 for the third key set; its secondary button N
-KB3_OWN = (2, 1, KEYS3_CONTROL)                       # D70: players 1-3's own +9 (arrows, W A S D, I J K L)
+# D158: besides the directions (key_dirs), the keys a cheat code never keeps from the game in a fight: the fire keys
+# (Enter, Tab, B), N, Esc, left and right Shift
+CHEAT_PASS_KEYS = tuple(dict.fromkeys([fire for fire, _ in PLAYER_KEYS] + [KEYS3_SECONDARY, 0x01, 0x2a, 0x36]))
+KB3_OWN = (2, 1, KEYS3_CONTROL)                     # D70: players 1-3's own +9 (arrows, W A S D, I J K L)
 TURN_SITE, TURN_SOUND = 0xa63f, 0x0f                 # D7's int 65h; the game's menu sound (1000:D6E1)
 TC_999, TC_10 = (9, 32, 37, 56), (189, 50, 229, 69)   # D86: the tavern's spots, x0 y0 x1 y1
 TC_HELD = 3                                          # D86: ticks a held press repeats in
@@ -841,6 +844,7 @@ BODY_SEGMENTS = (0x8937, 0x893b, 0x893f, 0x8947, 0x894d, 0x8951, 0x8955)   # KN1
 BLITTER, BLIT_COUNT = 0x5dd4, 0x637b          # the blitter, and its converter's output count (a word in MAIN's code)
 TEAM1, TEAM2 = (0x6c9e, 0x6d62), (0x6d00, 0x6dc4)   # D12: player 1 + joystick A, player 2 + joystick B
 JOY_A_CONTROL, JOY_B_CONTROL = 5, 6                  # D12: knight +9 for the two joysticks (4 is the computer)
+RAPID_TURN = 8                                       # D159: ticks after a turn in which a back key turns with no chord wait
 CHORD_STALE = 9                                      # D152: ticks after which a let-go back key's wait is dropped (input_chord is 0-6)
 JOY_PORT_LIMIT = 0x2000                              # no joystick: its port bits never fall within this many reads
 CHILD_PATH = b'C:\\SAVEHOOK.RUN\0'      # the game folder is drive C: in moonstone-dosbox-x.conf
@@ -6864,6 +6868,7 @@ def rules_code(a):
     a.near(0xe8, 'walk_seen')                                # D154: did the knight walk at its last read
     a.near(0xe8, 'td_hold')                                  # D46: a staggered knight reads no keys
     a.b(0x53, 0x51, 0x52, 0x56, 0x9c, 0xfa)                  # push bx cx dx si / pushf / cli
+    a.b(0x2e, 0xc6, 0x06); a.word('no_arm'); a.b(0x00)       # D160
     a.b(0x8a, 0xc8)                                          # mov cl, al   as read, for the log
     a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_INPUT_BUFFER); a.b(0x00)   # cmp byte cs:[input_buffer], 0
     a.short(0x75, 'ib_on'); a.near(0xe9, 'ib_chord')
@@ -6899,6 +6904,7 @@ def rules_code(a):
     a.b(0x51, 0x2e, 0x8a, 0x0e); a.word('rules_table', G_INPUT_CHORD); a.b(0x32, 0xed)   # push cx / mov cl, cs:[input_chord] / xor ch, ch
     a.b(0x3b, 0xd9, 0x59); a.short(0x76, 'ib_chord')         # cmp bx, cx / pop cx / jbe   together: back + fire
     a.b(0x2e, 0x88, 0x94); a.word('buf_bits'); a.b(0x24, 0x0f)   # mov cs:[si+buf_bits], dl   kept / and al, 0Fh   no fire now
+    a.b(0x2e, 0xc6, 0x06); a.word('no_arm'); a.b(0x01)       # D160: this turn is decided (the attack the new way): not armed
     a.short(0xeb, 'ib_chord')
     a.label('ib_merge')
     a.b(0x80, 0xe2, 0x0f)                                    # and dl, 0Fh
@@ -6932,19 +6938,42 @@ def rules_code(a):
     a.b(0xf6, 0xd4, 0x22, 0xc4)                              # not ah / and al, ah   not counted
     a.label('x156_go')
     a.b(0x32, 0xe4)                                          # xor ah, ah
+    # D159: a tap that came during the back key's wait (x159_now) was seen by that read only (D24's KEY_HOLD): it
+    # turns the knight at this read, unless this read has a horizontal direction or fire of its own
+    a.b(0x2e, 0x8a, 0xa7); a.word('turn_q')                  # mov ah, cs:[bx+turn_q]
+    a.b(0x0a, 0xe4); a.short(0x74, 'x159_nq')                # or ah, ah / jz
+    a.b(0x2e, 0xc6, 0x87); a.word('turn_q'); a.b(0x00)       # mov byte cs:[bx+turn_q], 0
+    a.b(0xa8, 0x13); a.short(0x75, 'x159_nq0'); a.b(0x0a, 0xc4)   # test al, 13h / jnz / or al, ah
+    a.label('x159_nq0')
+    a.b(0x32, 0xe4)                                          # xor ah, ah
+    a.label('x159_nq')
     a.b(0xa8, 0x10); a.short(0x75, 'ich_clear')              # test al, 10h / jnz   fire: no wait
     a.b(0xb2, 0x02, 0x80, 0x7d, 0x08, 0x03); a.short(0x75, 'ich_back'); a.b(0xb2, 0x01)   # mov dl, 2 (left) / cmp [di+8], 3 / jne / mov dl, 1
     a.label('ich_back')
-    a.b(0x84, 0xc2); a.short(0x74, 'ich_gone')               # test al, dl / jz   no back direction (D152: let go?)
+    a.b(0x84, 0xc2); a.short(0x75, 'x160_back'); a.near(0xe9, 'ich_gone')   # test al, dl / jnz / jmp ich_gone   no back direction (D152: let go?)
+    a.label('x160_back')
     # (D141 skipped the wait with up or down held from before; D142: it waits too, a fire in the window is back + fire)
     a.b(0x2e, 0x8a, 0xa7); a.word('chord_on')                # mov ah, cs:[bx+chord_on]
     a.b(0x80, 0xfc, 0x02); a.short(0x74, 'ib_log')           # cmp ah, 2 / je   waited already: it turns
     a.b(0xd1, 0xe3, 0x1e, 0x33, 0xd2, 0x8e, 0xda, 0x8b, 0x16, 0x6c, 0x04, 0x1f)   # shl bx,1 / push ds / xor dx,dx / mov ds,dx / mov dx,[046Ch] / pop ds
     a.b(0x0a, 0xe4); a.short(0x75, 'ich_wait')               # or ah, ah / jnz ich_wait
-    a.b(0x2e, 0x89, 0x97); a.word('chord_tick')              # mov cs:[bx+chord_tick], dx   it starts
-    a.b(0xd1, 0xeb, 0x2e, 0xc6, 0x87); a.word('chord_on'); a.b(0x01)   # shr bx,1 / mov byte cs:[bx+chord_on], 1
-    a.b(0x2e, 0x88, 0xaf); a.word('chord_fwd')               # mov cs:[bx+chord_fwd], ch   D156: the forward key held as it began
-    a.short(0xeb, 'ich_hold')
+    # D159: a back key within RAPID_TURN ticks of the knight's last turn (tapping left and right in turn) turns at
+    # once: no wait (a chord right after a turn is not likely; the wait halved the turns a second)
+    a.b(0x8b, 0xf2, 0x2e, 0x2b, 0xb7); a.word('turn_tick')   # mov si, dx / sub si, cs:[bx+turn_tick]
+    a.b(0x83, 0xfe, RAPID_TURN); a.short(0x77, 'x159_wait')  # cmp si, RAPID_TURN / ja
+    a.b(0xd1, 0xeb, 0x2e, 0xc6, 0x87); a.word('turn_arm'); a.b(0x00)   # shr bx, 1 / mov byte cs:[bx+turn_arm], 0
+    a.near(0xe9, 'ib_log')                                   # jmp ib_log   the turn now (no undo)
+    a.label('x159_wait')
+    # D160: no wait: the knight turns at this read, and the turn is armed (turn_arm = the facing before it,
+    # chord_tick = now): a fire within input_chord ticks undoes it in fire_facing and is read with the facing from
+    # before, as the wait did (back + fire, back + up + fire, a tap then fire)
+    a.b(0x2e, 0x89, 0x97); a.word('chord_tick')              # mov cs:[bx+chord_tick], dx
+    a.b(0xd1, 0xeb, 0x8a, 0x65, 0x08)                        # shr bx, 1 / mov ah, [di+8]
+    a.b(0x2e, 0x80, 0x3e); a.word('no_arm'); a.b(0x00); a.short(0x74, 'x160_arm')   # cmp byte cs:[no_arm], 0 / je
+    a.b(0x32, 0xe4)                                          # xor ah, ah   D141's turn (input buffer): not armed
+    a.label('x160_arm')
+    a.b(0x2e, 0x88, 0xa7); a.word('turn_arm'); a.b(0x32, 0xe4)   # mov cs:[bx+turn_arm], ah / xor ah, ah
+    a.near(0xe9, 'ib_log')                                   # jmp ib_log   the turn now
     a.label('ich_wait')
     a.b(0x2e, 0x2b, 0x97); a.word('chord_tick'); a.b(0xd1, 0xeb)   # sub dx, cs:[bx+chord_tick] / shr bx,1   ticks waited
     a.label('ich_waited')
@@ -6971,7 +7000,7 @@ def rules_code(a):
     a.b(0x2e, 0x80, 0xbf); a.word('chord_on'); a.b(0x01)     # cmp byte cs:[bx+chord_on], 1
     a.short(0x75, 'ich_clear')                               # jne   no wait running
     a.b(0x8a, 0xe0, 0x80, 0xe4, 0x03); a.short(0x74, 'x156_nofwd')   # mov ah, al / and ah, 3 / jz   no forward key
-    a.b(0x2e, 0x3a, 0xa7); a.word('chord_fwd'); a.short(0x75, 'ich_clear')   # cmp ah, cs:[bx+chord_fwd] / jne   pressed in the wait: no turn
+    a.b(0x2e, 0x3a, 0xa7); a.word('chord_fwd'); a.short(0x75, 'x159_now')   # cmp ah, cs:[bx+chord_fwd] / jne   pressed in the wait
     a.b(0x24, 0xfc, 0x32, 0xe4)                              # and al, 0FCh / xor ah, ah   D156: held from before the tap: the turn stands
     a.label('x156_nofwd')
     a.b(0x8a, 0x75, 0x09, 0x80, 0xfe, KEYS3_CONTROL); a.short(0x74, 'ich_keys')   # mov dh, [di+9] / cmp dh, 7 / je
@@ -6982,6 +7011,14 @@ def rules_code(a):
     a.b(0x2e, 0x2b, 0x97); a.word('chord_tick'); a.b(0xd1, 0xeb)   # sub dx, cs:[bx+chord_tick] / shr bx,1   ticks waited
     a.b(0x83, 0xfa, CHORD_STALE); a.short(0x76, 'ich_waited')   # cmp dx, CHORD_STALE / jbe   the wait goes on
     a.b(0x24, 0x0c); a.short(0xeb, 'ich_clear')              # and al, 0Ch / jmp ich_clear   too old: dropped (the read as it was)
+    # D159: the forward key pressed while the back key's wait ran (left and right tapped in turn; D156 dropped the
+    # turn, so every second tap was lost): the knight turns now, and the forward key is not masked (fwd_mask): its
+    # press came after the back key's, so at the next read it is the back key of the new facing and turns again
+    a.label('x159_now')
+    a.b(0x2e, 0x88, 0xa7); a.word('turn_q')                  # mov cs:[bx+turn_q], ah   the tap, for the next read
+    a.b(0x24, 0xfc, 0x0a, 0xc2, 0x32, 0xe4)                  # and al, 0FCh / or al, dl / xor ah, ah   the back key
+    a.b(0x2e, 0xc6, 0x06); a.word('raw_h'); a.b(0x00)        # mov byte cs:[raw_h], 0
+    a.near(0xe9, 'ich_clear')                                # jmp ich_clear
 
     # --- D25: knights turn in place and walk up close ---
     # face_right, face_left (1000:3F83, 3F92: mov byte [di+8],1 / 3 as a knight's input turns it, di = the knight):
@@ -7096,6 +7133,23 @@ def rules_code(a):
     # turn and is read with the facing from before it; up + forward still gives the upward thrust
     a.label('rules_fire_facing')
     a.b(0x50, 0x53, 0x52)                                    # push ax bx dx
+    # D160: a fire within input_chord ticks of an armed turn (rules_input's x159_wait) undoes the turn
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'x160_x')       # call knight_no / jc
+    a.b(0x2e, 0x8a, 0x97); a.word('turn_arm')                # mov dl, cs:[bx+turn_arm]
+    a.b(0x0a, 0xd2); a.short(0x74, 'x160_x')                 # or dl, dl / jz
+    a.b(0x2e, 0xc6, 0x87); a.word('turn_arm'); a.b(0x00)     # mov byte cs:[bx+turn_arm], 0   once
+    a.b(0x38, 0x55, 0x08); a.short(0x74, 'x160_x')           # cmp [di+8], dl / je   faces that way already
+    a.b(0x8a, 0xc2)                                          # mov al, dl
+    a.b(0xd1, 0xe3, 0x1e, 0x33, 0xd2, 0x8e, 0xda, 0x8b, 0x16, 0x6c, 0x04, 0x1f)   # shl bx,1 / push ds / xor dx,dx / mov ds,dx / mov dx,[046Ch] / pop ds
+    a.b(0x2e, 0x2b, 0x97); a.word('chord_tick'); a.b(0xd1, 0xeb)   # sub dx, cs:[bx+chord_tick] / shr bx, 1
+    a.b(0x50, 0x2e, 0xa0); a.word('rules_table', G_INPUT_CHORD); a.b(0x32, 0xe4)   # push ax / mov al, cs:[input_chord] / xor ah, ah
+    a.b(0x3b, 0xd0, 0x58); a.short(0x77, 'x160_x')           # cmp dx, ax / pop ax / ja   too late: the turn stands
+    a.near(0xe8, 'face_turn')                                # call face_turn   back to the facing before
+    a.b(0x2e, 0xc6, 0x06); a.word('turned'); a.b(0x00)       # mov byte cs:[turned], 0
+    a.b(0x2e, 0xc6, 0x87); a.word('turn_from'); a.b(0x00)    # mov byte cs:[bx+turn_from], 0
+    a.b(0x2e, 0xc6, 0x87); a.word('fwd_mask'); a.b(0x00)     # mov byte cs:[bx+fwd_mask], 0
+    a.label('x160_x')
+    a.b(0x5a, 0x5b, 0x58, 0x50, 0x53, 0x52)                  # pop dx bx ax / push ax bx dx   as they came
     a.b(0xa8, 0x18); a.short(0x74, 'ff_cmp')                 # test al, 18h / jz   neither up nor down (bits * 2)
     a.b(0xa8, 0x06); a.short(0x74, 'ff_cmp')                 # test al, 06h / jz   neither right nor left
     a.near(0xe8, 'knight_no'); a.short(0x72, 'ff_cmp')       # call knight_no / jc
@@ -7307,6 +7361,17 @@ def rules_code(a):
     a.label('ck_hold_it')
     a.b(0x2e, 0x88, 0x1e); a.word('held_scan'); a.b(0xb2, 0x01)   # mov cs:[held_scan], bl / mov dl, 1   kept back
     a.label('ck_ret')
+    # D158: in a fight a player's direction or fire key is never kept from the game (the code still goes on): with D
+    # held, A was DARTS's and DAGGERFALL's second key and the green knight never saw it
+    a.b(0x0a, 0xd2); a.short(0x74, 'ck_cf')                  # or dl, dl / jz
+    a.b(0x2e, 0x80, 0x3e); a.word('cheat_ctx'); a.b(CHEAT_FIGHT); a.short(0x75, 'ck_cf')
+    a.b(0x50, 0x56); a.near(0xe8, 'key_dir'); a.b(0x5e, 0x58); a.short(0x73, 'ck_pass')   # push ax si / call key_dir / pop si ax / jnc
+    for scan in CHEAT_PASS_KEYS:
+        a.b(0x80, 0xfb, scan); a.short(0x74, 'ck_pass')      # cmp bl, scan / je
+    a.short(0xeb, 'ck_cf')
+    a.label('ck_pass')
+    a.b(0x32, 0xd2)                                          # xor dl, dl
+    a.label('ck_cf')
     a.b(0x80, 0xfa, 0x01, 0xf5)                              # cmp dl, 1 / cmc   CF = dl
     a.b(0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xc3)                  # pop di si dx cx ax / ret
     # held_replay (ds = MAIN's code segment): the held key goes to the game now, pressed and let go KEY_HOLD ticks
@@ -16747,6 +16812,9 @@ def rules_data(a, table):
     a.label('choice_tmp'); a.b(bytes(CHOICE_SIZE * CHOICE_COUNT))   # D33: the map's choices while they are ordered
     a.label('rel_tick'); a.b(bytes(6))                       # D24: ... when the last was
     a.label('fwd_mask'); a.b(bytes(4))                       # D156: per knight: a horizontal key held from before a turn, not counted
+    a.label('no_arm'); a.b(0)                                # D160: set by ib_buf_turn for this read: its turn is not armed
+    a.label('turn_arm'); a.b(bytes(4))                       # D160: per knight: the facing before an armed turn (0 = none)
+    a.label('turn_q'); a.b(bytes(4))                         # D159: per knight: a tap's direction bit queued for the next read
     a.label('chord_fwd'); a.b(bytes(4))                      # D156: per knight: the forward key held as its chord wait began
     a.label('lr_drop'); a.b(0)                               # D156: the older of left and right lr_newest dropped at this read
     a.label('raw_h'); a.b(0)                                 # D156: this read's horizontal keys held (for face)
