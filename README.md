@@ -261,11 +261,13 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
   (slot 1 by default; there are 100).
 * **Automatic saves:** the game pauses for about a second and saves
   * at the start of every human player's turn on the map: slots **91–94**, shown as `TURN1`–`TURN4`
-  * at the start of every fight: slots **96–100**, shown as `FIGHT1`–`FIGHT5`.
+  * at the start of every fight: slots **96–100**, shown as `FIGHT1`–`FIGHT5` (not for the menu's practice fights).
 
   Computer knights' turns are not saved. Each kind goes round its slots in turn and takes one slot each time, so
   slots 91–94 hold the last four turns and 96–100 the last five fights (`SAVEHOOK.SLT` remembers which is next).
   Slot 95 is not used (DOSBox-X allows nine names).
+  DOSBox-X packs each save as it writes it (`compresssaveparts = true` in `moonstone-dosbox-x.conf`); `false`
+  makes the pause shorter, but each save file is then about 41 MB instead of about 2 MB.
 * **Resume Game:** when automatic saves exist, the first menu shows *RESUME GAME: F11+L* right of Select Knight.
   Press F11+L there to load the newest automatic save. The menu selects that slot for you; your own slot comes
   back for F11+S at the next turn or fight (`SAVEHOOK.RSM` keeps it until then; a save made before this version
@@ -300,7 +302,7 @@ inventory) or E (end the turn). If the stick still drifts, raise `joy1deadzone1`
 * **Death mode per knight:** `permadeath` (the original), `reincarnation` (starts again from its starting values at its start), `respawn` (back at its start with full life points, keeps the rest) or `invulnerable` (never loses the last life point; a winner still takes items).
 * **Saves:** `save_mode` = `autosave_and_manual` (as before), `autosave_only`, `manual_only` or `none`. DOSBox-X still takes F11+S, but with `autosave_only` or `none` loading such a save stops the game at the next turn, fight or roll, with LOADAUTO or NOSAVES in the title bar. The same happens if the check file `SAVEHOOK.CHK` cannot be read or written (a read-only folder, or a damaged file: delete it). `prevent_savescumming = on`: loading a save does not change how the tavern dice, Math, Mythral and the scroll curses turn out.
 * **Computer knights:** experience every moon phase, the free visit to Math the Wizard, experience for a duel win.
-* **Global:** ratmen disease, curse chances (Hawk, Protection, Haste, Wyrm), gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the most daggers a knight can carry.
+* **Global:** ratmen disease, curse chances (Hawk, Protection, Haste, Wyrm), gold and life caps, home village healing (`below_3`, `below_max`, `full`; only in the knight's own village or in any village), full hit points with the E key, days per moon phase, experience per ability point, the damage each weapon adds and the hit points each armour and Ring of Protection adds (as in the game, armour does not reduce damage), the base damage of each move including the dagger throw, the dagger limit per knight.
 * **Treasure, Math and Mythral:** the dragon's hoard (`grows` with its victories, `reset` each game, or `keep` as the original), what the lairs hold (gold, magic items or both), the gold amount, the chance of each magic item (lairs, Math, the dragon's hoard and the High Temple's stock), what Math the Wizard gives and his frog days and irritation, and Mythral's chance of success for each size of donation. Tables the game could roll on forever (for example only one kind of magic item) are refused.
 * **Map:** `custom_terrain` (the zones of `tools/terrain_zones.csv`, painted with `Terrain_editor.bat`), `terrain_cells` (4 x 4 cells or the original 8 x 8), `terrain_probe` (the zone under the middle of the knight's icon, or below its feet as the original), `custom_places` (the places and lairs where the map tool put them).
 * **Practice:** what each practice key 1-0 starts (monster type or the Black Knight, the lair's ground, monsters to defeat, how many at once), whether knights' blows and daggers hurt other knights, and whether monsters go for the nearest knight or the first.

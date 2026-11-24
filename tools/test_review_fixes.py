@@ -1111,6 +1111,41 @@ class SwordTints(unittest.TestCase):
         self.assertEqual({hook.OVL_COLD}, {a.entries[n][0] for n in ('skip_lair', 'skip_dragon', 'cm_bd')})
         self.assertLessEqual(len(a.groups[hook.OVL_CHEATS][0]), 1360)
 
+    def test_dragon_aim(self):
+        # D150: the dragon's walk (TrackKnight 3BF4, also run from its fires' scripts) reads its knight at 3C00; in
+        # co-op dragon_aim (resident) gives it the dragon's own (last_target at the dragon's place, 20)
+        self.assertIn((0x3c00, 'a17809', 'dragon_aim'), rules.HOOKS)
+        self.assertEqual(hook.MONSTER_COUNT, 20)
+        a, _ = hook._build_savehook(None, None)
+        self.assertIn('rules_dragon_aim', a.labels)
+        self.assertNotIn('rules_dragon_aim', {n for n in a.entries})
+
+    def test_riposte_rules(self):
+        # D151: a riposte does not stop the troll's or the hammer trogg's blow from above (TroggStruck 2F28, ControlTroll
+        # 55E7, TrollStruck 56DC; gun_monster finishes the trogg's); D125's tie keeps only the axe trogg and takes a
+        # knight's chop against a riposte; one riposte for each blow (rip_foe, cleared by td_note_attack): all resident
+        sites = {site: (old, name) for site, old, name in rules.HOOKS}
+        self.assertEqual(sites.get(0x2f28), ('c6454a00', 'trogg_struck'))
+        self.assertEqual(sites.get(0x55e7), ('837d0c00', 'troll_tie'))
+        self.assertEqual(sites.get(0x56dc), ('c7063a78945c', 'troll_flinch'))
+        self.assertEqual((hook.TIE_MONSTERS, hook.RIPOSTE_MONSTERS, hook.TROLL_CHOP), ((0x0c,), (0x20, 0x0c, 0x0e), 0x5b9e))
+        a, _ = hook._build_savehook(None, None)
+        entries = {n for n in a.entries}
+        for name in ('rules_trogg_struck', 'rules_troll_tie', 'rules_troll_flinch', 'rip_by', 'rip_clear', 'rip_foe', 'tie_rip'):
+            self.assertIn(name, a.labels)
+            self.assertNotIn(name, entries)
+
+    def test_back_tap_turns(self):
+        # D152: a back key let go during D24's chord wait still turns at its end (rules_input's ich_gone, resident; the
+        # keyboard knights only; dropped after CHORD_STALE ticks, more than input_chord's largest value 6)
+        a, _ = hook._build_savehook(None, None)
+        entries = {n for n in a.entries}
+        for name in ('ich_gone', 'ich_keys', 'ich_waited'):
+            self.assertIn(name, a.labels)
+            self.assertNotIn(name, entries)
+        self.assertGreater(hook.CHORD_STALE, 6)
+        self.assertEqual(hook.KEYS3_CONTROL, 7)
+
     def test_spear_trogg_pause_and_riposte_tie(self):
         # D124: the spear trogg's waits from [Monsters] spear_trogg_attack_pause (130 % in both ini files): TroggHit's
         # hook at 2F61 and the immediate at 2ED1; D125: td_tie, called from hit_pair (A14C), is in the resident code
@@ -2256,7 +2291,30 @@ class WalkFrames(unittest.TestCase):
         self.assertIn('walk_match', labels)
         self.assertIn('wk_h', labels)
         self.assertEqual(code[labels['wk_h'] - 0x100:labels['wk_h'] - 0x100 + 2], bytes(2))   # no file until the installer finds it
-        self.assertEqual(hook.BUF_ILOG - hook.BUF_WALK, hook.WK_SLOT)
+        self.assertEqual(hook.BUF_ILOG - hook.BUF_WALK, hook.WK_SLOT + hook.WK_MARGIN)   # D153: the unpacking's margin
+
+    def test_packed_slots(self):
+        # D153: a slot packed in place unpacks to itself (as wk_fetch does it, from the end of BUF_WALK's room); the
+        # stream ends at WK_PACK, the rest of the slot is zero; a slot whose stream does not fit is refused
+        import random, walk_frames
+        rnd = random.Random(153)
+        for nonzero in (0, 1, 200, 500):
+            slot = bytearray(hook.WK_SLOT)
+            for i in rnd.sample(range(hook.WK_SLOT - 300), nonzero): slot[i] = rnd.randrange(1, 256)
+            packed = walk_frames.pack_slot(bytes(slot))
+            self.assertEqual(len(packed), hook.WK_SLOT)
+            self.assertEqual(packed[hook.WK_PACK:], bytes(hook.WK_SLOT - hook.WK_PACK))
+            self.assertEqual(walk_frames.unpack_slot(packed), bytes(slot))
+        with self.assertRaises(walk_frames.WalkError):
+            walk_frames.pack_slot(bytes([7]) * hook.WK_SLOT)
+        self.assertEqual((hook.WK_MAGIC, hook.WK_PACK % 2, hook.WK_SRC), (b'INB2', 0,
+                         hook.BUF_WALK + hook.WK_SLOT + hook.WK_MARGIN - hook.WK_PACK))
+
+    def test_conf_names_the_save_compression(self):
+        # D153: DOSBox-X's default written out, with the comment on false
+        text = (ROOT / 'moonstone-dosbox-x.conf').read_text()
+        self.assertIn('compresssaveparts = true', text.splitlines())
+        self.assertIn('about 41 MB', text)
 
 
 if __name__ == '__main__':

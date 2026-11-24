@@ -14,14 +14,15 @@ research/smooth-animation-2026-11-19/walk_poses.py, whose pictures these equal p
   * up to SWITCH the old pose's layers are shown leaned forward, after it the new pose's leaned back;
   * pixels are only moved, never mixed; the sword is not in the picture (the game's own piece is drawn).
 
-The pictures go into SAVEHOOK.INB (the layout: WK_SLOT in make_savehook.py), which SAVEHOOK.COM reads into XMS.
+The pictures go into SAVEHOOK.INB (the layout: WK_SLOT in make_savehook.py), which SAVEHOOK.COM reads into XMS;
+D153: every slot packed in place (pack_slot), so that DOSBox-X's save states, which hold the file, stay quick.
 Nothing made here is distributed: Setup runs this on the user's files. Pure Python: no numpy (the arithmetic is kept
 in the sample's order, in floats, so the rounding is the same).
 Usage: python -I tools/walk_frames.py <game dir> [<folder for SAVEHOOK.INB>]"""
 import os, struct, sys
 from fractions import Fraction
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR, ATK_K, INB_SLOTS
+from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_PACK, WK_MARGIN, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR, ATK_K, INB_SLOTS
 from death_frames import read_bank, frame_pixels, frame_planes
 
 BANKS = ('KN1.OB', 'HE1.OB')               # look 0, look 1 (in DISKB)
@@ -214,6 +215,42 @@ def slot_bytes(entry):
     return s + bytes(WK_SLOT - len(s))
 
 
+def pack_slot(s):
+    """D153: a slot (WK_SLOT bytes) packed in place, as wk_fetch unpacks it (the layout: WK_PACK in make_savehook.py):
+    a word (where the stream starts), zeros, the stream ending at WK_PACK (a nonzero byte as it is, a zero run as 0 and
+    its length, at most 255), then zeros to WK_SLOT. Checks that the stream fits and that, put at the end of BUF_WALK's
+    room, its unpacking never writes over bytes it has still to read (WK_MARGIN)."""
+    if len(s) != WK_SLOT: raise WalkError(f'a slot of {len(s)} bytes')
+    out, i, steps = bytearray(), 0, []
+    while i < WK_SLOT:
+        if s[i]:
+            out.append(s[i]); i += 1
+        else:
+            j = i
+            while j < WK_SLOT and not s[j] and j - i < 255: j += 1
+            out += bytes((0, j - i)); i = j
+        steps.append((len(out), i))                          # (stream bytes read, slot bytes written) after each step
+    start = WK_PACK - len(out)
+    if start < 2: raise WalkError(f'a packed slot of {len(out) + 2} bytes: more than WK_PACK ({WK_PACK})')
+    base = WK_SLOT + WK_MARGIN - len(out)                    # the stream's place in BUF_WALK's room
+    if any(o > base + q for q, o in steps): raise WalkError(f'a packed slot needs more than WK_MARGIN ({WK_MARGIN})')
+    return struct.pack('<H', start) + bytes(start - 2) + bytes(out) + bytes(WK_SLOT - WK_PACK)
+
+
+def unpack_slot(p):
+    """D153: a packed slot unpacked as wk_fetch does it: its WK_PACK bytes at the end of a room of WK_SLOT + WK_MARGIN
+    bytes (the rest of the room not zero), unpacked forward in the same room; the room's first WK_SLOT bytes."""
+    room = bytearray(bytes([0xa5]) * (WK_SLOT + WK_MARGIN))
+    src = WK_SLOT + WK_MARGIN - WK_PACK
+    room[src:] = p[:WK_PACK]
+    si, di = src + struct.unpack_from('<H', room, src)[0], 0
+    while di < WK_SLOT:
+        b = room[si]; si += 1
+        if b: room[di] = b; di += 1
+        else: n = room[si]; si += 1; room[di:di + n] = bytes(n); di += n
+    return bytes(room[:WK_SLOT])
+
+
 def build(game, attacks=True):
     """SAVEHOOK.INB's bytes from the game folder's DISKB/KN1.OB and HE1.OB; D146: then the attack part
     (attack_frames.py, from KN1/KN2.OB, HE1/HE2.OB and KN4.OB), or the walk's slots alone when those files are not
@@ -222,13 +259,14 @@ def build(game, attacks=True):
     for look, name in enumerate(BANKS):
         with open(os.path.join(game, 'DISKB', name), 'rb') as fh: bank = fh.read()
         for (facing, fa, j), entry in look_frames(bank).items():
-            slots[slot_number(look, facing, fa, j)] = slot_bytes(entry)
+            slots[slot_number(look, facing, fa, j)] = pack_slot(slot_bytes(entry))   # D153: packed in place
     if attacks:
         import attack_frames
         try:
             more = attack_frames.build(game, ATK_K)
-            if WK_SLOTS + len(more) == INB_SLOTS: slots += more
-        except (attack_frames.AttackError, OSError, ValueError, IndexError, KeyError, ZeroDivisionError, struct.error):
+            if WK_SLOTS + len(more) == INB_SLOTS: slots += [pack_slot(s) for s in more]   # D153: packed in place
+        except (attack_frames.AttackError, WalkError, OSError, ValueError, IndexError, KeyError, ZeroDivisionError,
+                struct.error):
             pass
     slots[0] = (WK_MAGIC + struct.pack('<HH', WK_SLOT, len(slots))).ljust(WK_SLOT, b'\0')
     data = bytearray(b''.join(slots))

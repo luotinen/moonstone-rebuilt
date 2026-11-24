@@ -28,11 +28,11 @@ the keyboard or a joystick.
 
 ## 1. The quest
 
-Once in a thousand years the moon spirit Danu rewards the greatest warrior in the land. Up to four knights compete
+Every thousand years the moon spirit Danu grants a reward to the strongest knight of the realm. Up to four knights compete
 for the reward. To win, a knight has to:
 
 1. find the four **keys**, one hidden in a lair in each of the four regions;
-2. enter the **Valley of the Gods** in the middle of the map and beat the **Guardian**, a demon, to win a **Moonstone**;
+2. enter the **Valley of the Gods** at the centre of the map and beat the **Guardian**, a demon, to win a **Moonstone**;
 3. carry the Moonstone to **Stonehenge** while the moon is in the phase that matches that stone.
 
 The first knight to do this wins. A knight who loses all five life points is out. *(manual pp. 3–4)*
@@ -166,10 +166,10 @@ without clearing lairs.]
 
 ## 5. Days, turns and the moon
 
-* Each knight gets one turn per day. During a turn the knight walks until the movement for the turn is used up, or
+* A day consists of one turn for every knight. During a turn the knight walks until the movement for the turn is used up, or
   the player ends it with E.
 * The moon has eight steps that repeat: full → ¾ → half → ¼ → new → ¼ → half → ¾ → full. *(manual p. 6)*
-* [The manual says the moon moves on after every knight has had **three** turns. In the code it moves on every
+* [The manual says the moon advances once each knight has taken **three** turns. In the code it moves on every
   **four** days (`1000:115B`, run once at the end of each day).]
 
 The moon matters for two things:
@@ -280,7 +280,7 @@ The manual only says that at least 10 gp improves your chances. The real odds of
 
 * **Healer** *(manual p. 7)*:
   * 10 gp heals all hit points;
-  * 15 gp buys one life point (up to 5); the knight must be at full hit points first.
+  * 15 gp buys one life point (up to 5); only a knight with no hit points missing can buy one.
   * [Custom rules: a smaller sum is a chance (4 gp: 40 % for the heal; 27 gp: the heal, a life and 2/15 for another),
     and money nothing can use is returned. The original kept the change.]
   * The healer also cures the ratmen disease *(see 9; code `1000:BCC9`)*.
@@ -311,7 +311,7 @@ The manual only says that at least 10 gp improves your chances. The real odds of
 
 Only its own knight can enter. *(manual pp. 5, 8)*
 
-[The manual says a knight with fewer than 3 life points is healed to full hit points and given a life point, at most
+[The manual says a knight with fewer than 3 life points regains all hit points plus one life point, no more than
 three times per game. In the DOS code (`1000:112A`) a knight with fewer than 3 life points gets one life point, every
 time. No full heal and no three-visit limit were found. Custom rules: full hit points on every visit, at any life
 points.]
@@ -338,7 +338,7 @@ The manual says that visiting often makes him more likely to be annoyed. In deta
 | about 4 days | 1 % | 31 % | 16 % | 52 % |
 | next day | 0 % | 1 % | 16 % | 84 % |
 
-[The manual says the frog lasts "a number of turns". It lasts three days.]
+[The manual leaves the frog's duration unspecified. It lasts three days.]
 [Original: Math never raised endurance and could show a garbled message. Rebuilt: fixed, K11.]
 
 ### Stonehenge
@@ -365,7 +365,7 @@ Only a knight with all four keys can enter. Inside waits the Guardian; beat it t
 
 [Moonstone Rebuilt, custom rules: when a campaign fight seems stuck, because for 30 seconds (`[Combat]
 fight_idle_exit`; 0 = off) no player in it has pressed a key or a joystick control and no player's knight in it has
-lost or gained hit points, "ESC LEAVES THE FIGHT" shows at the top of the screen and one press of Esc leaves the fight.
+lost or gained hit points, "ESC LEAVES THE FIGHT" appears at the screen's top edge and one press of Esc leaves the fight.
 Any key, control or hit takes the hint away and starts the 30 seconds again. Nobody wins: no loot, no experience, the
 lair keeps all its monsters, the knight keeps its wounds and its turn is over; a duel's other knight the same; the
 dragon flies off. A knight already down still loses its life, as the game would count it. A computer knight's own
@@ -379,7 +379,7 @@ Hold fire and push a direction to attack; without fire the knight walks. The mov
 |---|---|---|---|
 | up | Overhead chop | 4, doubled to 8 | hardest blow, but slow and easy to dodge |
 | up + forward | Upward thrust | 3 | hits enemies jumping over you |
-| forward | Swing | 4 | sweeps the area in front |
+| forward | Swing | 4 | a wide cut ahead of the knight |
 | down + forward | Lunge | 3 | longest reach of the sword moves |
 | back | Backward thrust | 2 | hits behind you |
 | up + back | Throw dagger | 3 | uses one dagger; long range |
@@ -435,7 +435,7 @@ Hit points and damage to a knight per hit, from the code *(descriptions: manual 
 | Dragon | everywhere | 50 | 10, fire 20–30 | |
 | Guardian | Valley | 250 | 8–10 | |
 
-* **Ratmen** *(manual p. 10)*. The manual says they grow stronger as the moon waxes.
+* **Ratmen** *(manual p. 10)*. The manual says their strength rises as the moon fills.
   * [Original: strong at full moon and strongest at new moon. Rebuilt: strongest at full moon, strong at ¾, as in
     the manual (K2).]
 * **The ratmen disease.** The manual warns that a bite carries a deadly disease that must be cured quickly.
@@ -700,7 +700,7 @@ to buy it back, so the Ring of Charisma gives no buy-and-sell profit (`charisma_
 | Fury | green, red | Your next fight: your blows hit as with Strength 5 (or your own if higher). Any fight counts: a knight, a lair, the dragon. |
 | Concealment | green, smoke grey | Works while you carry it: the other players do not see your knight on the map in their turns, and computer knights never go after you, send a scroll or the dragon at you, or attack you. A human player can still walk onto you and fight; the dragon still finds you. An aimed gem cannot hit you. |
 | Greed | gold, gold | For the rest of your turn the map shows each lair's gold under it (0 for a lair with only items). |
-| Keyfinding | gold, white | A screen names who holds each key (a knight, a grave, the dragon, the High Temple, a lair); the lairs holding one glow on the map until the turn ends. As the IDROPPEDMYKEY code, with no cheat codes needed. |
+| Keyfinding | gold, white | A screen names who holds the one key you lack that is nearest your knight on the map (a knight, a grave, the dragon, the High Temple, a lair; a tie goes to Forest, Wasteland, Swamp, Moors in that order; a key with no place to walk to counts as the farthest), and that lair glows on the map until the turn ends. A knight with all four keys cannot use it (it stays). The IDROPPEDMYKEY code still shows all four. |
 | Banish Monsters | silver, gold | Aimed: fire the ball on a lair: you see its chest as with a Gem of Seeing, and its monsters are gone for the rest of the game. Any knight who enters it later (also with co-op partners) gets the chest without a fight and without the first win's experience; the lair goes from the map when it is empty, as usual. |
 | Change Places | silver, green and orange | Aimed: fire the ball on another knight: the two of you swap places, and your turn goes on from there with the movement and Haste you had left. Nothing opens by itself where you land: a lair, a town or a knight there is met only if you press fire, as after walking there. **With nobody to change places with** (no other knight alive on the map that the gem could hit: the others dead, out of the game, or hidden by Concealment or Invisibility) fire anywhere teleports you to the ball, and your turn goes on from there in the same way; never into the Valley of the Gods (fire where your knight would touch it does nothing), and fire without moving the ball does nothing. While any knight could be hit, fire away from a knight does nothing, as before. |
 | Frog | silver, green | Aimed: fire the ball on another knight: it is a frog for its next turn only (that turn is skipped), then a knight again. A knight already a frog for longer stays one for its own time. A player's knight in Spellproof armour cannot be hit: fire on it does nothing and the gem stays. |

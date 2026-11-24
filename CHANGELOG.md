@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+* **Fights and turns start quickly again; no automatic save at a practice fight** (D153): the automatic save before
+  each fight and at each human turn's start had become slow since the smooth animation's attack poses (D146-D148),
+  because DOSBox-X packs its save states and the poses' file packed very slowly. Setup now stores that file packed in a
+  way that DOSBox-X packs quickly (rerun Setup.bat once; until then the poses are drawn in place). Practice fights from
+  the menu no longer make an automatic save. `moonstone-dosbox-x.conf` now names `compresssaveparts = true`, with a
+  comment on `false` (quicker saves, but about 41 MB a save file).
+* **A short tap backwards turns the knight** (D152; custom rules, `input_chord`): in a fight a back key tapped too briefly
+  for two key reads did nothing; now the knight turns when the short chord wait ends, unless fire or the forward key came
+  in the wait. The attack chords (back + up or down + fire) and the joysticks are unchanged.
+* **The riposte against the troll and the hammer trogg; one riposte for each blow** (D151; custom rules, timed defence):
+  a riposte on the troll's or the hammer trogg's blow from above still does its damage, but no longer stops the blow:
+  the monster does not flinch, its blow lands and it waits as after any blow (so riposting the hammer trogg all the time
+  no longer keeps it from hitting). The axe trogg is unchanged. A riposte that lands in the same moment as another
+  knight's blow from above now stops it, as one landing a moment earlier did. And a knight gets one riposte for each
+  blow a foe starts: pressed again against the same blow, it is the ordinary lunge.
+* **The dragon attacks in a co-op dragon practice** (D150; custom rules): in the D practice with 2-4 knights the dragon
+  went for the knight nearest it but, while it breathed its far fire, drifted towards the first knight's depth, so its
+  fire never hurt anyone and the fight went on for ever. It now keeps to its own knight during its fires too: a knight
+  that stands in the fire is burnt, one that runs in time gets away, as with one knight. One knight, HOTSTUFF and
+  `monster_target = first` are unchanged.
+* **The Gem of Keyfinding shows only the nearest missing key** (D149; custom rules, `rare_gems = on`): instead of all
+  four keys it now names the holder of the one key you lack that is nearest your knight on the map (by distance across
+  and down; a tie goes to Forest, Wasteland, Swamp, Moors in that order), and only that key's lair glows until the turn
+  ends. A key with no place to walk to (the dragon's, or nobody's) counts as the farthest. A knight with all four keys
+  cannot use it: nothing happens and the gem stays. The IDROPPEDMYKEY code still shows all four.
 * **Smooth animation: moves begun straight from a held block, dodge or throw** (D148; custom rules, with
   `smooth_animation` 2, 3 or 6): when the keys change while a knight holds the block, the dodge or the thrown pose,
   he now goes into the next move in poses in between too; from the dodge into the swing or the fast backward thrust

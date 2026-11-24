@@ -729,6 +729,7 @@ red ball, Keyfinding with a gold stand and a white ball, Concealment with a gree
       nothing (it stays).
 - [ ] Gem of Keyfinding: click it on the item screen opened on the map: the screen closes, a screen names who holds each
       key, and the lairs holding one glow until the turn ends. The same with `cheat_codes = no`.
+      (Changed in D149: it shows only the nearest missing key; see D149 below.)
 - [ ] Gem of Keyfinding used on the item screen at Math's (or right after a fight with a knight): the key screen shows
       before your turn ends, and never in the next player's turn.
 - [ ] Gem of Concealment: clicking it does nothing (it stays; its effect comes later).
@@ -1501,3 +1502,101 @@ tick late, as D146's and D147's.
 - [ ] The timing windows of the block and the dodge (timed defence) feel as before.
 - [ ] The game starts as before (SAVEHOOK reads the bigger file in a few seconds), and the fights' pace is as
       before (`draw_TPS = yes`: about 9 ticks a second).
+
+## D149 – The Gem of Keyfinding shows only the nearest missing key
+
+Custom rules on, `rare_gems = on`, `rare_gem_chance = 100` so that the gem turns up (or start with one from a chest).
+The dev install `rebuilt` already has it (no Setup.bat needed; a new game). The rule: of the keys your knight does not
+hold, the one whose holder is nearest the knight on the map is shown (the distance across plus the distance down, from
+your knight to a lair, another knight or its grave, or the High Temple in High Wood). Two equally near: the first of
+Forest, Wasteland, Swamp, Moors. A key nobody can walk to (the dragon's hoard, or nobody's) counts as the farthest.
+
+- [ ] Use the gem on the item screen opened on the map (the item key): the screen closes, and the key screen names **one**
+      key and its holder (for example "Swamp key: a glowing lair"), not four; its line is at the top and "Press fire to
+      continue" follows. After the fire key only that lair glows on the map until your turn ends.
+- [ ] The key shown is the missing key nearest your knight: stand near a lair you know holds a key (the Gem of Seeing or
+      the IDROPPEDMYKEY cheat tells you which), use a fresh gem there: that key is the one shown. Move to another part
+      of the map and use another: the key nearest there is shown.
+- [ ] A key your knight already holds is never shown, even when its lair is next to you: take a key from a lair, then
+      use another Keyfinding gem: it names a different key.
+- [ ] A key held by another knight: it names the knight ("<name>'s grave" if that knight is dead) when that is the nearest;
+      the High Temple when it is nearest and holds a key.
+- [ ] With three keys in your hands the gem shows the fourth; with all four keys the gem does nothing when clicked (it
+      stays in its place, no screen).
+- [ ] The gem used at Math's or right after a fight with a knight still shows its screen before your turn ends, and
+      never in the next player's turn (as in D113).
+- [ ] The IDROPPEDMYKEY cheat code (`cheat_codes = yes`) is unchanged: all four keys named, every lair holding one
+      glows.
+- [ ] The gem works as above with `cheat_codes = no` too.
+
+## D150 – The dragon attacks its own knight in a co-op dragon practice
+
+Custom rules on, `anticheese = yes` and `monster_target = nearest` (the defaults). The dev install `rebuilt` already has
+it (no Setup.bat needed). The practice menu with 2 or 3 players chosen, then the D key (the dragon with every knight on
+one side). Your save slot 3 was this case: the dragon breathed fire again and again and nobody was ever hurt.
+
+- [ ] 2 knights: walk the second knight (not player 1's) 100-200 pixels to the dragon's right, nearer the dragon than
+      player 1's knight, and stand still. The dragon comes level with it and its far fire burns it (the knight loses HP).
+      Then it goes for the other knight and burns it the same way.
+- [ ] 3 knights: the same with the knight nearest the dragon being the second or the third: the fire burns that one
+      first, then the next. The fight ends (no endless fire).
+- [ ] A knight that runs up or down as soon as the dragon rears its head for the far fire still gets away (D68), with
+      2-3 knights as with one.
+- [ ] One knight (one player, the D key): the dragon fights as before.
+- [ ] `monster_target = first`: the dragon goes for player 1's knight first, as before.
+- [ ] HOTSTUFF (typed in the first menu, then the D practice with 2-3 players): player 1's dragon moves and breathes by
+      the keys as before.
+
+## D151 – The riposte against the troll and the hammer trogg; one riposte for each blow
+
+Custom rules on, `timed_defence = on` (the default). The dev install `rebuilt` already has it (no Setup.bat needed).
+The riposte is down + toward the foe + fire while its blow from above is in the air (the fast thrust).
+
+- [ ] The troll (practice key 9): riposte its blow from above. The riposte does its damage (the troll's HP bar drops),
+      but the troll does not flinch: its club comes down and hits the knight if it is in reach, and then the troll pauses
+      as after any blow.
+- [ ] The troll: a riposte just as the club comes down (late): the same, both blows land.
+- [ ] The troll with little HP left: a riposte that takes its last HP kills it (its death as before).
+- [ ] The troll: a riposte at close range (the troll just ahead of the knight): its push after the blow as before.
+- [ ] The hammer trogg (practice key 3): riposte its blow from above. The riposte hurts it, but its hammer still comes
+      down and hits; it then waits before its next blow. Riposting all the time no longer keeps it from ever hitting.
+- [ ] The axe trogg (practice key 4): as before: a riposte stops its blow (it flinches).
+- [ ] One riposte for each blow: riposte the troll's blow, and press the riposte again at once while the same blow is
+      still under way: the second is the ordinary (slower) lunge. Against its next blow the riposte is fast again.
+- [ ] Against another knight (two players): a riposte on its blow from above stops that blow, also when both land at
+      the same moment; a second press against the same blow gives the ordinary lunge.
+
+## D152 – A short tap backwards turns the knight
+
+Custom rules on, `input_chord = 2` (the default). The dev install `rebuilt` already has it (no Setup.bat needed). Any
+fight or practice, a knight on the keyboard (player 1's arrows, player 2's W A S D or the third key set).
+
+- [ ] Standing, facing the foe: tap the back key as briefly as you can. The knight turns round (a moment after the tap),
+      without a step.
+- [ ] Tap it several times, short and a little longer: every tap turns the knight once (each tap turns it back again).
+- [ ] Tap back and at once press forward: the knight walks forward and does not turn.
+- [ ] Tap back and at once press fire: the attack as before (no turn after it).
+- [ ] The chords as before: back + down + fire together is the block, back + up + fire the dagger throw, keeping the
+      facing; walking down (down held), then back + fire is the backward thrust (the ratmen fight, D142).
+- [ ] Holding the back key turns the knight as before.
+- [ ] A joystick knight turns as before.
+
+## D153 – Fights and turns start quickly again; no automatic save at a practice fight
+
+Custom rules on or off, `save_mode = autosave_and_manual` (the default). The dev install `rebuilt` already has the new
+SAVEHOOK.COM and SAVEHOOK.INB (no Setup.bat needed there); on another install rerun Setup.bat once (an old SAVEHOOK.INB
+is refused: until Setup makes it again, the knights' in-between poses are drawn in place).
+
+- [ ] A lair fight on the map: the knights and the monsters walk in about as soon after the map as before the attack
+      poses came (D146): no longer a wait of several seconds.
+- [ ] The same for a knight duel and the dragon.
+- [ ] A human knight's turn on the map starts without the long pause.
+- [ ] After a few fights and turns, `save` has new files in slots 91-94 (turns) and 96-100 (fights), each about 2 MB, and
+      each loads (Capture menu or F11+L) and plays on.
+- [ ] A practice fight from the menu (one knight, a co-op practice, a two-player practice, a practice lair): it starts at
+      once, and no file in slots 96-100 changes.
+- [ ] The smooth animation as before: the walk's in-between poses and every blow's (swing, lunge, chop, backward thrust,
+      dagger throw, block, dodge) still drawn, both knight looks, both facings.
+- [ ] An automatic save made before this build (a FIGHT or TURN slot from 22-23 Nov) still loads and plays on.
+- [ ] Optional: `compresssaveparts = false` under `[dosbox]` in `moonstone-dosbox-x.conf`: saves are made a little faster,
+      each file about 41 MB; a save made with `true` still loads, and the other way round.

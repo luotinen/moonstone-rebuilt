@@ -423,6 +423,7 @@ HOOKS = [
     (0x3a6b, 'c706ee770200', 'dragon_far'),          # D68: ... and the far fire's
     (0xa014, 'e80b00', 'dragon_pass'),                # D68: a knight's steps are not cut by the dragon in its far fire
     (0xa15a, '897c0c', 'dragon_burn'),                # D68: ... and its far fire hurts only from its 14th frame
+    (0x3c00, 'a17809', 'dragon_aim'),                 # D150: co-op: the dragon's walk in its fires follows its own knight
     (0x05b6, 'c745080100', 'lair_loot'),                # catchup: a lair won the first time, before its chest
     (0x5363, 'e87f03', 'mud_decide'),                   # SWAMPTHING: player 1's mudman decides by the keys
     (0x54c7, 'e8cde7', 'mud_rise'),                     # SWAMPTHING: player 1's mudman grabs from below only after its dive
@@ -478,6 +479,8 @@ HOOKS = [
     (0x441f, '833efc7700', 'td_check'), (0x4d6c, '833efc7700', 'td_check'),   # D46: a knight struck by a knight (a human's, a computer's)
     (0x42d8, '833efc7700', 'td_monster'), (0x432a, '833efc7700', 'td_monster'),   # D46: a knight blocking a trogg, a spear trogg
     (0x2f61, 'c6454a0a', 'spear_pause'),                # D124: a trogg's pause after its blow hit something (the spear trogg's own)
+    (0x2f28, 'c6454a00', 'trogg_struck'),               # D151: a riposte on the hammer trogg's blow from above: damage, no flinch
+    (0x55e7, '837d0c00', 'troll_tie'), (0x56dc, 'c7063a78945c', 'troll_flinch'),   # D151: the same for the troll
     (0x4302, '294538', 'td_trogg'), (0x4da1, '294538', 'td_cdmg'),   # D46: damage
     (0x4b85, '8936e877', 'bk_down'),                    # D46: a computer knight whose extended death is over stays down
     (0x4c93, 'c744280800', 'td_bk_block'),              # D46: BKBlock's own block is replaced by the roll at the hit
