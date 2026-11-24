@@ -519,6 +519,10 @@ HOOKS = [
     (0x0608, '0bc0750a', 'lair_empty'),
     # D104: Speed: a knight's walk step before its checks, the interpreter's pass (one animation's step and draw)
     (0x3f99, '8b36e877', 'spd_walk'), (0x99c0, 'e80800', 'spd_step'),
+    # D155: left and right in the same read (GetInputDevice's and ax,0FCh, both dropped): the one pressed later counts
+    (0x0aa1, '25fc00', 'lr_newest'),
+    # D154: a walk from standing starts with the short step (walk_short_first_step): the walk phase's add
+    (0x3f61, '80450a01', 'walk_short'),
     # D105: TakeALL (a computer knight or the dragon takes all a beaten knight with no lives left has): the specials too
     (0x0bc5, 'bbf203', 'take_all'),
     # D106: the one item a computer knight or the dragon takes from a knight with lives left (can be a special)
@@ -764,6 +768,8 @@ def read_ini(path):
                         else INPUT_CHORD_DEFAULT)
     r['input_recent'] = (_get(cp, g, 'input_recent_direction', int, 0, 6) if cp.has_option(g, 'input_recent_direction')
                          else INPUT_RECENT_DEFAULT)
+    r['walk_short'] = (_get(cp, g, 'walk_short_first_step', _onoff) if cp.has_option(g, 'walk_short_first_step')
+                       else 1)   # D154
     r['input_log'] = _get(cp, dbg('input_log'), 'input_log', _onoff) if cp.has_option(dbg('input_log'), 'input_log') else 0
     r['coop_lairs'] = (_get(cp, g, 'coop_lairs', _choice(dict(COOP_MODES, on=1))) if cp.has_option(g, 'coop_lairs')
                        else COOP_DEFAULT)
@@ -946,7 +952,7 @@ def read_ini(path):
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
     known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
-                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'smooth_animation', 'smooth_fight_cycles', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
+                 'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'smooth_animation', 'smooth_fight_cycles', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'walk_short_first_step', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
                  'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
                  *(f'{old}_horse_{what}' for old in HORSE_OLD_KEYS.values() for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
@@ -1174,6 +1180,8 @@ def main_patches(r, img):
         if r['speedrun'] and kind in SPEEDRUN_GAME:
             continue
         if kind in SMOOTH_HOOKS and not smooth_hooks(r):   # D136: one picture a tick: the game's own loop
+            continue
+        if kind == 'walk_short' and not r.get('walk_short', 1):   # D154: off: the game's own first step
             continue
         new, _ = hook_bytes(where, old, kind)
         out.append((where, bytes.fromhex(old), new))

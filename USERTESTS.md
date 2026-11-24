@@ -1600,3 +1600,57 @@ is refused: until Setup makes it again, the knights' in-between poses are drawn 
 - [ ] An automatic save made before this build (a FIGHT or TURN slot from 22-23 Nov) still loads and plays on.
 - [ ] Optional: `compresssaveparts = false` under `[dosbox]` in `moonstone-dosbox-x.conf`: saves are made a little faster,
       each file about 41 MB; a save made with `true` still loads, and the other way round.
+
+## D154 – A tapped walk moves a little
+
+Custom rules on, `walk_short_first_step = on` (the default; an older ini gets it too). The dev install `rebuilt` already
+has it (no Setup.bat needed). Any fight or practice.
+
+- [ ] Standing, tap forward (towards the foe) as briefly as you can, several times with a pause between: every tap moves
+      the knight a little (3-4 pixels), never a big hop.
+- [ ] The same tapping backwards after the knight has turned (walking away), and with the knight facing the other way.
+- [ ] Diagonal taps (forward + up, forward + down): a small move sideways each time, plus the small up or down step.
+- [ ] Hold forward: the knight walks as before (the first step a short one, then the normal walk), smoothly.
+- [ ] Up or down taps and walks as before.
+- [ ] With `walk_short_first_step = off` taps hop as in the original game (every second tap
+      a big step).
+- [ ] (retest after D155) Hold the back key from standing: the knight turns, and its first step after the turn is a
+      short one too, then the normal walk.
+
+## D155 – A back tap turns the knight also right after walking
+
+Custom rules on, `input_chord = 2` (the default). The dev install `rebuilt` already has it (no Setup.bat needed). Any
+fight or practice, a knight on the keyboard (player 1's arrows, player 2's W A S D or the third key set).
+
+- [ ] Walk forward (hold forward), then tap back briefly while still letting go of forward (the two keys overlapping a
+      little): the knight turns round.
+- [ ] Tap back briefly from standing, many times, short and a little longer: every tap turns the knight (D152 retest).
+- [ ] Hold forward and press and hold back as well: the knight turns and walks the other way; let go of back (forward
+      still held): the knight stands (D156: the old forward key counts again only after it is let go and pressed again).
+- [ ] Back + fire pressed together is still the backward thrust; back + up + fire the dagger, back + down + fire the block.
+- [ ] A joystick knight as before.
+
+## D156 – A back tap turns the knight even when the forward key is let go late
+
+Custom rules on, `input_chord = 2` (the default). The dev install `rebuilt` already has it (no Setup.bat needed). Any
+fight or practice; test with both the green knight (W A S D) and the blue one (arrows).
+
+- [ ] Walk right (hold D), tap A briefly and let go of D a moment later (also clearly later, even half a second): the
+      knight turns left and stays facing left; it does not turn straight back to the right.
+- [ ] The same with a longer press of A (a quarter of a second) while D is still held: the knight turns left once.
+- [ ] After that, let go of D and press it again: the knight turns right and walks right as usual.
+- [ ] The same with the arrows (blue knight) and both ways (walking left, tapping right).
+- [ ] Back + fire, back + up + fire, back + down + fire as before (the backward thrust, the dagger, the block).
+
+## D157 – A dropped key press still turns the knight; a diagonal turn goes diagonally at once
+
+Custom rules on. The dev install `rebuilt` already has it (no Setup.bat needed). Any fight or practice; `input_log = on`
+helps (a fight played to its end writes INPUT.LOG).
+
+- [ ] Green knight (W A S D): walk right with D, then press A while still holding D, and let go of both: the knight turns
+      left (on some keyboards only when A is let go, a moment later).
+- [ ] The same the other way (walking left with A, then D).
+- [ ] Blue knight (arrows): walk down-left, then switch to up-right: the knight turns and goes up-right at once, not
+      straight up first. The same for down-right to up-left, up-left to down-right.
+- [ ] A plain turn (back key alone) still turns in place without a step.
+- [ ] Typing a cheat code in a fight with A, D, W or S in it does not move or turn the green knight.

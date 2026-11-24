@@ -14,7 +14,8 @@ players pressing at once, the nearer press counts).
 Usage: python -I tools/input_log.py [INPUT.LOG]"""
 import struct, sys
 
-KINDS = {1: 'key down', 2: 'key up', 3: 'input', 4: 'attack', 5: 'defence', 6: 'stagger', 7: 'attack start'}
+KINDS = {1: 'key down', 2: 'key up', 3: 'input', 4: 'attack', 5: 'defence', 6: 'stagger', 7: 'attack start',
+         8: 'key up only (press never came: a tap, D157)'}
 BLOWS = {2: 'lunge', 4: 'swing', 6: 'dagger', 0xa: 'backward thrust', 0xc: 'upward thrust', 0x10: 'overhead chop'}
 KEYS = {0x1c: 'Enter (P1 fire)', 0x48: 'Up', 0x50: 'Down', 0x4b: 'Left', 0x4d: 'Right',
         0x0f: 'Tab (P2 fire)', 0x11: 'W', 0x1f: 'S', 0x1e: 'A', 0x20: 'D',

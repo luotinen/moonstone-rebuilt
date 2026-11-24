@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+* **A dropped key press still turns the knight; diagonal turns go diagonally at once** (D157; custom rules): some
+  keyboards do not send a key's press while another key is held (seen with A while D was held), only its release; in a
+  fight such a direction key's release now counts as a tap, so the knight turns. And a turn with up or down (a
+  diagonal the other way) now moves diagonally at once instead of straight up or down for a moment.
+* **A back tap turns the knight even when the forward key is let go late** (D156; custom rules): walking one way and
+  tapping the other way while still holding the walking key turned the knight only if that key was let go at once.
+  Now the tap turns the knight and it stays turned: a key held from before a turn the other way counts again only
+  after it is let go and pressed again.
+* **A back tap turns the knight also right after walking** (D155; custom rules): a short tap of the back key pressed
+  before the forward key was let go did nothing, because the game drops left and right when both are held. Now the key
+  pressed later counts: the tap turns the knight, and back held while forward is still held turns and walks it back
+  (D156: let go of back, the knight then stands until forward is pressed again).
+* **A tapped walk moves a little** (D154; custom rules, `walk_short_first_step = on`): the game's walk steps are 25, 3, 23
+  and 4 pixels in turn, so tapping left or right made the knight jump 23-25 pixels every second tap. Now a walk from
+  standing always starts with the short step: every tap moves the knight 3-4 pixels, and a held walk takes its big step
+  second, also right after a turn. Diagonal taps too; up and down are unchanged. `walk_short_first_step = off` keeps the game's steps.
 * **Fights and turns start quickly again; no automatic save at a practice fight** (D153): the automatic save before
   each fight and at each human turn's start had become slow since the smooth animation's attack poses (D146-D148),
   because DOSBox-X packs its save states and the poses' file packed very slowly. Setup now stores that file packed in a
