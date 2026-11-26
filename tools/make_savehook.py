@@ -99,6 +99,8 @@ PRACTICE_HOOKS = [(0x011f, 'practice_si'), (0x2033, 'practice_di'),
                   (LOOP_RELEASE_SITE + 2, 'loop_release'),
                   # D14: the menu's keys and the practice set-up
                   (0x129b, 'menu_keys'), (0x0144, 'practice_init'),
+                  # D163: PgUp's quick start leaves out the knight screen (00D3: call ChooseKnight)
+                  (0x00d5, 'knight_skip'),
                   # D71: the Resume Game hint in the first menu (1279, 13B8: int 63h + nop)
                   (0x127b, 'menu_open'), (0x13ba, 'menu_shown'),
                   # D78: Game Over deletes the automatic saves when no human knight has a life left (0617)
@@ -727,6 +729,10 @@ PLY_PATH = b'C:\\SAVEHOOK.PLY\0'        # D81: the first menu's Players choice
 PLY_HUMANS = (1, 2, 3, 4, 3, 2, 1)       # D81: the humans of each Players choice: 1-3 + CPU, then 4, 3, 2, 1 alone
 PLY_CPU_LAST, PLY_LAST, PLY_COUNT = 2, 6, 0x091e   # the last choice with computer knights, the last choice; [091Eh]
 PLY_DIGIT, PLY_STEP_END = 0x0572, 0x13dd           # the value's text (1000:7D7F writes the digit), 13C2's end
+# D163: PgUp in the first menu (MAIN's key table, scan 49h): a game of two players alone ("2", PLY_HUMANS[5]) at
+# Select Knight ([0704h] = 3); the call of ChooseKnight (1000:00D3) is int 63h + nop
+KEY_PGUP, QUICK_PLY, SELECT_OPTION, KNIGHT_SKIP_SITE = 0x49, 5, 3, 0x00d3
+CHOOSE_KNIGHT, CHOOSE_END, KNIGHTS_FREE = 0x1565, 0x5bba, 0x0867   # ChooseKnight, its last call, its free knights' bits
 # D76: the objects (+35h) whose deaths Less draws without blood: the boar, mudman, Guardian, knight, computer knight,
 # axe, hammer and spear troggs, ratman, Balok, troll (not the hit effects 14h, daggers 1Ah, fire 0Ah, 16h)
 DEATH_TYPES = (0x00, 0x02, 0x04, 0x06, 0x08, 0x0c, 0x0e, 0x10, 0x12, 0x18, 0x20)
@@ -3953,6 +3959,17 @@ def rules_code(a):
     a.b(0x2e, 0xc6, 0x06); a.word('teams'); a.b(0x00)
     a.near(0xe9, 'mk_practice')
     a.label('mk_keys')
+    # D163: PgUp starts a game of two players alone at once (the autosave check's quick start, B11): Players "2"
+    # (ply_idx, not saved to SAVEHOOK.PLY), Select Knight as fire; quick_go makes knight_skip leave out the knight screen
+    a.b(0x26, 0x80, 0x3e); a.b(struct.pack('<H', KEY_TABLE + KEY_PGUP)); a.b(0xff)   # cmp byte es:[PgUp], 0FFh
+    a.short(0x73, 'mk_space')                                # jae mk_space      not held
+    a.b(0x2e, 0xc6, 0x06); a.word('quick_go'); a.b(0x01)    # mov byte cs:[quick_go], 1
+    a.b(0x2e, 0xc6, 0x06); a.word('ply_idx'); a.b(QUICK_PLY)   # mov byte cs:[ply_idx], 5   "2" alone
+    a.b(0xc7, 0x06, *u16(PLY_COUNT), PLY_HUMANS[QUICK_PLY], 0x00)   # mov word [091Eh], 2
+    a.b(0xc7, 0x06, *u16(MENU_OPTION), SELECT_OPTION, 0x00)  # mov word [0704h], 3   Select Knight
+    a.b(0xbb, 0x10, 0x00)                                    # mov bx, 10h       fire
+    a.near(0xe9, 'mk_store')                                 # jmp mk_store
+    a.label('mk_space')
     a.b(0x26, 0x80, 0x3e); a.b(struct.pack('<H', KEY_TABLE + SPACE)); a.b(0xff)   # cmp byte es:[Space], 0FFh
     a.short(0x73, 'mk_digits')                               # jae mk_digits     not held
     a.b(0x2e, 0xc6, 0x06); a.word('teams'); a.b(0x01)        # mov byte cs:[teams], 1
@@ -4014,7 +4031,23 @@ def rules_code(a):
     a.label('mk_store')
     a.b(0x89, 0x1e, 0xe2, 0x77, 0x89, 0x5e, 0xfe)            # mov [77E2h], bx / mov [bp-2], bx   (replaced)
     a.b(0x07, 0x5e, 0x58)                                    # pop es si ax
-    a.near(0xe9, 'rules_done')                               # jmp rules_done
+    a.near(0xe9, 'rules_done')
+
+    # knight_skip (D163, 1000:00D3; replaces call 1565, ChooseKnight): after PgUp's quick start (quick_go) no knight
+    # screen: players 1 and 2 get knights 0 and 1 (blue, orange) with their own names, as ChooseKnight's pick 16CA
+    # does it (+20h the knight, +9 = 2, its bit out of [0867h]; the name editor 13F0 only edits the name in place),
+    # then ChooseKnight's last call (5BBA); else ChooseKnight. Both return after the nop (00D6)
+    a.label('rules_knight_skip')
+    a.b(0x2e, 0x80, 0x3e); a.word('quick_go'); a.b(0x00); a.short(0x75, 'x163_ks_quick')   # cmp cs:[quick_go], 0 / jne
+    a.near(0xe8, 'call_game2'); a.b(*u16(CHOOSE_KNIGHT), *u16(KNIGHT_SKIP_SITE + 3))   # call 1565
+    a.label('x163_ks_quick')
+    a.b(0x2e, 0xc6, 0x06); a.word('quick_go'); a.b(0x00)    # mov byte cs:[quick_go], 0
+    for i in range(PLY_HUMANS[QUICK_PLY]):
+        rec = KNIGHTS[i]
+        a.b(0xc7, 0x06, *u16(rec + 0x20), i, 0x00)           # mov word [record+20h], i
+        a.b(0xc6, 0x06, *u16(rec + 9), 0x02)                 # mov byte [record+9], 2
+    a.b(0x83, 0x26, *u16(KNIGHTS_FREE), 0xff ^ ((1 << PLY_HUMANS[QUICK_PLY]) - 1))   # and word [0867h], not picked
+    a.near(0xe8, 'call_game2'); a.b(*u16(CHOOSE_END), *u16(KNIGHT_SKIP_SITE + 3))   # call 5BBA
 
     # practice_init (D14, 1000:0144; replaces call 1FFA, InitPractice): a lair practice instead calls the lair
     # fight's set-up as a lair visit does (1000:0588: 055E, then 1F2C with [6962h] = that lair's record); the other
@@ -17607,6 +17640,7 @@ def rules_data(a, table):
     a.label('gore_level'); a.b((table or rules_default_table())[G_GORE])   # D76: the first menu's Gore, GORE_LEVELS: custom rules `gore` until SAVEHOOK.GOR holds a choice
     a.label('gore_buf'); a.b(0)                              # D76: SAVEHOOK.GOR's byte
     a.label('ply_idx'); a.b(0)                               # D81: the Players choice (PLY_HUMANS), 0 = 1 + CPU
+    a.label('quick_go'); a.b(0)                              # D163: 1 after PgUp in the first menu
     a.label('ply_loaded'); a.b(0)                            # D81: 1 = SAVEHOOK.PLY has been read
     a.label('ply_buf'); a.b(0)
     a.label('ply_path'); a.b(PLY_PATH)

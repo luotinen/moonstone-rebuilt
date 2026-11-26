@@ -1731,3 +1731,14 @@ A quick way to see many loading screens: Practice, any lair key, Esc out, again.
 - [ ] A cursed knight (B9) still sees only the curse's texts before its fights, with both values.
 - [ ] Retest D161 (B9): the curse's loading screens as before (their texts moved into SAVEHOOK.OVL).
 - [ ] Save and load a DOSBox-X state at a loading screen and right after it: the game goes on normally.
+
+## D163 (B11) – PgUp starts a two-player game at once
+
+Rerun Setup.bat (the fixed MAIN.EXE changes) or use the dev install as built.
+
+- [ ] In the first menu press PgUp: no knight screen; the map comes with two knights, blue (Sir Godber) and orange
+      (Sir Richard), both players' own, no computer knights. Player 1 (blue) has the first turn.
+- [ ] Press E: orange's turn starts with the short automatic save pause (slot 91-94, TURNn).
+- [ ] Quit DOSBox-X and start the game again: Players shows what you had chosen before PgUp (PgUp does not save it).
+- [ ] Select Knight with Enter still shows the knight screen and the name editing as before.
+

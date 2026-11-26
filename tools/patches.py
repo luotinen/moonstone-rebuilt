@@ -335,6 +335,13 @@ PATCHES = {
                  "Needs SAVEHOOK.COM resident",
         'bytes': [((0x1000, 0x0ff8), bytes.fromhex('e8c7a9'), bytes.fromhex('cd6390'))],
     },
+    'D163': {
+        'title': "PgUp in the first menu starts a game of two players alone at once, with no knight screen: blue and "
+                 "orange with their own names (Moonstone Rebuilt; the autosave check's quick start, B11, the user's "
+                 "request of 26 Nov 2026). The call of ChooseKnight (1000:00D3, call 1565) becomes int 63h + nop: "
+                 "SAVEHOOK.COM picks the two knights after PgUp, else calls ChooseKnight. Needs SAVEHOOK.COM resident",
+        'bytes': [((0x1000, 0x00d3), bytes.fromhex('e88f14'), bytes.fromhex('cd6390'))],
+    },
     'D131': {
         'title': "The troll's blow from above hits where its club is drawn (user report and decision, 19 Nov 2026). The "
                  "blow frame's club pieces (script 5C7C: TROLL2.CEL frame 2, TROLL1.CEL 24h and 2Fh) had a thin line of "

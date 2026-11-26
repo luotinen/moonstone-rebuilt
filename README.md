@@ -186,6 +186,8 @@ Amiga's 140 effect programs are silent (they use the instruments of the location
   arrows and Enter still work there for everyone) and on the item screen. A controller still plays for player 1 (the first) and player 2
   (the second), and player 3 can also use the first. A fourth player has no keys of their own. Many keyboards
   cannot report every combination of six or more keys held at once; if a key seems to drop, use a controller.
+* **Quick start** (D163): **PgUp** in the first menu starts a game of two players alone at once, blue and orange with
+  their own names, with no knight screen (made for the automatic save check; the saved Players choice is kept).
 * **Computer knights from the first menu** (D81): *Players* goes *1 + CPU* (the start), *2 + CPU*, *3 + CPU*,
   *4*, *3*, *2*, *1* with right (left goes back), and round again after *1* (D129). With *+ CPU* the knights nobody plays are computer knights, as
   in the original; *3*, *2* and *1* alone start a campaign with only the players' knights and no computer knights

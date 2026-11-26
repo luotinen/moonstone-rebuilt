@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+* **PgUp in the first menu starts a game at once** (D163, B11; also without custom rules): two players alone, blue
+  (Sir Godber) and orange (Sir Richard) with their own names, no knight screen. Made for the automatic save check;
+  the Players setting saved for the next start stays as it was.
+
 * **More loading screens** (D162 = B10; custom rules, `[Rules] loading_hints = rebuilt` by default, also for an older
   `custom_rules.ini`): the screen before every fight now goes through the gods' messages (corrected where they were
   wrong: "Visit any village" when `village_heal_where = any`) mixed with hints about the game's items and about the

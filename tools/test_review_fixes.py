@@ -1079,6 +1079,16 @@ class SwordTints(unittest.TestCase):
         line = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8').split('MAIN_FIXES = ')[1].split('\n')[0]
         self.assertIn("'D130'", line)
 
+    def test_quick_start(self):
+        # D163: PgUp's quick start (the autosave check, B11): the call of ChooseKnight (00D3) is int 63h + nop,
+        # knight_skip; the menu's PgUp test in the built SAVEHOOK.COM
+        from patches import PATCHES
+        self.assertEqual(PATCHES['D163']['bytes'], [((0x1000, 0x00d3), bytes.fromhex('e88f14'), bytes.fromhex('cd6390'))])
+        self.assertIn((0x00d5, 'knight_skip'), hook.PRACTICE_HOOKS)
+        line = (ROOT / 'setup' / 'setup.py').read_text(encoding='utf-8').split('MAIN_FIXES = ')[1].split('\n')[0]
+        self.assertIn("'D163'", line)
+        self.assertIn(bytes([0x26, 0x80, 0x3e]) + (0x81e3 + hook.KEY_PGUP).to_bytes(2, 'little') + bytes([0xff]), hook.make_savehook())
+
     def test_troll_club_points(self):
         # D131: the fixed MAIN.EXE loads COLLFIX.HIT (DS:9D82), the game's COLLIDE.HIT with more points on the troll
         # blow's club pieces in the room of TROLL2.CEL frame 0Dh's; the file keeps within MAIN.EXE's room (DS:A1DE-C282)
