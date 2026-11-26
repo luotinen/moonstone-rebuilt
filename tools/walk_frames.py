@@ -22,7 +22,7 @@ Usage: python -I tools/walk_frames.py <game dir> [<folder for SAVEHOOK.INB>]"""
 import os, struct, sys
 from fractions import Fraction
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_PACK, WK_MARGIN, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR, ATK_K, INB_SLOTS
+from make_savehook import WK_SLOT, WK_SLOTS, WK_MAGIC, WK_SUM, WK_PACK, WK_MARGIN, WK_BIAS, WK_WHOLE, WK_BANK, WK_LOOP, WK_TORSO, WK_FAR, ATK_K, INB_ATK, INB_SLOTS, LIMP_SAG
 from death_frames import read_bank, frame_pixels, frame_planes
 
 BANKS = ('KN1.OB', 'HE1.OB')               # look 0, look 1 (in DISKB)
@@ -112,24 +112,24 @@ class Pose:
             self.foot[k] = (sum(xs) / len(xs), float(low))
 
 
-def _put_rows(out, pic, mask, shift):
-    """Move a layer's rows: shift(row) -> (dx, dy). Rows keep their pixels; a stretched layer repeats a row, a
-    squeezed one lets the lower row win."""
+def _put_rows(out, pic, mask, shift, extra=(0, 0)):
+    """Move a layer's rows: shift(row) -> (dx, dy), then extra (whole pixels: B9's limp). Rows keep their pixels; a
+    stretched layer repeats a row, a squeezed one lets the lower row win."""
     rows = {}
     for y, x in mask: rows.setdefault(y, []).append(x)
     prev = None
     for y in sorted(rows):
         dx, dy = shift(y)
-        d = int(round(y + dy)); x = int(round(dx))
+        d = int(round(y + dy)) + extra[1]; x = int(round(dx)) + extra[0]
         lo = d if prev is None or d <= prev + 1 else prev + 1
         for r in range(lo, d + 1):
             for c in rows[y]: out[r + PAD][c + x + PAD] = pic[y][c]
         prev = d if prev is None else max(prev, d)
 
 
-def inbetween(a, b, j):
+def inbetween(a, b, j, limp=False):
     """The in-between picture of poses a -> b, j sixths of the way (1-5), facing left: (rows, the standing foot's
-    (x, y) in it as exact fractions)."""
+    (x, y) in it as exact fractions). B9: limp: the upper body LIMP_SAG's pixels down and forward (to the left)."""
     t = FRACTIONS[j - 1]
     planted = PLANTED[a.frame]; swing = 'near' if planted == 'far' else 'far'
     us = UPPER_STEP[a.frame]
@@ -146,7 +146,8 @@ def inbetween(a, b, j):
             w = min(1.0, max(0.0, (y - src.hip) / max(1.0, ankle - src.hip)))
             return tuple(f * (D[i] * (1 - w) + E[k][i] * w) for i in (0, 1))
         _put_rows(out, src.pic, src.leg[k], shift)
-    _put_rows(out, src.pic, src.upper, lambda y: (f * D[0], f * D[1]))
+    down, fwd = LIMP_SAG[a.frame][j - 1] if limp else (0, 0)
+    _put_rows(out, src.pic, src.upper, lambda y: (f * D[0], f * D[1]), (-fwd, down))
     ys = [y for y, row in enumerate(out) if any(row)]
     xs = [x for row in out for x, v in enumerate(row) if v]
     x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
@@ -165,16 +166,16 @@ def poses(bank):
     return out
 
 
-def look_frames(bank):
+def look_frames(bank, limp=False):
     """One look's pictures and places: {(facing, legs frame of the old pose, j): (rows, cx, cy)}; facing 0 = right,
-    1 = left; (cx, cy) as WK_SLOT says (place())."""
+    1 = left; (cx, cy) as WK_SLOT says (place()). B9: limp: the limp's pictures (inbetween's limp)."""
     P = poses(bank)
     out = {}
     for i, fa in enumerate(WK_LOOP):
         a, b = P[fa], P[WK_LOOP[(i + 1) % 4]]
         planted = PLANTED[fa]
         for j in range(1, 6):
-            pic, foot = inbetween(a, b, j)
+            pic, foot = inbetween(a, b, j, limp)
             w = len(pic[0])
             # the standing foot on the screen from a tick's legs piece drawn at x (left: the piece's visible columns
             # begin at x, its array's padding left of it; right: the body mirrored)
@@ -253,18 +254,20 @@ def unpack_slot(p):
 
 def build(game, attacks=True):
     """SAVEHOOK.INB's bytes from the game folder's DISKB/KN1.OB and HE1.OB; D146: then the attack part
-    (attack_frames.py, from KN1/KN2.OB, HE1/HE2.OB and KN4.OB), or the walk's slots alone when those files are not
-    the game's pieces (the attacks are then drawn in place; SAVEHOOK.COM tells the two by the file's length)."""
-    slots = [None] * WK_SLOTS
+    (attack_frames.py, from KN1/KN2.OB, HE1/HE2.OB and KN4.OB) and B9's limp (the walk's slots again with the curse's
+    sag: INB_SLOTS in all), or the walk's slots alone when those files are not the game's pieces (the attacks are then drawn in place; SAVEHOOK.COM tells the two by the file's length)."""
+    slots, limp = [None] * WK_SLOTS, [None] * (WK_SLOTS - 1)
     for look, name in enumerate(BANKS):
         with open(os.path.join(game, 'DISKB', name), 'rb') as fh: bank = fh.read()
         for (facing, fa, j), entry in look_frames(bank).items():
             slots[slot_number(look, facing, fa, j)] = pack_slot(slot_bytes(entry))   # D153: packed in place
+        for (facing, fa, j), entry in look_frames(bank, True).items():   # B9: the limp's, after the attacks'
+            limp[slot_number(look, facing, fa, j) - 1] = pack_slot(slot_bytes(entry))
     if attacks:
         import attack_frames
         try:
             more = attack_frames.build(game, ATK_K)
-            if WK_SLOTS + len(more) == INB_SLOTS: slots += [pack_slot(s) for s in more]   # D153: packed in place
+            if WK_SLOTS + len(more) == INB_ATK: slots += [pack_slot(s) for s in more] + limp   # D153: packed in place
         except (attack_frames.AttackError, WalkError, OSError, ValueError, IndexError, KeyError, ZeroDivisionError,
                 struct.error):
             pass

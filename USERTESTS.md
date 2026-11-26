@@ -1691,3 +1691,43 @@ Custom rules on (`input_chord = 2` as before). The dev install `rebuilt` already
 - [ ] Left and right tapped in turn as fast as possible: a turn at every tap (retest of D159).
 - [ ] Walking down, then back and fire: as before (D141/D142: the backward thrust when pressed together, else the turn
       and the lunge the new way).
+
+## D161 (B9) – The ratmen's curse is back, and a cursed knight shows it
+
+Custom rules on. In the dev install `rebuilt` set `ratmen_disease = on` in `custom_rules.ini` (it still has the old
+`off`) and run `python -I tools/rules.py R:/Claude/Moonstone/rebuilt`; `SAVEHOOK.INB` is already rebuilt there (a release
+install: Setup.bat). `moon_days = 1` makes the moon phases (and the lost lives) come quickly. Get bitten by a ratman in
+its lair (do not block the bite).
+
+- [ ] Bitten, no life lost yet: before every fight the loading screen shows a curse text (13 different ones over many
+      fights) instead of the gods' message; the knight has no other sign yet.
+- [ ] A knight that is not cursed (another player, or the same one after a cure) sees the gods' messages, going on in
+      their usual order.
+- [ ] After one life lost to the curse: a grunt at the start of each of that knight's turns (one of five, at random).
+- [ ] After two lives lost: in fights the knight limps when it walks: on one leg's step the upper body and the sword sink
+      (3 pixels) and lean forward, then come back up; the legs stay on the ground; walking is as fast as before.
+- [ ] The limp with `smooth_animation = 1` (one picture a tick) and with 6 (the in-between pictures limp too).
+- [ ] After three lives lost: three flies buzz around the knight's head in fights (also with smooth animation off).
+- [ ] After three lives lost: on the map, on that knight's turns, flies buzz around its figure; not on other knights' turns.
+- [ ] Cured (healer, healing potion, Danu at Stonehenge, Potion of Full Restoration): all signs go at once (the next
+      loading screen is the gods' message, no grunt, no limp, no flies).
+- [ ] A computer's knight with the curse shows none of the signs; a practice fight shows none.
+- [ ] `ratmen_disease = off`: no bite curse, no signs, the gods' messages as before.
+
+## D162 (B10) – More loading screens about the game and the features that are on
+
+Custom rules on. Copy the repo's `custom_rules-default.ini` lines for `loading_hints` into `rebuilt/custom_rules.ini` if
+you want to set it (an ini without it counts as `rebuilt`) and run `python -I tools/rules.py R:/Claude/Moonstone/rebuilt`.
+A quick way to see many loading screens: Practice, any lair key, Esc out, again.
+
+- [ ] `loading_hints = rebuilt`: the loading screens show the gods' messages and hints ("Enchanted blades lie hidden
+      in the lairs of the land", "Duck, and a thrown dagger flies harmlessly overhead" and so on), each centred, all
+      lines readable, "Loading..." below them as before.
+- [ ] No hint comes again before you have seen many different ones (with the default ini 54 hints a round).
+- [ ] A feature turned off is not mentioned: e.g. `horses = off` (no horse hints), `special_items = off` (no
+      enchantment, potion, ring or gem hints), `village_heal_where = any` ("Visit any village to restore lost lives.").
+- [ ] `loading_hints = original`: only the game's own messages, in their usual order (with `ratmen_disease = off` the
+      screen is exactly the original one).
+- [ ] A cursed knight (B9) still sees only the curse's texts before its fights, with both values.
+- [ ] Retest D161 (B9): the curse's loading screens as before (their texts moved into SAVEHOOK.OVL).
+- [ ] Save and load a DOSBox-X state at a loading screen and right after it: the game goes on normally.

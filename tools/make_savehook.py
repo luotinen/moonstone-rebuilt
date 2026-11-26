@@ -42,7 +42,7 @@ it in the title bar). A loaded automatic save resumes in the wait below and writ
 MAIN.EXE may use all free memory, so SAVEHOOK keeps a small block of its own (RESERVE_PARAS) and frees it for the
 child and the speed change's CONFIG.COM (D94: with CONFIG_ROOM free, else nothing runs).
 Usage: python -I tools/make_savehook.py <output SAVEHOOK.COM>   (the normal game; rules.py builds it with rules)"""
-import sys, os, struct, zlib
+import sys, os, struct, zlib, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rules import (G_DUCK, G_DUCK_WINDOW, G_CHOP_CHEESE, G_MOVE_BAR, G_SECONDARY, G_TD, G_TD_WINDOW, G_TD_FAST, G_TD_STAGGER, G_TD_PURPLE, G_TD_BLACK, G_TD_PAUSE, G_COMPUTER, G_BK_AI, G_BK_HEAL, G_TRADE_IN, G_HORSE_SELL, G_BUY, HOOKS, FATE_HOOKS, FATE_STREAMS, GLOW_SITES, SECTIONS, SECTION_SIZE, MODES, VILLAGE, SAVE_MODES, SPAWNS,
                    G_ARMOUR_HP, G_SWORD, G_REST, G_VILLAGE, G_MAX_LIVES, G_RING, G_COLOURS, G_HOMES, G_VILLAGE_ANY,
@@ -996,7 +996,21 @@ ATK_BANK = ATK_REC * ATK_RECS                         # the slot's bank (its dat
 ATK_LAST, ATK_MORE = 0x40, 0x80                       # a record's flags (with its frame, 0-3): the slot's last frame; then
                                                       # the picture goes on in the next slot
 ATK_BASE = [WK_SLOTS + 20 * sum(ATK_K[:c]) for c in range(len(ATK_CHANGES))]
-INB_SLOTS = WK_SLOTS + 20 * sum(ATK_K)
+INB_ATK = WK_SLOTS + 20 * sum(ATK_K)                  # the walk's and the attacks' slots (a file of D146-D148)
+# B9: the ratmen's curse's limp (L3 sag, docs/study-2026-11-25-b9-ratmen-curse.md section 9): after two lives lost to the
+# curse a human knight's upper body (torso, head, sword) sinks LIMP_TICK's (down, forward) pixels on the walk pose of
+# the bad leg's contact (legs frame 9) and on the next (3); the legs stay on the ground. A tick's own picture moves the
+# pieces as they are drawn (limp_draw); the in-between bodies are slots of their own after the attacks' (LIMP_BASE,
+# the walk's 80 again with the sag of LIMP_SAG baked in, walk_frames.py) and the sword moves by LIMP_SAG (limp_sword)
+LIMP_TICK = {9: (3, 1), 3: (1, 0)}
+def _limp_sag(fa, j):
+    fb = WK_LOOP[(WK_LOOP.index(fa) + 1) % 4]
+    a, b = LIMP_TICK.get(fa, (0, 0)), LIMP_TICK.get(fb, (0, 0))
+    return tuple(int(((6 - j) * a[i] + j * b[i]) / 6 + 0.5) for i in (0, 1))
+LIMP_SAG = {fa: [_limp_sag(fa, j) for j in range(1, 6)] for fa in WK_LOOP}   # (down, forward) j sixths from pose fa
+LIMP_BASE = INB_ATK                                   # the limp's first slot (its slot n is LIMP_BASE + n - 1)
+LIMP_MARK = 0x10                                      # E_AUX of a limping walker's torso piece (its sword's: 1 + the pose in bits 4-7)
+INB_SLOTS = INB_ATK + WK_SLOTS - 1                    # a file of the walk's, the attacks' and the limp's slots
 SMX_ATK = SMX_WALK | SMX_SKIP                         # E_AUX: an attacking knight's first piece (bits 4-6: its sword piece's
                                                       # place in the knight's pieces; E_DX word: its slots, (K - 1) << 14 | slot)
 ATK_SWORDS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 24)              # KN4.OB: the sword at its angles (11-23: the motion arcs)
@@ -1019,7 +1033,10 @@ def atk_sword(key):
     return next((i for i, (b, n, dy, dx) in enumerate(key) if b == 3 and n in ATK_SWORDS), 0)
 
 BUF_WALK = BUF_SM + 2 * SM_LIST                       # D143: the walk's in-between pose being drawn (a slot of SAVEHOOK.INB)
-BUF_ILOG = BUF_WALK + WK_SLOT + WK_MARGIN             # D24: input_log's entries (6 bytes each; D153: after the margin)
+BUF_MSG, MSG_ROOM = BUF_WALK + WK_SLOT + WK_MARGIN, 160   # B9: the loading screen's scratch area kept while a curse text is in it
+HINT_MAX = 64                                         # B10: the most loading hints a build may hold
+BUF_HINT = BUF_MSG + MSG_ROOM                         # B10: the hints' round: the next place in it (byte), then the order (a byte a hint)
+BUF_ILOG = BUF_HINT + ((1 + HINT_MAX + 1) & ~1)       # D24: input_log's entries (6 bytes each; D153: after the margin; B9: BUF_MSG; B10: BUF_HINT)
 WK_SUM = (WK_SUM + BUF_WALK) & 0xffff                 # D146: the sum depends on BUF_WALK too (the attack slots' banks hold it)
 WK_SRC = BUF_WALK + WK_SLOT + WK_MARGIN - WK_PACK      # D153: where wk_fetch puts a slot's packed bytes
 if WK_PACK % 2 or WK_SRC < BUF_WALK:                 # (an XMS move's length is even)
@@ -1055,6 +1072,8 @@ OVL_GEM, OVL_GEM_FX = 8, 9                            # D113: the special gems' 
 OVL_GEM_MAP = 10                                      # D115: the special gems' map effects (the Gem of Greed's amounts)
 OVL_WALK = 11                                         # D143: the walk's in-between poses: which knights walk (walk_match, once a tick)
 OVL_ATK = 12                                          # D146: the attacks' in-between poses: which knights strike (atk_match, once a tick)
+OVL_CURSE = 13                                        # B9: the ratmen's curse's loading screens (their texts, the scratch copy), its grunt
+OVL_FLY = 14                                          # B9: the curse's flies (each picture of a fight with a knight that has them; the map)
 OVL_CHEATS, OVL_COLD = 1, 2                        # the groups: the cheat codes' work; IDROPPEDMYKEY's screen, LOADEDDICE's throw, BLACKDEATH's work and SKIPCOMBAT's skips (D122)
 WINDOW_MAX = 4096                                     # the largest group allowed (the window is the largest one's size)
 OVL_PATH = b'C:\\SAVEHOOK.OVL\0'
@@ -1159,8 +1178,9 @@ def ovl_resident(a):
             raise ValueError(f'SR4: overlay group {g} is {n} bytes, more than WINDOW_MAX ({WINDOW_MAX})')
         a.b(*u16(off), 0, 0, *u16(n), 0, 0)
         off, size = off + n, max(size, n)
-    # D133: the terrain table rides after the groups (the installer moves it into the buffer block)
-    a.ovl_groups, a.ovl_size, a.ovl_win = off, off + len(a.terrain), max(size, len(a.groups[INST_TAIL][0]))
+    # D133: the terrain table rides after the groups (the installer moves it into the buffer block); B10: then the
+    # loading screens' texts (msg_store: b10_show moves one at a time into the scratch area)
+    a.ovl_groups, a.ovl_size, a.ovl_win = off, off + len(a.terrain) + len(a.msgs), max(size, len(a.groups[INST_TAIL][0]))
     a.label('ovl_window'); a.b(bytes(a.ovl_win))
 
 
@@ -1176,22 +1196,28 @@ def ovl_install(a):
     a.b(0xb4, 0x09, 0xba, *u16(kb), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
     a.b(0x0b, 0xc0, 0x75, 0x03); a.near(0xe9, 'io_none')
     a.b(0x89, 0x16); a.word('xm_sh'); a.b(0x89, 0x16); a.word('xi_dh')
-    a.b(0xba); a.word('ovl_path'); a.near(0xe8, 'io_load'); a.short(0x72, 'io_free')   # mov dx, the path / call io_load / jc
-    a.b(0x81, 0x3e); a.word('xi_total'); a.b(*u16(a.ovl_size)); a.short(0x75, 'io_free')
-    a.b(0x81, 0x3e); a.word('xi_sum'); a.label('ovl_sum_at'); a.b(0, 0); a.short(0x75, 'io_free')   # (patched)
+    a.b(0xba); a.word('ovl_path'); a.near(0xe8, 'io_load'); a.b(0x0f); a.near(0x82, 'io_free')   # mov dx, the path / call io_load / jc
+    a.b(0x81, 0x3e); a.word('xi_total'); a.b(*u16(a.ovl_size)); a.b(0x0f); a.near(0x85, 'io_free')
+    a.b(0x81, 0x3e); a.word('xi_sum'); a.label('ovl_sum_at'); a.b(0, 0); a.b(0x0f); a.near(0x85, 'io_free')   # (patched)
     a.b(0xc6, 0x06); a.word('ovl_ok'); a.b(0x01, 0xc6, 0x06); a.word('ovl_cur'); a.b(0x00)
     # D143: SAVEHOOK.INB (the walk's in-between poses, made by Setup from the user's files) into a block of its own:
     # its length and word sum must be right, or the block is freed and the walk is drawn in place (wk_h stays 0)
     # D146: a file of the walk's and the attacks' slots (INB_SLOTS) sets atk_on too; the walk's slots alone are the walk's
-    size, full = WK_SLOT * WK_SLOTS, WK_SLOT * INB_SLOTS
+    # B9: a file with the limp's slots too (INB_SLOTS) sets limp_on as well; one of D146-D148 (INB_ATK) only atk_on
+    size, atk, full = WK_SLOT * WK_SLOTS, WK_SLOT * INB_ATK, WK_SLOT * INB_SLOTS
     a.b(0xb4, 0x09, 0xba, *u16((full + 1023) // 1024), 0xff, 0x1e); a.word('xms_entry')   # mov ah, 9 / mov dx, kb / call far   allocate
     a.b(0x0b, 0xc0); a.short(0x75, 'inb_block'); a.near(0xe9, 'io_done')   # or ax, ax / jnz / jmp
     a.label('inb_block')
     a.b(0x89, 0x16); a.word('xi_dh')                         # mov [xi_dh], dx
     a.b(0xba); a.word('inb_path'); a.near(0xe8, 'io_load'); a.short(0x72, 'inb_free')
     a.b(0x81, 0x3e); a.word('xi_sum'); a.b(*u16(WK_SUM)); a.short(0x75, 'inb_free')
-    a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(full & 0xffff)); a.short(0x75, 'inb_walk')
-    a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(full >> 16); a.short(0x75, 'inb_walk')
+    a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(full & 0xffff)); a.short(0x75, 'inb_atk')
+    a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(full >> 16); a.short(0x75, 'inb_atk')
+    a.b(0xc6, 0x06); a.word('limp_on'); a.b(0x01); a.short(0xeb, 'inb_atk_on')   # mov byte [limp_on], 1
+    a.label('inb_atk')
+    a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(atk & 0xffff)); a.short(0x75, 'inb_walk')
+    a.b(0x83, 0x3e); a.word('xi_doff', 2); a.b(atk >> 16); a.short(0x75, 'inb_walk')
+    a.label('inb_atk_on')
     a.b(0xc6, 0x06); a.word('atk_on'); a.b(0x01); a.short(0xeb, 'inb_ok')   # mov byte [atk_on], 1
     a.label('inb_walk')
     a.b(0x81, 0x3e); a.word('xi_doff'); a.b(*u16(size & 0xffff)); a.short(0x75, 'inb_free')
@@ -1807,6 +1833,7 @@ def rules_code(a):
     a.b(0x50); a.near(0xe8, 'arm_of'); a.b(0x3c, A_REBIRTH, 0x58); a.short(0x75, 'lives_sub')
     a.near(0xe9, 'arm_reborn')
     a.label('lives_sub')
+    a.near(0xe8, 'curse_lose')                               # B9: the moon's loss to the ratmen's curse counted
     a.b(0x28, 0x44, 0x31)                                    # sub [si+31h], al
     a.near(0xe8, 'section')                                  # call section
     a.short(0x72, 'lives_end')                               # jc lives_end
@@ -1823,6 +1850,7 @@ def rules_code(a):
     # turn (1000:A66E): replaces cmp byte [si+31h],0 (is the knight whose turn it is dead?); si = record.
     # Reincarnation: starting values again; respawn: max lives and full HP, the rest kept; both at the start position
     a.label('rules_turn')
+    a.near(0xe8, 'curse_turn')                               # B9: the curse's count; a cursed knight's grunt
     a.near(0xe8, 'section')                                  # call section
     a.short(0x72, 'turn_cmp')                                # jc turn_cmp
     a.b(0x80, 0x7c, 0x31, 0x00)                              # cmp byte [si+31h], 0
@@ -1877,7 +1905,8 @@ def rules_code(a):
     a.b(0x2e, 0xa3); a.word('snd_ax'); a.b(0x8b, 0x46, 0x02, 0x2d, 0x02, 0x00)   # mov cs:[snd_ax], ax / mov ax, [bp+2] / sub ax, 2
     a.b(0x2e, 0xa3); a.word('call_ret')                      # this site's int 63h again
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(SOUND & 0xff, SOUND >> 8)
-    a.b(0xb8, CHEAT_SOUND, 0x00); a.near(0xe9, 'call_game')  # mov ax, sound id / 1000:5970
+    a.b(0x2e, 0xa1); a.word('snd_id')                        # mov ax, cs:[snd_id]   B9: a cursed knight's grunt, or the code's
+    a.b(0x2e, 0xc7, 0x06); a.word('snd_id'); a.b(CHEAT_SOUND, 0x00); a.near(0xe9, 'call_game')   # 1000:5970
     a.label('sxtm_go')
     a.b(0x2e, 0x80, 0x3e); a.word('key_show'); a.b(0x00); a.short(0x74, 'tm_no_keys')
     a.near(0xe9, 'key_stage')                                # IDROPPEDMYKEY's screen
@@ -2632,6 +2661,7 @@ def rules_code(a):
     # amiga_music the Amiga's drums of that screen (110-113, Amiga 012F20) as music_start plays a scene's piece.
     # They stop at the fight's start (gods_quiet, from the int 66h at InitCombat) or at the wizard's music_start
     a.label('rules_music_gods')
+    a.near(0xe8, 'msg_back')                                 # B9: a curse text's scratch area back, the count kept
     a.b(0xff, 0x06, 0x20, 0x8e)                              # inc word [8E20h]              as the game
     a.b(0x2e, 0x80, 0x3e); a.word('amiga_music'); a.b(0x00)  # cmp byte cs:[amiga_music], 0
     a.short(0x74, 'mg_end')                                  # je mg_end
@@ -3619,6 +3649,7 @@ def rules_code(a):
     a.near(0xe8, 'sword_tint')                               # call sword_tint   D31
     a.near(0xe8, 'set_gore_pass')                            # call set_gore_pass   D22
     a.near(0xe8, 'smo_rec')                                  # D136: the piece noted for the in-between pictures
+    a.near(0xe8, 'limp_draw')                                # B9: the curse's limp; the flies' anchor
     a.b(0x50, 0x8b, 0x46, 0x02, 0x40)                        # push ax / mov ax, [bp+2] / inc ax   site + 3
     a.b(0x2e, 0xa3); a.word('call_ret')                      # mov cs:[call_ret], ax
     a.b(0x58)                                                # pop ax
@@ -6574,6 +6605,7 @@ def rules_code(a):
     a.label('x75_mb_none')
     a.b(0x58)
     a.label('x75_mb_show')
+    a.near(0xe8, 'fly_map')                                  # B9: the curse's flies, under the figure
     a.b(0x2e, 0xc7, 0x06); a.word('call_target'); a.b(0xc9, 0xa3)
     a.b(0x50, 0x8b, 0x46, 0x02, 0x40, 0x2e, 0xa3); a.word('call_ret'); a.b(0x58)   # back past the int 63h's nop
     a.near(0xe9, 'call_game')
@@ -16179,6 +16211,8 @@ def smooth_code(a):
     a.b(0x65, 0x8a, 0x44, E_DX, 0xf6, 0xed, 0xf6, 0xf9, 0x98)   # mov al, gs:[si+15] / imul ch / idiv cl / cbw
     a.b(0x65, 0x8b, 0x54, E_X, 0x2b, 0xd0, 0x89, 0x56, 0xfe)   # mov dx, gs:[si+4] / sub dx, ax / mov [bp-2], dx   x, the game's bx
     a.b(0x8b, 0xcf)                                          # mov cx, di
+    a.b(0x65, 0xf6, 0x44, E_AUX, 0xf0); a.short(0x74, 'x143_sword'); a.near(0xe8, 'limp_sword')   # B9: a limping walker's sword
+    a.label('x143_sword')
     a.b(0x65, 0x8a, 0x44, E_FRAME, 0x32, 0xe4, 0x65, 0xc4, 0x34)   # mov al, gs:[si+10] / xor ah, ah / les si, gs:[si]
     a.label('x143_go')
     a.b(0x2e, 0x83, 0x06); a.word('smo_i'); a.b(SM_E)        # add word cs:[smo_i], 18
@@ -16204,6 +16238,8 @@ def smooth_code(a):
     a.label('x143_body')
     a.b(0x2e, 0x8a, 0x0e); a.word('smo_g')                   # mov cl, cs:[smo_g]   j (6 * k / n while a picture is drawn)
     a.b(0x65, 0x8a, 0x44, E_AUX, 0xc0, 0xe8, 0x04, 0xb4, WK_STEPS, 0xf6, 0xe4, 0x02, 0xc1)   # mov al, gs:[si+17] / shr al, 4 / mov ah, 5 / mul ah / add al, cl   the slot
+    a.b(0x65, 0xf6, 0x44, SM_E + E_AUX, LIMP_MARK); a.short(0x74, 'x143_slot'); a.b(0x05, *u16(LIMP_BASE - 1))   # B9: limping: the limp's slot
+    a.label('x143_slot')
     a.near(0xe8, 'wk_fetch'); a.short(0x75, 'x143_got'); a.near(0xe9, 'x143_skip')   # call / jnz / jmp
     # wk_fetch (ax = a slot of SAVEHOOK.INB; keeps cx, si, di, ds, es): the slot into BUF_WALK; ZF = 1 when the move
     # failed. D153: the slot's packed bytes (WK_PACK, see WK_SLOT) go to the end of BUF_WALK's room and are unpacked
@@ -16336,6 +16372,11 @@ def smooth_code(a):
     a.label('x143_wm_right')
     a.b(0xc0, 0xe0, 0x04, 0x0c, SMX_WALK, 0x65, 0x08, 0x44, E_AUX)   # shl al, 4 / or al, 4 / or gs:[si+17], al
     a.b(0x65, 0x80, 0x4c, SM_E + E_AUX, SMX_SKIP)            # or byte gs:[si+18+17], 8
+    a.b(0x2e, 0x80, 0x3e); a.word('limp_on'); a.b(0x00); a.short(0x74, 'x143_wm_nolimp')   # B9: the limp's slots: a limping knight
+    a.b(0x65, 0x8b, 0x7c, E_OBJ); a.near(0xe8, 'curse_of'); a.b(0x3c, 0x03); a.short(0x72, 'x143_wm_nolimp')   # mov di, gs:[si+8] / 2 lives lost or more
+    a.b(0x65, 0x80, 0x4c, SM_E + E_AUX, LIMP_MARK)           # its torso: the limp's slots
+    a.b(0x8a, 0xc2, 0xfe, 0xc8, 0x24, 0x03, 0xfe, 0xc0, 0xc0, 0xe0, 0x04, 0x65, 0x08, 0x44, 2 * SM_E + E_AUX)   # its sword: 1 + the pose before
+    a.label('x143_wm_nolimp')
     a.b(0x2e, 0xc6, 0x06); a.word('smo_moves'); a.b(0x01)    # mov byte cs:[smo_moves], 1
     a.label('x143_wm_next')
     a.b(0x83, 0xc6, SM_E); a.near(0xe9, 'x143_wm_loop')      # add si, 18 / jmp
@@ -16597,6 +16638,7 @@ def smooth_code(a):
     # smo_show (es = a page not on the screen): the read-outs into its top left corner in the score's digits, draw_FPS
     # first: pictures a second and ticks a second with one decimal
     a.label('smo_show')
+    a.near(0xe8, 'fly_show')                                 # B9: the curse's flies
     a.b(0x2e, 0xf6, 0x06); a.word('rules_table', G_DRAW_OUT); a.b(0x03); a.short(0x75, 'x136_sh_go'); a.b(0xc3)   # test byte cs:[draw_out], 3 / jnz / ret
     a.label('x136_sh_go')
     a.b(0x2e, 0xc7, 0x06); a.word('pxy_col'); a.b(SCORE_WHITE, SCORE_SHADOW)   # the digits' colour and their shadow's
@@ -16613,6 +16655,467 @@ def smooth_code(a):
     a.b(0xb3, 0x0a, 0xf6, 0xf3, 0x50, 0x32, 0xe4); a.near(0xe8, 'pxy_num')   # mov bl, 10 / div bl / push ax / xor ah, ah / the whole part
     a.b(0x49, 0x49, 0xb0, SM_DOT); a.near(0xe8, 'pxy_digit'); a.b(0x83, 0xe9, 0x04)   # dec cx (x2) / mov al, the point / call / sub cx, 4
     a.b(0x58, 0x8a, 0xc4); a.near(0xe8, 'pxy_digit'); a.b(0xc3)   # pop ax / mov al, ah / the tenths / ret
+
+
+
+# B9: the ratmen's curse back (docs/study-2026-11-25-b9-ratmen-curse.md, its section 9 and the user's decisions in
+# docs/next-steps-2026-11-22.md B9). The bite (+60h) costs a life at each moon phase as in the game; curse_lost counts the
+# lives each knight lost to it (up at 122F, at most 3; 0 again once +60h is 0, curse_sync at each turn and loading screen).
+# The signs, only on human knights in a campaign: from the bite a curse text on every loading screen (CURSE_TEXTS, one at
+# random); from 1 life a grunt (RJGRUNT-RJGRUNT4, ids CURSE_SOUND..+4) at the start of each turn; from 2 the limp (LIMP_*);
+# from 3 flies around the head in fights and around the map figure on its turns (FLY_*)
+CURSE_SOUND = 4                                       # sound ids 4-8: the knight's grunts (DOS samples 37-41, the Amiga's 4-8)
+CURSE_TEXTS = (                                       # approved 25 Nov 2026 (curse_texts.html a1-a4, b5-b8, c9-c13)
+    ('The bite of a Ratman', 'carries a foul curse'),
+    ('Beware the Ratmen,', 'for their bite brings', 'a wasting sickness'),
+    ('The Ratmen spread a plague', 'that steals a life', 'with every moon'),
+    ("The Ratmen's curse", 'takes a life', 'at every turn of the moon'),
+    ('A healer can cleanse', "the Ratmen's curse"),
+    ('A healing potion', 'will purge the curse', 'of the Ratmen'),
+    ('Offer a magic item', 'within Stonehenge', 'and Danu will lift', "the Ratmen's curse"),
+    ('Seek a healer, a potion', 'or the grace of Danu', 'ere the curse takes you'),
+    ('A fever burns', 'within you...'),
+    ('The Gods sense a sickness', 'upon you...'),
+    ('You grow weaker', 'with every passing moon'),
+    ('Something foul stirs', 'in your blood...'),
+    ('Each moon takes its toll', 'on the cursed...'),
+)
+# B10: the loading hints (docs/study-2026-11-25-b10-loading-hints.md section 3, approved by the user 25 Nov 2026; their
+# conditions are rules.py's HINT_RULES). G: the game's own messages (corrected where wrong), O: the game's own items,
+# N: Rebuilt's features. rules.py puts the ones whose settings are on into SAVEHOOK.OVL's tail after the curse texts
+HINT_TEXTS = {
+    'G0': ('Prepare yourself, for the', 'season of the Moonstones is', 'upon you!'),
+    'G1': ('The Gods pause for a moment', 'to contemplate your fate...'),
+    'G3': ('Beware of the Ratmen', 'during a full moon', 'for they grow stronger', 'as the moon gets fuller'),
+    'G4': ('Seek the knowledge', 'of', 'Mythral the Mystic'),
+    'G5': ('Beware of the', 'fierce Baloks', 'of the', 'Northern Wastelands'),
+    'G6': ('Offer a magic item', 'within Stonehenge', 'and Danu will grant', 'you a longer life'),
+    'G7': ('Seek the wisdom of', 'Math the wizard', 'to aid you in your quest'),
+    'G8': ('Visit your home village', 'to restore lost lives.'),
+    'G8b': ('Visit any village', 'to restore lost lives.'),
+    'G9': ('The Gods turn their', 'attentions away for', 'a moment...'),
+    'G11': ('The Gods await their', 'new champion...'),
+    'G12': ('Beware of the dreaded', 'Black Knights'),
+    'G13': ('Beware of the Dragon', 'whose dark shadow', 'sweeps the land'),
+    'O1': ('A Moonstone strikes', 'twice as hard', 'when its moon is risen'),
+    'O2': ('Only one Sword', 'of Sharpness', 'exists in all the land'),
+    'O3': ('Each Talisman', 'of the Wyrm halves', "the Dragon's bite"),
+    'O4': ('A Gem of Seeing', "looks into a lair's", 'chest from afar'),
+    'O5': ('A Scroll of Protection', 'turns away', "a rival's challenge"),
+    'O6': ('Four keys open', 'the way to the Valley'),
+    'O7': ('A dagger thrown true', 'strikes from afar'),
+    'N1': ('Enchanted blades lie', 'hidden in the lairs', 'of the land'),
+    'N2': ('A blade of Dragonbane', 'bites the Dragon', 'twice as deep'),
+    'N3': ('Some blades are forged', 'for one foe alone,', 'as Ratbane or Troggbane'),
+    'N4': ('Armour touched by magic', 'guards its wearer', 'beyond mortal steel'),
+    'N5': ('Mithril weighs nothing', 'and lends its wearer', 'swifter legs'),
+    'N6': ('Spellproof armour', 'turns aside scrolls', 'and the Gem of Frog'),
+    'N7': ('Armour of Rebirth', 'spares its wearer', 'one death'),
+    'N8': ('Rare potions are brewed', 'in the deepest lairs'),
+    'N9': ('A potion of Might', 'or Speed lasts', 'for the next fight only'),
+    'N10': ('Drink Invisibility', 'and your rivals', 'lose sight of you'),
+    'N11': ('Thirteen rings of power', 'wait for worthy hands'),
+    'N12': ('A Ring of Vampirism', 'drinks the life', 'of those you strike'),
+    'N13': ('Rings of Mountainwalk,', 'Waterwalk and Forestwalk', 'ease the way'),
+    'N14': ('A Ring of Charisma', 'makes merchants', 'kinder'),
+    'N15': ('Ten gems of strange power', 'lie in the dark places', 'of the land'),
+    'N16': ('A Gem of Frog', 'turns a rival', 'into a frog'),
+    'N17': ('A Gem of Keyfinding', 'shows the way', 'to a missing key'),
+    'N18': ('Only some lairs', 'hide the rarest', 'treasures'),
+    'N19': ('A good horse carries', 'a knight far and fast.', 'Seek one at the merchant'),
+    'N20': ('An Armoured horse', 'shields its rider', 'from harm'),
+    'N21': ('The merchant will buy', 'what you no longer need'),
+    'N22': ('Trade in your old blade', 'for a better one'),
+    'N23': ('Knights who share a lair', 'share its dangers', 'and its rewards'),
+    'N24': ("A fallen knight's cross", 'keeps what they carried', 'for whoever finds it'),
+    'N25': ("The Dragon's hoard", 'grows with every', 'knight it devours'),
+    'N26': ('Raise your guard', 'at the last moment', 'and the blow', 'is turned aside'),
+    'N27': ('Strike back the moment', 'a blow is turned'),
+    'N28': ('Duck, and a thrown', 'dagger flies', 'harmlessly overhead'),
+    'N29': ('The Gods grow weary', 'of a fight', 'where no blow falls'),
+    'N30': ('Rocks slow the traveller', 'as much as a swamp'),
+    'N31': ('Not every scroll', 'is a blessing.', 'Read them with care'),
+    'N32': ('A Scroll of Protection', 'may twist the hands', 'of its reader'),   # the study's "Ring": the curse is the scroll's
+    'N33': ('The Gods favour', 'the knight who', 'lags behind'),
+    'N35': ('Anger Math the wizard', 'and you may find', 'yourself a frog'),
+    'N36': ('Rest heals a knight', "best when the day's", 'march is short'),
+    'N37': ('The druids of your', 'home village restore', 'all your lives'),
+}
+MSG_SITE, MSG_DRAW = 0x909b, 0x90a5                   # 9085: the message's pick (mov si,[8E20h]), FlipXL's call
+MSG_COUNT, MSG_LOADING, MSG_Y0, MSG_DY = 0x8e20, 0x927e, 0x4b, 20   # the gods' rotation; "Loading..." (the last next); lines 1-4
+MSG_SCRATCH = 0x8e3e                                  # DS: the scratch copy's place: the game's message records (none read meanwhile)
+_ALL_MSGS = CURSE_TEXTS + tuple(HINT_TEXTS.values())
+MSG_LINES = max(len(t) for t in _ALL_MSGS)
+MSG_LEN = (10 * MSG_LINES + max(sum(len(l) + 1 for l in t) for t in _ALL_MSGS) + 1) & ~1   # a slot: the records, then the lines
+if MSG_LINES > 4 or max(len(l) for t in _ALL_MSGS for l in t) > 27 or any(c in l for t in _ALL_MSGS for l in t for c in '?:-'):
+    raise ValueError('B9, B10: a text has more than 4 lines, a line longer than 27 or a "?", ":" or "-" (BOLD.F has none)')
+if MSG_LEN > MSG_ROOM or MSG_SCRATCH + MSG_LEN > MSG_LOADING or MSG_SCRATCH < MSG_COUNT + 2 + 28:
+    raise ValueError('B9: the scratch area is larger than BUF_MSG or reaches the gods\' table or "Loading..."')
+CURSE_N = len(CURSE_TEXTS)                            # B10: the store's first slots are the curse texts, the hints after them
+
+
+def msg_slot(lines):
+    """B10: a text as the loading screen's chain, ready for the scratch area (MSG_LEN bytes): a record a line (text,
+    x 0, y 75 + 20 k, flags 1 = centred, next), the last next "Loading...", then the lines."""
+    rec, txt = bytearray(), bytearray()
+    for k, l in enumerate(lines):
+        nxt = MSG_LOADING if k == len(lines) - 1 else MSG_SCRATCH + 10 * (k + 1)
+        rec += struct.pack('<5H', MSG_SCRATCH + 10 * MSG_LINES + len(txt), 0, MSG_Y0 + MSG_DY * k, 1, nxt)
+        txt += l.encode('ascii') + b'\0'
+    return bytes(rec.ljust(10 * MSG_LINES, b'\0') + txt).ljust(MSG_LEN, b'\0')
+
+
+def msg_store(hints=()):
+    """B10: SAVEHOOK.OVL's last part: the curse texts' slots, then the hints' (the texts of HINT_TEXTS' keys hints, at
+    most HINT_MAX), MSG_LEN bytes each."""
+    hints = list(hints)
+    if len(hints) > HINT_MAX:
+        raise ValueError(f'B10: at most {HINT_MAX} loading hints')
+    return b''.join(msg_slot(t) for t in CURSE_TEXTS + tuple(HINT_TEXTS[h] for h in hints))
+
+
+LIFE_MOON = 0x122f + 4                                # lives' return address at the moon's loss (the operand read)
+FLY_TAB_ROWS = [(9, 6, 900, 640, 0.0, 1.3), (12, 5, 1300, 820, 2.1, 0.4), (7, 8, 700, 1100, 4.0, 2.6)]   # the sample's
+FLY_SUB_MS = 1000 / 54.6                              # a sub-tick (the game's timer)
+FLY_STEP = lambda ms: round(32 * 256 * FLY_SUB_MS / ms)   # a 32-entry sine's step (8.8) a sub-tick
+FLY_WOBBLE = (FLY_STEP(2 * math.pi * 37), FLY_STEP(2 * math.pi * 29))   # the small wobble: 2 px in x, 1 in y
+FLY_PHASE = lambda r: round(r / (2 * math.pi) * 32) & 31
+FLY_MAP_R = 0.6                                       # on the map the paths are smaller
+FLY_HX, FLY_HY = 10, 4                                # a fight's head: from the knight's top piece (x, y)
+FLY_MAP_HX, FLY_MAP_HY = 4, 2                         # the map figure's (8 x 10, MI.C)
+FLY_FIGHT_COL, FLY_MAP_COL = (5, 4), (0, 16)          # body, wing: the fights' black and dark grey; the map's black, brown
+FLY_REC, FLY_FAR = 12, 40                             # fly_tab's record; an anchor that moved more is not followed
+FLY_SINE = bytes(round(64 * math.sin(2 * math.pi * i / 32)) & 0xff for i in range(32))
+FIGHT_BODY_BANKS = (KN1_SEG, KNIGHT_BANK + 8, HE1_SEG, HE_BANK + 8)   # KN1, KN2, HE1, HE2: a knight's body pieces
+KN4_SEG = SWORD_KN4 + 2
+
+
+def curse_code(a):
+    """B9 (above). Resident: the count, the signs' decisions, the limp's and the flies' drawing (each piece and picture
+    of a fight); in group OVL_CURSE the curse text's copy into the scratch area and back."""
+    # curse_of (di = a knight's record; keeps all but al): al = 1 + the lives it lost to the curse while it has it, for
+    # a human knight in a campaign with ratmen_disease on; else 0 (no signs)
+    a.label('curse_of')
+    a.b(0x53, 0x52, 0xb0, 0x00)                              # push bx dx / mov al, 0
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DISEASE); a.b(0x00); a.short(0x74, 'b9_of_out')
+    a.b(0x83, 0x3e, *u16(MENU_OPTION), PRACTICE_OPTION); a.short(0x74, 'b9_of_out')   # a practice
+    a.b(0x83, 0x7d, 0x20, COMPUTER); a.short(0x74, 'b9_of_out')   # cmp word [di+20h], 4   a computer's knight
+    a.b(0x80, 0x7d, 0x60, 0x00); a.short(0x74, 'b9_of_out')  # cmp byte [di+60h], 0   not cursed
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'b9_of_out')
+    a.b(0x2e, 0x8a, 0x87); a.word('curse_lost'); a.b(0xfe, 0xc0)   # mov al, cs:[bx+curse_lost] / inc al
+    a.label('b9_of_out')
+    a.b(0x5a, 0x5b, 0xc3)                                    # pop dx bx / ret
+    # curse_sync (keeps all): a knight no longer cursed (cured: the healer, a healing potion, Danu, Full Restoration;
+    # a new or reborn knight) has lost no lives to it
+    a.label('curse_sync')
+    a.b(0x53, 0x56, 0xbe, *u16(KNIGHTS[0] + 0x60), 0x33, 0xdb)   # push bx si / mov si, the first +60h / xor bx, bx
+    a.label('b9_sy_loop')
+    a.b(0x80, 0x3c, 0x00); a.short(0x75, 'b9_sy_next')       # cmp byte [si], 0 / jne
+    a.b(0x2e, 0xc6, 0x87); a.word('curse_lost'); a.b(0x00)   # mov byte cs:[bx+curse_lost], 0
+    a.label('b9_sy_next')
+    a.b(0x83, 0xc6, SLOT_SIZE, 0x43, 0x83, 0xfb, 0x04); a.short(0x72, 'b9_sy_loop')   # add si, 62h / inc bx / cmp bx, 4 / jb
+    a.b(0x5e, 0x5b, 0xc3)                                    # pop si bx / ret
+    # curse_lose (from lives; si = the record, [bp+2] its return address; keeps all): the moon's loss (122F) counted
+    a.label('curse_lose')
+    a.b(0x81, 0x7e, 0x02, *u16(LIFE_MOON)); a.short(0x75, 'b9_lo_ret')   # cmp word [bp+2], 1233h / jne
+    a.b(0x53, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'knight_no'); a.short(0x72, 'b9_lo_pop')   # push bx dx di / mov di, si
+    a.b(0x2e, 0x80, 0xbf); a.word('curse_lost'); a.b(0x03); a.short(0x73, 'b9_lo_pop')   # cmp byte cs:[bx+curse_lost], 3 / jae
+    a.b(0x2e, 0xfe, 0x87); a.word('curse_lost')              # inc byte cs:[bx+curse_lost]
+    a.label('b9_lo_pop')
+    a.b(0x5f, 0x5a, 0x5b)                                    # pop di dx bx
+    a.label('b9_lo_ret')
+    a.b(0xc3)
+    # group OVL_CURSE: the curse's grunt, the loading screen's pick (B10: with the hints), its copy and its restore
+    a.ovl_begin(OVL_CURSE)
+    # curse_turn (from rules_turn, si = the knight whose turn it may be; keeps all): after a life lost to the curse a
+    # grunt at random as its turn starts (played by turn_moves on the map loop's next pass)
+    a.ovl_entry('curse_turn', 'call')
+    a.near(0xe8, 'curse_sync')
+    a.b(0x80, 0x7c, 0x31, 0x00); a.short(0x7e, 'b9_tu_ret')  # cmp byte [si+31h], 0 / jle   no lives
+    a.b(0x50, 0x52, 0x57, 0x8b, 0xfe); a.near(0xe8, 'curse_of')   # push ax dx di / mov di, si
+    a.b(0x3c, 0x02); a.short(0x72, 'b9_tu_pop')              # cmp al, 2 / jb   no life lost yet
+    a.near(0xe8, 'game_random')
+    a.b(0x53, 0x33, 0xd2, 0xbb, 0x05, 0x00, 0xf7, 0xf3, 0x5b, 0x80, 0xc2, CURSE_SOUND)   # push bx / dx = ax % 5 / pop bx / add dl, 4
+    a.b(0x2e, 0x88, 0x16); a.word('snd_id'); a.b(0x2e, 0xc6, 0x06); a.word('snd_req'); a.b(0x01)
+    a.label('b9_tu_pop')
+    a.b(0x5f, 0x5a, 0x58)                                    # pop di dx ax
+    a.label('b9_tu_ret')
+    a.b(0xc3)
+
+    # msg_pick (1000:909B, replaces mov si,[8E20h], the loading screen's message): while a human knight in the coming
+    # fight (the knight whose turn it is, its opponent, a co-op lair's partners: pot_fight_end's knights) has the curse,
+    # one of the curse texts at random; B10: else, with loading hints in the store (msg_n), the next hint of the round
+    # (b10_next). Either is copied from the store (SAVEHOOK.OVL's tail in XMS) into the scratch area (b10_show) and
+    # drawn by FlipXL (on at 90A5); the gods' rotation is not advanced (msg_back). Else the game's own message
+    a.ovl_entry('rules_msg_pick', 'jump', 'b9_mp_none')
+    a.near(0xe8, 'curse_sync')
+    a.b(0x50, 0x51, 0x57, 0x8b, 0x3e, 0x79, 0x89); a.near(0xe8, 'curse_of')   # push ax cx di / mov di, [8979h]
+    a.b(0x0a, 0xc0); a.short(0x75, 'b9_mp_cursed')
+    a.b(0x8b, 0x3e, 0x7b, 0x89); a.near(0xe8, 'curse_of')    # mov di, [897Bh]
+    a.b(0x0a, 0xc0); a.short(0x75, 'b9_mp_cursed')
+    a.b(0x2e, 0x8a, 0x0e); a.word('coop'); a.b(0xfe, 0xc9); a.short(0x7e, 'b9_mp_game')   # cl = the co-op lair's partners
+    a.b(0xbf); a.word('coop_partners')
+    a.label('b9_mp_loop')
+    a.b(0x57, 0x2e, 0x8b, 0x3d); a.near(0xe8, 'curse_of'); a.b(0x5f)   # push di / mov di, cs:[di] / pop di
+    a.b(0x0a, 0xc0); a.short(0x75, 'b9_mp_cursed')
+    a.b(0x47, 0x47, 0xfe, 0xc9); a.short(0x75, 'b9_mp_loop')   # inc di (x2) / dec cl / jnz
+    a.label('b9_mp_game')
+    a.b(0x2e, 0x80, 0x3e); a.word('msg_n'); a.b(0x00); a.short(0x74, 'b9_mp_own')   # cmp byte cs:[msg_n], 0 / je
+    a.near(0xe8, 'b10_next'); a.short(0xeb, 'b9_mp_show')    # al = the hint's slot
+    a.label('b9_mp_own')
+    a.b(0x5f, 0x59, 0x58, 0x8b, 0x36, *u16(MSG_COUNT)); a.near(0xe9, 'rules_done')   # pop di cx ax / mov si, [8E20h]
+    a.label('b9_mp_cursed')
+    a.near(0xe8, 'game_random')
+    a.b(0x53, 0x52, 0x33, 0xd2, 0xbb, *u16(CURSE_N), 0xf7, 0xf3, 0x8a, 0xc2, 0x5a, 0x5b)   # push bx dx / al = ax % 13 / pop dx bx
+    a.label('b9_mp_show')
+    a.near(0xe8, 'b10_show'); a.short(0x72, 'b9_mp_own')     # si = the chain / jc   the store not reached: the game's
+    a.b(0x2e, 0xc6, 0x06); a.word('msg_held'); a.b(0x01)
+    a.b(0xc7, 0x46, 0x02, *u16(MSG_DRAW), 0x5f, 0x59, 0x58); a.near(0xe9, 'rules_done')   # on at 90A5 / pop di cx ax
+    # b10_show (al = a slot of the store; ds = MAIN's data; keeps all but si; CF = 1 when the move failed): the scratch
+    # area's bytes into BUF_MSG, then the slot moved from XMS (the overlays' block, at msg_off + al x MSG_LEN) into the
+    # scratch area: the chain is ready there (msg_slot); si = its first record
+    a.label('b10_show')
+    a.b(0x50, 0x53, 0x51, 0x52, 0x57, 0x06); gs_buf(a)       # push ax bx cx dx di es
+    a.b(0x0f, 0xa8, 0x07, 0xfc, 0xbe, *u16(MSG_SCRATCH), 0xbf, *u16(BUF_MSG), 0xb9, *u16(MSG_LEN // 2), 0xf3, 0xa5)   # es = gs / the bytes kept
+    a.b(0x32, 0xe4, 0xb9, *u16(MSG_LEN), 0xf7, 0xe1)         # xor ah, ah / mov cx, MSG_LEN / mul cx
+    a.b(0x2e, 0x03, 0x06); a.word('msg_off'); a.b(0x2e, 0x13, 0x16); a.word('msg_off', 2)   # dx:ax = its place
+    a.b(0x1e, 0x68, *u16(MSG_SCRATCH), 0x6a, 0x00, 0x52, 0x50)   # the move on the stack: to (handle 0) ds:MSG_SCRATCH, from
+    a.b(0x2e, 0xff, 0x36); a.word('xm_sh'); a.b(0x6a, 0x00, 0x68, *u16(MSG_LEN))   # the block at dx:ax, MSG_LEN bytes
+    a.b(0x8b, 0xf4, 0x1e, 0x16, 0x1f, 0xb4, 0x0b)            # mov si, sp / push ds / push ss / pop ds / mov ah, 0Bh
+    a.b(0x2e, 0xff, 0x1e); a.word('xms_entry')               # call far cs:[xms_entry]
+    a.b(0x1f, 0x83, 0xc4, 0x10, 0xbe, *u16(MSG_SCRATCH), 0x3d, 0x01, 0x00)   # pop ds / add sp, 16 / mov si, .. / cmp ax, 1 (CF: failed)
+    a.b(0x07, 0x5f, 0x5a, 0x59, 0x5b, 0x58, 0xc3)            # pop es di dx cx bx ax / ret
+    # b10_next (keeps all but ax): al = the slot of the round's next hint. The round (BUF_HINT: its next place, then
+    # the order) is drawn anew (Fisher-Yates with game_random) when it is over (or never drawn: the block's zeros), each
+    # hint once a round; a round does not begin with the hint the last one ended with
+    a.label('b10_next')
+    a.b(0x53, 0x51, 0x52, 0x56); gs_buf(a)                   # push bx cx dx si
+    a.b(0x33, 0xc9, 0x2e, 0x8a, 0x0e); a.word('msg_n')       # xor cx, cx / mov cl, cs:[msg_n]
+    a.b(0x33, 0xdb, 0x65, 0x8a, 0x1e, *u16(BUF_HINT))        # xor bx, bx / mov bl, gs:[BUF_HINT]   the next place
+    a.b(0x3b, 0xd9); a.short(0x72, 'b10_nx_in'); a.b(0x33, 0xdb)   # cmp bx, cx / jb / xor bx, bx   (fewer hints now)
+    a.label('b10_nx_in')
+    a.b(0x0b, 0xdb); a.short(0x75, 'b10_nx_take')            # or bx, bx / jnz   a round goes on
+    a.b(0x8b, 0xf1, 0x65, 0x8a, 0x94, *u16(BUF_HINT), 0x52)  # mov si, cx / mov dl, gs:[si+BUF_HINT] / push dx   the last one's
+    a.label('b10_nx_fill')
+    a.b(0x65, 0x88, 0x9f, *u16(BUF_HINT + 1), 0x43, 0x3b, 0xd9); a.short(0x72, 'b10_nx_fill')   # order[bx] = bx / inc bx / cmp / jb
+    a.b(0x8b, 0xd9, 0x4b)                                    # mov bx, cx / dec bx
+    a.label('b10_nx_mix')
+    a.b(0x0b, 0xdb); a.short(0x74, 'b10_nx_mixed')           # or bx, bx / jz
+    a.near(0xe8, 'game_random')
+    a.b(0x51, 0x8b, 0xcb, 0x41, 0x33, 0xd2, 0xf7, 0xf1, 0x59, 0x8b, 0xf2)   # push cx / dx = ax % (bx + 1) / pop cx / mov si, dx
+    a.b(0x65, 0x8a, 0x87, *u16(BUF_HINT + 1), 0x65, 0x86, 0x84, *u16(BUF_HINT + 1), 0x65, 0x88, 0x87, *u16(BUF_HINT + 1))   # swap order[bx], order[si]
+    a.b(0x4b); a.short(0xeb, 'b10_nx_mix')                   # dec bx / jmp
+    a.label('b10_nx_mixed')
+    a.b(0x5a, 0x65, 0x3a, 0x16, *u16(BUF_HINT + 1)); a.short(0x75, 'b10_nx_first')   # pop dx / cmp dl, order[0] / jne
+    a.b(0x8b, 0xf1, 0x65, 0x8a, 0x84, *u16(BUF_HINT), 0x65, 0x86, 0x06, *u16(BUF_HINT + 1), 0x65, 0x88, 0x84, *u16(BUF_HINT))   # swap order[0], order[n - 1]
+    a.label('b10_nx_first')
+    a.b(0x33, 0xdb)                                          # xor bx, bx
+    a.label('b10_nx_take')
+    a.b(0x65, 0x8a, 0x87, *u16(BUF_HINT + 1), 0x43, 0x65, 0x88, 0x1e, *u16(BUF_HINT))   # mov al, order[bx] / inc bx / the next place
+    a.b(0x04, CURSE_N, 0x5e, 0x5a, 0x59, 0x5b, 0xc3)         # add al, the curse texts / pop si dx cx bx / ret
+    a.ovl_entry('msg_restore', 'call')
+    a.b(0x51, 0x56, 0x57, 0x06); gs_buf(a)                   # push cx si di es
+    a.b(0x1e, 0x07, 0xfc, 0xbf, *u16(MSG_SCRATCH), 0xbe, *u16(BUF_MSG), 0xb9, *u16(MSG_LEN // 2), 0xf3, 0x65, 0xa5)   # rep movs word gs:[si]
+    a.b(0x07, 0x5f, 0x5e, 0x59, 0xc3)
+    a.ovl_end()
+
+    # msg_back (from D74's music_gods at 1000:90A8, before its inc word [8E20h]; keeps all): after a curse text the
+    # scratch area as it was, and the count one less, so that the inc leaves the gods' rotation where it was
+    a.label('msg_back')
+    a.b(0x2e, 0x80, 0x3e); a.word('msg_held'); a.b(0x00); a.short(0x75, 'b9_mb_held'); a.b(0xc3)
+    a.label('b9_mb_held')
+    a.b(0x2e, 0xc6, 0x06); a.word('msg_held'); a.b(0x00, 0xff, 0x0e, *u16(MSG_COUNT))   # dec word [8E20h]
+    a.near(0xe8, 'msg_restore'); a.b(0xc3)
+
+    a.label('b9_mp_none')                                    # (msg_pick without overlays)
+    a.b(0x8b, 0x36, *u16(MSG_COUNT)); a.near(0xe9, 'rules_done')   # mov si, [8E20h]
+
+    # limp_draw (from rules_draw's draw_call after smo_rec: es:si = the bank, al = the frame, [bp-2] = x, cx = y, di =
+    # the animation slot; keeps all but cx and [bp-2]): a limping knight's (2 lives lost or more) legs piece of the bad
+    # leg's walk poses (KN1/HE1 legs frame 9, 3), then its torso (the frame before, the same bank) and its sword
+    # pieces (KN4) are drawn LIMP_TICK's pixels down and forward; smo_rec has noted them where the game draws them, so
+    # walk_match tells the walk as before. Then the flies' anchor: the top of a knight's body pieces (fly_cur)
+    a.label('limp_draw')
+    a.b(0x2e, 0x80, 0x3e); a.word('rules_table', G_DISEASE); a.b(0x00); a.short(0x75, 'b9_ld_go'); a.b(0xc3)
+    a.label('b9_ld_go')
+    a.b(0x50, 0x53, 0x52, 0x8b, 0x5d, 0x16, 0x8c, 0xc2)      # push ax bx dx / mov bx, [di+16h] / mov dx, es
+    a.b(0x3b, 0x16, *u16(KN1_SEG)); a.short(0x74, 'b9_ld_body')
+    a.b(0x3b, 0x16, *u16(HE1_SEG)); a.short(0x74, 'b9_ld_body')
+    a.b(0x3b, 0x16, *u16(KN4_SEG)); a.b(0x0f); a.near(0x85, 'b9_ld_reset')   # cmp dx, [8943h] / jne   not the sword
+    a.b(0x2e, 0x80, 0x3e); a.word('limp_st'); a.b(0x02); a.b(0x0f); a.near(0x85, 'b9_ld_reset')
+    a.b(0x2e, 0x3b, 0x1e); a.word('limp_obj'); a.short(0x74, 'b9_ld_apply'); a.near(0xe9, 'b9_ld_reset')
+    a.label('b9_ld_body')
+    a.b(0x2e, 0x80, 0x3e); a.word('limp_st'); a.b(0x01); a.short(0x75, 'b9_ld_legs')
+    a.b(0x2e, 0x3b, 0x1e); a.word('limp_obj'); a.short(0x75, 'b9_ld_legs')
+    a.b(0x2e, 0x8a, 0x26); a.word('limp_frm'); a.b(0xfe, 0xcc, 0x3a, 0xc4); a.short(0x75, 'b9_ld_legs')   # mov ah, cs:[limp_frm] / dec ah / cmp al, ah / jne
+    a.b(0x2e, 0xc6, 0x06); a.word('limp_st'); a.b(0x02)      # its torso
+    a.label('b9_ld_apply')
+    a.b(0x2e, 0x0f, 0xbe, 0x06); a.word('limp_d'); a.b(0x01, 0x46, 0xfe)   # movsx ax, byte cs:[limp_d] / add [bp-2], ax
+    a.b(0x2e, 0x0f, 0xbe, 0x06); a.word('limp_d', 1); a.b(0x03, 0xc8)   # movsx ax, byte cs:[limp_d+1] / add cx, ax
+    a.short(0xeb, 'b9_ld_fly')
+    a.label('b9_ld_legs')
+    a.b(0x2e, 0xc6, 0x06); a.word('limp_st'); a.b(0x00)
+    a.b(0x3c, 0x09); a.short(0x74, 'b9_ld_bad'); a.b(0x3c, 0x03); a.short(0x75, 'b9_ld_fly')   # cmp al, 9 / je / cmp al, 3 / jne
+    a.label('b9_ld_bad')
+    a.b(0x8a, 0xe0, 0x57, 0x8b, 0xfb); a.near(0xe8, 'curse_of'); a.b(0x5f)   # mov ah, al / push di / mov di, bx / pop di
+    a.b(0x3c, 0x03); a.short(0x72, 'b9_ld_fly')              # cmp al, 3 / jb   fewer than 2 lives lost
+    a.b(0x2e, 0x89, 0x1e); a.word('limp_obj'); a.b(0x2e, 0x88, 0x26); a.word('limp_frm')   # the knight, its legs frame
+    a.b(0x2e, 0xc6, 0x06); a.word('limp_st'); a.b(0x01)
+    a.b(0x2e, 0xc7, 0x06); a.word('limp_d'); a.b(LIMP_TICK[3][1], LIMP_TICK[3][0])   # frame 3: x, y
+    a.b(0x80, 0xfc, 0x09); a.short(0x75, 'b9_ld_fly')        # cmp ah, 9 / jne
+    a.b(0xb0, LIMP_TICK[9][1], 0xf6, 0x45, 0x14, SMF_LEFT); a.short(0x74, 'b9_ld_right'); a.b(0xf6, 0xd8)   # mov al, forward / test byte [di+14h], 2 / jz / neg al
+    a.label('b9_ld_right')
+    a.b(0xb4, LIMP_TICK[9][0], 0x2e, 0xa3); a.word('limp_d')   # mov ah, down / mov cs:[limp_d], ax
+    a.short(0xeb, 'b9_ld_fly')
+    a.label('b9_ld_reset')
+    a.b(0x2e, 0xc6, 0x06); a.word('limp_st'); a.b(0x00)
+    a.label('b9_ld_fly')                                     # the flies' anchor: a body piece of a knight with 3
+    a.b(0x8c, 0xc2)                                          # mov dx, es
+    for k, seg in enumerate(FIGHT_BODY_BANKS):
+        a.b(0x3b, 0x16, *u16(seg))
+        if k < 3:
+            a.short(0x74, 'b9_ld_fb')
+    a.short(0x75, 'b9_ld_out')
+    a.label('b9_ld_fb')
+    a.b(0x57, 0x8b, 0xfb); a.near(0xe8, 'curse_of')          # push di / mov di, bx
+    a.b(0x3c, 0x04); a.short(0x72, 'b9_ld_fpop')             # cmp al, 4 / jb   fewer than 3 lives lost
+    a.near(0xe8, 'knight_no'); a.short(0x72, 'b9_ld_fpop')
+    a.b(0xd1, 0xe3, 0xd1, 0xe3)                              # shl bx, 1 (x2)
+    a.b(0x2e, 0x3b, 0x8f); a.word('fly_cur', 2); a.short(0x7d, 'b9_ld_fpop')   # cmp cx, cs:[bx+fly_cur+2] / jge   not higher
+    a.b(0x2e, 0x89, 0x8f); a.word('fly_cur', 2); a.b(0x8b, 0x46, 0xfe, 0x2e, 0x89, 0x87); a.word('fly_cur')   # y / mov ax, [bp-2] / x
+    a.label('b9_ld_fpop')
+    a.b(0x5f)
+    a.label('b9_ld_out')
+    a.b(0x5a, 0x5b, 0x58, 0xc3)                              # pop dx bx ax / ret
+
+    # limp_sword (from x143_own, gs:si = a limping walker's sword piece: E_AUX bits 4-7 = 1 + the pose of the tick
+    # before, walk_match; [bp-2] = x, cx = y of picture j = cs:[smo_g]; keeps all but cx, [bp-2]): LIMP_SAG's move
+    a.label('limp_sword')
+    a.b(0x50, 0x53, 0x65, 0x8a, 0x44, E_AUX, 0xc0, 0xe8, 0x04, 0xfe, 0xc8, 0xb4, 0x05, 0xf6, 0xe4)   # al = (bits 4-7) - 1 / mul 5
+    a.b(0x2e, 0x02, 0x06); a.word('smo_g'); a.b(0xfe, 0xc8, 0x32, 0xe4, 0xd1, 0xe0, 0x8b, 0xd8)   # add al, j / dec al / bx = 2 x
+    a.b(0x2e, 0x8a, 0x87); a.word('limp_tab'); a.b(0x98, 0x03, 0xc8)   # mov al, cs:[bx+limp_tab] / cbw / add cx, ax   down
+    a.b(0x2e, 0x8a, 0x87); a.word('limp_tab', 1); a.b(0x98)  # forward
+    a.b(0x65, 0xf6, 0x44, E_FLAGS, SMF_LEFT); a.short(0x74, 'b9_ls_right'); a.b(0xf7, 0xd8)   # facing left: neg ax
+    a.label('b9_ls_right')
+    a.b(0x01, 0x46, 0xfe, 0x5b, 0x58, 0xc3)                  # add [bp-2], ax / pop bx ax / ret
+    a.label('limp_tab')
+    for fa in (3, 5, 7, 9):                                  # by the pose's number (legs frame - 3) / 2
+        for down, fwd in LIMP_SAG[fa]:
+            a.b(down, fwd)
+
+    # fly_show (from smo_show, every picture of a fight, es = its page; keeps all): fly_pics (group OVL_FLY) while a
+    # knight has flies this tick or had them the tick before
+    a.label('fly_show')
+    a.b(0x53, 0x33, 0xdb)                                    # push bx / xor bx, bx
+    a.label('b9_fw_loop')
+    a.b(0x2e, 0x81, 0xbf); a.word('fly_cur', 2); a.b(0xff, 0x7f); a.short(0x75, 'b9_fw_go')
+    a.b(0x2e, 0x81, 0xbf); a.word('fly_prv', 2); a.b(0xff, 0x7f); a.short(0x75, 'b9_fw_go')
+    a.b(0x83, 0xc3, 0x04, 0x83, 0xfb, 0x10); a.short(0x72, 'b9_fw_loop'); a.b(0x5b, 0xc3)
+    a.label('b9_fw_go')
+    a.b(0x5b); a.near(0xe9, 'fly_pics')
+    # fly_map (from move_bar, before the map figure of the knight whose turn it is is drawn; keeps all): with 3 lives
+    # lost to the curse, its flies (fly_mapd: smaller paths) on the page being drawn, which the map loop's next pass
+    # restores from the background (5A72) before it draws again; the figure is drawn over them
+    a.label('fly_map')
+    a.b(0x50, 0x57, 0x8b, 0x3e, 0xe8, 0x77); a.near(0xe8, 'curse_of')   # push ax di / mov di, [77E8h]
+    a.b(0x3c, 0x04); a.short(0x72, 'b9_fl_pop'); a.near(0xe8, 'fly_mapd')   # 3 lives lost or more
+    a.label('b9_fl_pop')
+    a.b(0x5f, 0x58, 0xc3)
+    a.label('fly_col'); a.b(0, 0)
+    a.label('fly_rk'); a.b(0)
+    a.label('fly_hx'); a.b(0, 0)
+    a.label('fly_hy'); a.b(0, 0)
+    a.ovl_begin(OVL_FLY)
+    # fly_show (from smo_show, every picture of a fight, es = its page = [80B9h]; keeps all): each knight with 3 lives
+    # lost to the curse (fly_cur: its top body piece this tick, limp_draw) gets three flies around its head; an
+    # in-between picture k of n puts the anchor k / n of the way from the tick before's (fly_prv, when not FLY_FAR
+    # away). The tick's own picture (es = smo_b) then makes this tick's anchors the tick before's
+    a.ovl_entry('fly_pics', 'call')
+    a.b(0x2e, 0xc7, 0x06); a.word('vga_fn'); a.word('b9_fs_all'); a.near(0xe9, 'vga_run')
+    a.label('b9_fs_all')
+    a.b(0x33, 0xdb)                                          # xor bx, bx
+    a.label('b9_fs_loop')
+    a.b(0x2e, 0x8b, 0xbf); a.word('fly_cur', 2); a.b(0x81, 0xff, 0xff, 0x7f); a.short(0x74, 'b9_fs_next')   # mov di, y / cmp di, 7FFFh / je
+    a.b(0x2e, 0x8b, 0x87); a.word('fly_cur'); a.b(0x8c, 0xc2, 0x2e, 0x3b, 0x16); a.word('smo_b'); a.short(0x74, 'b9_fs_put')   # mov ax, x / the tick's own: je
+    a.b(0x2e, 0x81, 0xbf); a.word('fly_prv', 2); a.b(0xff, 0x7f); a.short(0x74, 'b9_fs_put')   # none the tick before
+    a.b(0x2e, 0x8a, 0x0e); a.word('rules_table', G_SMOOTH); a.b(0x8a, 0xe9, 0x2e, 0x2a, 0x2e); a.word('smo_k')   # cl = n / ch = n - k
+    a.b(0x2e, 0x8b, 0x97); a.word('fly_prv'); a.near(0xe8, 'b9_fs_mix'); a.b(0x97)   # mov dx, its x / call / xchg ax, di
+    a.b(0x2e, 0x8b, 0x97); a.word('fly_prv', 2); a.near(0xe8, 'b9_fs_mix'); a.b(0x97)
+    a.label('b9_fs_put')
+    a.b(0x53, 0x8b, 0xd8, 0x83, 0xc3, FLY_HX, 0x83, 0xc7, FLY_HY)   # push bx / mov bx, ax / add bx, hx / add di, hy
+    a.b(0x2e, 0xc7, 0x06); a.word('fly_col'); a.b(*FLY_FIGHT_COL); a.b(0x2e, 0xc6, 0x06); a.word('fly_rk'); a.b(0x00)
+    a.near(0xe8, 'fly_put'); a.b(0x5b)
+    a.label('b9_fs_next')
+    a.b(0x83, 0xc3, 0x04, 0x83, 0xfb, 0x10); a.short(0x72, 'b9_fs_loop')   # add bx, 4 / cmp bx, 16 / jb
+    a.b(0x8c, 0xc0, 0x2e, 0x3b, 0x06); a.word('smo_b'); a.short(0x75, 'b9_fs_ret')   # an in-between picture: done
+    a.b(0x33, 0xdb)
+    a.label('b9_fs_roll')
+    a.b(0x2e, 0x8b, 0x87); a.word('fly_cur'); a.b(0x2e, 0x89, 0x87); a.word('fly_prv')
+    a.b(0x2e, 0x8b, 0x87); a.word('fly_cur', 2); a.b(0x2e, 0x89, 0x87); a.word('fly_prv', 2)
+    a.b(0x2e, 0xc7, 0x87); a.word('fly_cur', 2); a.b(0xff, 0x7f)
+    a.b(0x83, 0xc3, 0x04, 0x83, 0xfb, 0x10); a.short(0x72, 'b9_fs_roll')
+    a.label('b9_fs_ret')
+    a.b(0xc3)
+    # b9_fs_mix (ax = now, dx = the tick before's, cl = n, ch = n - k): ax = now + (before - now) x (n - k) / n
+    a.label('b9_fs_mix')
+    a.b(0x2b, 0xd0, 0x52, 0x83, 0xc2, FLY_FAR, 0x83, 0xfa, 2 * FLY_FAR, 0x5a); a.short(0x77, 'b9_fm_ret')   # far: now
+    a.b(0x50, 0x8a, 0xc2, 0xf6, 0xed, 0xf6, 0xf9, 0x98, 0x5a, 0x03, 0xc2)   # push ax / mov al, dl / imul ch / idiv cl / cbw / pop dx / add ax, dx
+    a.label('b9_fm_ret')
+    a.b(0xc3)
+
+    # fly_map (from move_bar, before the map figure of the knight whose turn it is is drawn; keeps all): with 3 lives
+    # lost to the curse, its three flies (smaller paths) on the page being drawn, which the map loop's next pass
+    # restores from the background (5A72) before it draws again; the figure is drawn over them
+    a.ovl_entry('fly_mapd', 'call')
+    a.b(0x2e, 0xc7, 0x06); a.word('vga_fn'); a.word('b9_fl_draw'); a.near(0xe9, 'vga_run')
+    a.label('b9_fl_draw')                                    # es = the page
+    a.b(0x8b, 0x5d, 0x5c, 0x83, 0xc3, FLY_MAP_HX, 0x8b, 0x7d, 0x5e, 0x83, 0xc7, FLY_MAP_HY)   # bx = x + hx / di = y + hy
+    a.b(0x2e, 0xc7, 0x06); a.word('fly_col'); a.b(*FLY_MAP_COL); a.b(0x2e, 0xc6, 0x06); a.word('fly_rk'); a.b(0x01)
+    # (falls into fly_put)
+    # fly_put (bx = the head's x, di = y, es = the page, cs:[fly_col] = the body's and the wing's colours, cs:[fly_rk]
+    # 0 = a fight's paths, 1 = the map's; ds = MAIN's data; keeps all): three flies, each on its own loop (fly_tab:
+    # FLY_TAB_ROWS' periods and phases on a 32-entry sine, a small wobble on top) by the game's timer (sub-ticks), a
+    # pixel of the body and every other sub-tick a wing pixel beside it; nothing off the screen
+    a.label('fly_put')
+    a.b(0x60, 0x2e, 0x89, 0x1e); a.word('fly_hx'); a.b(0x2e, 0x89, 0x3e); a.word('fly_hy')   # pusha / the head
+    a.b(0x06, 0x33, 0xc0, 0x8e, 0xc0, 0xfa, 0x26, 0xa1, 0x6c, 0x04, 0x8b, 0xd0, 0xd1, 0xe0, 0x03, 0xc2)   # t = [046Ch] x 3
+    a.b(0x05, 0x03, 0x00, 0x2b, 0x06, *u16(TIMER_THIRD), 0xfb, 0x07, 0x8b, 0xe8)   # + 3 - [7C19h] / sti / pop es / mov bp, ax
+    a.b(0xbe); a.word('fly_tab'); a.b(0xb9, 0x03, 0x00)      # mov si, fly_tab / mov cx, 3
+    a.label('b9_fp_loop')
+    a.b(0x51, 0x2e, 0x8a, 0x1e); a.word('fly_rk'); a.b(0x32, 0xff)   # push cx / mov bl, cs:[fly_rk] / xor bh, bh
+    a.b(0x2e, 0x8b, 0x04, 0x2e, 0x8a, 0x54, 0x04, 0x2e, 0x8a, 0x70, 0x06); a.near(0xe8, 'b9_fp_one'); a.b(0x8b, 0xc8)   # x: its loop
+    a.b(0xb8, *u16(FLY_WOBBLE[0]), 0x2e, 0x8a, 0x54, 0x0a, 0xb6, 0x02); a.near(0xe8, 'b9_fp_one'); a.b(0x03, 0xc8)   # its wobble
+    a.b(0x2e, 0x03, 0x0e); a.word('fly_hx')                  # add cx, the head's x
+    a.b(0x2e, 0x8b, 0x44, 0x02, 0x2e, 0x8a, 0x54, 0x05, 0x2e, 0x8a, 0x70, 0x08); a.near(0xe8, 'b9_fp_one'); a.b(0x8b, 0xf8)   # y
+    a.b(0xb8, *u16(FLY_WOBBLE[1]), 0x2e, 0x8a, 0x54, 0x0b, 0xb6, 0x01); a.near(0xe8, 'b9_fp_one'); a.b(0x03, 0xf8)
+    a.b(0x2e, 0x03, 0x3e); a.word('fly_hy')
+    a.b(0x8b, 0xd9, 0x2e, 0x8a, 0x26); a.word('fly_col'); a.near(0xe8, 'b9_fp_px')   # mov bx, cx / mov ah, the body / call
+    a.b(0x59, 0x51, 0x8b, 0xc5, 0x03, 0xc1, 0xa8, 0x01); a.short(0x74, 'b9_fp_next')   # pop cx / push cx / (t + cx) & 1 / jz
+    a.b(0x43, 0xf6, 0xc1, 0x01); a.short(0x75, 'b9_fp_wing'); a.b(0x83, 0xeb, 0x02)   # inc bx / test cl, 1 / jnz / sub bx, 2
+    a.label('b9_fp_wing')
+    a.b(0x2e, 0x8a, 0x26); a.word('fly_col', 1); a.near(0xe8, 'b9_fp_px')
+    a.label('b9_fp_next')
+    a.b(0x59, 0x83, 0xc6, FLY_REC); a.short(0xe2, 'b9_fp_loop')   # pop cx / add si, 12 / loop
+    a.b(0x61, 0xc3)                                          # popa / ret
+    # b9_fp_px (bx = x, di = y, ah = the colour, es = the page): hint_plot when on the screen
+    a.label('b9_fp_px')
+    a.b(0x81, 0xfb, 0x3f, 0x01); a.short(0x77, 'b9_fp_ret')  # cmp bx, 319 / ja (left of 0 too)
+    a.b(0x81, 0xff, 0xc7, 0x00); a.short(0x77, 'b9_fp_ret')  # cmp di, 199 / ja
+    a.near(0xe9, 'hint_plot')
+    a.label('b9_fp_ret')
+    a.b(0xc3)
+    # b9_fp_one (ax = the step a sub-tick, dl = the phase, dh = the radius, bp = t; keeps all but ax): ax = the radius x
+    # sin((t x step >> 8) + phase), the sine in 64ths
+    a.label('b9_fp_one')
+    a.b(0x53, 0x52, 0x8b, 0xda, 0xf7, 0xe5, 0x8a, 0xc4, 0x02, 0xc3, 0x24, 0x1f)   # push bx dx / mov bx, dx / mul bp / al = ah + phase & 31
+    a.b(0x53, 0xbb); a.word('fly_sine'); a.b(0x2e, 0xd7, 0x5b)   # push bx / mov bx, fly_sine / xlat cs: / pop bx
+    a.b(0xf6, 0xef, 0xc1, 0xf8, 0x06, 0x5a, 0x5b, 0xc3)      # imul bh / sar ax, 6 / pop dx bx / ret
+    a.label('fly_sine'); a.b(FLY_SINE)
+    a.label('fly_tab')                                       # each fly: x step, y step (words), x and y phase, x radius
+    for f, (rx, ry, px, py, pa, pb) in enumerate(FLY_TAB_ROWS):   # (fight, map), y radius (fight, map), wobble phases
+        a.b(*u16(FLY_STEP(px)), *u16(FLY_STEP(py)), FLY_PHASE(pa), FLY_PHASE(pb), rx, round(rx * FLY_MAP_R),
+            ry, round(ry * FLY_MAP_R), FLY_PHASE(3 * f), FLY_PHASE(5 * f))
+    a.ovl_end()
 
 
 def rules_data(a, table):
@@ -16657,6 +17160,7 @@ def rules_data(a, table):
     a.label('wk_off'); a.b(0, 0, 0, 0)                       # the slot's place in it,
     a.b(0, 0, *u16(WK_SRC)); a.label('wk_dseg'); a.b(0, 0)   # to (handle 0) buf_seg:WK_SRC (D153: the end of BUF_WALK's room)
     a.label('atk_on'); a.b(0)                                # D146: 1 = SAVEHOOK.INB has the attacks' slots
+    a.label('limp_on'); a.b(0)                               # B9: 1 = ... and the limp's (LIMP_BASE)
     a.label('atk_f'); a.b(0, 0)                              # ... the next frame's record in BUF_WALK (0: the slot to fetch)
     a.label('atk_s'); a.b(0, 0)                              # ... the slot of the picture being drawn (0 = its first)
     a.label('smo_fl'); a.b(0)                                # the read-outs: pictures in the window so far ...
@@ -17114,21 +17618,23 @@ def rules_data(a, table):
 _PLANS = {}                                  # SR2: the relaxation plan of each rules table built so far
 
 
-def make_savehook(rules_table=None, terrain=None):
+def make_savehook(rules_table=None, terrain=None, hints=()):
     """SAVEHOOK.COM. SR2: built once as written, then again with every jump the plan may shorten shortened, and
     again without the short ones that no longer reach, until all reach (each table's plan is kept). D133: terrain,
     the packed 80 x 50 table (TZ_CELLS // 2 bytes) or None, rides in SAVEHOOK.OVL's tail (the layout of the code does
-    not depend on it, so the plan is the table's)."""
+    not depend on it, so the plan is the table's). B10: hints, the keys of HINT_TEXTS of the loading hints, ride after
+    it with the curse texts (msg_store; nor does the layout depend on them)."""
     terrain = bytes(terrain or b'')
+    msgs = msg_store(hints)
     if terrain and len(terrain) != TZ_CELLS // 2:
         raise ValueError(f'D133: the terrain table must be {TZ_CELLS // 2} bytes')
     key = None if rules_table is None else bytes(rules_table)
     plan = _PLANS.get(key)
     if plan is None:
-        a, code = _build_savehook(rules_table, None, terrain)
+        a, code = _build_savehook(rules_table, None, terrain, msgs)
         plan = relax_plan(a, code)
         while True:
-            a, code = _build_savehook(rules_table, plan, terrain)
+            a, code = _build_savehook(rules_table, plan, terrain, msgs)
             if not a.bad:
                 break
             for k in a.bad:
@@ -17138,15 +17644,16 @@ def make_savehook(rules_table=None, terrain=None):
                     del plan[k]
         _PLANS[key] = plan
         return code
-    a, code = _build_savehook(rules_table, plan, terrain)
+    a, code = _build_savehook(rules_table, plan, terrain, msgs)
     if a.bad:
         raise ValueError(f'SR2: the kept plan no longer reaches ({sorted(a.bad)})')
     return code
 
 
-def _build_savehook(rules_table, plan, terrain=b''):
+def _build_savehook(rules_table, plan, terrain=b'', msgs=None):
     a = Asm(0x100, plan)
     a.terrain = terrain                                      # D133: SAVEHOOK.OVL's tail
+    a.msgs = msg_store() if msgs is None else msgs           # B10: after it, the loading screens' texts
     a.table = bytes(rules_table or rules_default_table())    # D134: the settings the code is built for (the Valley's box)
     a.near(0xe9, 'install')                                  # jmp install
     a.b(SIGNATURE)
@@ -17273,6 +17780,7 @@ def _build_savehook(rules_table, plan, terrain=b''):
 
     rules_code(a)
     smooth_code(a)                                           # D136
+    curse_code(a)                                            # B9
     ovl_runtime(a)                                           # SR4
 
     a.label('mcb')                                           # es = memory block of the current PSP
@@ -17448,7 +17956,17 @@ def _build_savehook(rules_table, plan, terrain=b''):
     a.label('mine_t'); a.b(0, 0)                             # ... the tick they were drawn
     a.label('mine_mode'); a.b(0)                             # ... mine_rect: 0 keep the background, 1 put it back
     a.label('mine_z'); a.b(bytes(2 * MINE_COUNT))
-    a.label('snd_id'); a.b(CHEAT_SOUND, 0)                   # the next sound of a fight's frame
+    a.label('snd_id'); a.b(CHEAT_SOUND, 0)                   # the next sound of a fight's frame (B9: or of the map's next pass)
+    a.label('curse_lost'); a.b(0, 0, 0, 0)                   # B9: lives each knight lost to the ratmen's curse (at most 3; 0 once cured)
+    a.label('msg_held'); a.b(0)                              # B9: 1 = the loading screen's scratch area holds a curse text
+    a.label('msg_off'); a.b(0, 0, 0, 0)                      # B10: the store's place in SAVEHOOK.OVL (patched after the build)
+    a.label('msg_n'); a.b(0)                                 # B10: the loading hints in it (0 = the game's own messages)
+    a.label('limp_st'); a.b(0)                               # B9: limp_draw: 1 = a limping knight's legs drawn, 2 = its upper pieces
+    a.label('limp_frm'); a.b(0)                              # ... the legs piece's frame
+    a.label('limp_d'); a.b(0, 0)                             # ... the upper pieces' move: x, y
+    a.label('limp_obj'); a.b(0, 0)                           # ... the knight
+    a.label('fly_cur'); a.b(b'\0\0\xff\x7f' * 4)              # B9: each knight's flies: this tick's anchor x, y (y 7FFFh: none)
+    a.label('fly_prv'); a.b(b'\0\0\xff\x7f' * 4)              # ... the tick before's
     a.label('map_flags'); a.b(0)                             # SIRWALKSALOT, SIRPICKSALOT, D122 SKIPCOMBAT (on until typed again)
     a.label('skip_xp'); a.b(0)                               # D122: 1 = a skipped lair fight's first win: no XP (lair_loot)
     a.label('key_show'); a.b(0)                              # IDROPPEDMYKEY: the screen's stage, 0 = none
@@ -17597,8 +18115,10 @@ def _build_savehook(rules_table, plan, terrain=b''):
     img = a.labels['inst_tail_img'] - 0x100
     code[img:img + len(tail)] = tail
     struct.pack_into('<I', code, img + a.labels['inst_tzm_off'] - a.win, a.ovl_groups)   # D133: the table's place
+    struct.pack_into('<I', code, a.labels['msg_off'] - 0x100, a.ovl_groups + len(a.terrain))   # B10: the store's place
+    code[a.labels['msg_n'] - 0x100] = len(a.msgs) // MSG_LEN - CURSE_N                     # ... and its hints
     ovl = b''.join(a.ovl_code[g] + bytes(len(a.ovl_code[g]) & 1) if g in a.ovl_code else b''
-                   for g in range(1, max(OVL_GROUPS(a), default=0) + 1)) + a.terrain
+                   for g in range(1, max(OVL_GROUPS(a), default=0) + 1)) + a.terrain + a.msgs
     if len(ovl) != a.ovl_size:
         raise ValueError('SR4: the overlays are not the length in ovl_tab')
     struct.pack_into('<H', code, a.labels['ovl_sum_at'] - 0x100,

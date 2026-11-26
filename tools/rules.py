@@ -358,6 +358,8 @@ SMOOTH_VALUES = {'1': 1, '2': 2, '3': 3, '6': 6}
 # (FIXES D136): at these three knights against the trolls show 93-95 % of their in-between pictures, a knight
 # against a lair's monsters all of them
 SMOOTH_CYCLES = {2: 14000, 3: 20000, 6: 32000}
+CURSE_HOOKS = ('msg_pick',)                   # B9: written only with ratmen_disease on (B10: or loading hints)
+LOADING_HINTS = {'rebuilt': 1, 'original': 0}  # B10: [Rules] loading_hints (an older ini: rebuilt)
 SMOOTH_HOOKS = ('sm_hold', 'sm_tick')         # D136: written only with smooth_animation above 1 or a read-out on
 COOP_MODES = {'off': 0, 'full': 1, 'shared': 2}
 COOP_DEFAULT, COOP_EXTRA_DEFAULT = 1, 50
@@ -473,6 +475,7 @@ HOOKS = [
     (0x0d03, '806c3101', 'lives_si'),                   # computer knight robbed by the dragon
     (0x0fff, '806c3102', 'lives_si'),                   # Guardian: two more
     (0x122f, '806c3101', 'lives_si'),                   # ratmen disease
+    (0x909b, '8b36208e', 'msg_pick'),                   # B9: a cursed knight's loading screen (ratmen_disease on; 90A8 is D74's)
     (0x4d53, 'a33a78', 'ck_shot'), (0x2f46, '294538', 'gun_monster'),   # D64 GUNSHOT: a computer knight's shot, a ball's kill
     (0x3adb, '836d3803', 'dragon_dagger'),              # D109: a thrown dagger on the dragon: Vampirism for its thrower
     (0x40ca, '894528', 'td_move'),                      # D46: a knight's move starts: the block's or dodge's time, the fast swing
@@ -614,7 +617,7 @@ _smooth_cycles.allowed = ('auto', '0', '100-65535')
 
 def smooth_hooks(r):
     """D136: are the fight loop's two sites written? With one picture a tick and no read-out the loop is the game's."""
-    return r.get('smooth', 1) > 1 or r.get('draw_fps') or r.get('draw_tps')
+    return r.get('smooth', 1) > 1 or r.get('draw_fps') or r.get('draw_tps') or r.get('ratmen_disease')   # B9: the flies
 
 def _tz_cells(raw):
     if raw.lower() not in ('4x4', '2x2'):
@@ -741,6 +744,8 @@ def read_ini(path):
         return r
     r = {'knights': [], 'speedrun': 0, 'exploit_fixes': EXPLOIT_FIXES, 'age': age[0], 'age_lock': age[1]}
     r['ratmen_disease'] = _get(cp, g, 'ratmen_disease', _onoff)
+    r['loading_hints'] = (_get(cp, g, 'loading_hints', _choice(LOADING_HINTS)) if cp.has_option(g, 'loading_hints')
+                          else LOADING_HINTS['rebuilt'])   # B10
     r['hawk_curse'] = _get(cp, g, 'hawk_curse_chance', float, *rb['hawk_curse_chance'])
     r['protection_curse'] = _get(cp, g, 'protection_curse_chance', float, *rb['protection_curse_chance'])
     for key, name in (('haste_curse', 'haste_curse_chance'), ('wyrm_curse', 'wyrm_curse_chance')):
@@ -951,7 +956,7 @@ def read_ini(path):
     r['ai_math_per_moon_phase'] = _get(cp, b, 'math_visit_per_moon_phase', _onoff)
     r['ai_duel_win_xp'] = _get(cp, b, 'duel_win_xp', int, *rb['duel_win_xp'])
     knight_keys = set(KNIGHT_BOUNDS) | {'weapon', 'armour', 'mode', 'colour'}
-    known = {g: {'ratmen_disease', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
+    known = {g: {'ratmen_disease', 'loading_hints', 'hawk_curse_chance', 'protection_curse_chance', 'haste_curse_chance', 'wyrm_curse_chance', 'max_gold', 'max_lives',
                  'speedrun_mode', 'default_cycles', 'fight_cycles', 'additional_cycles_per_knight', 'smooth_animation', 'smooth_fight_cycles', 'death_animations', 'gore', 'dragon_debug_mode', 'input_buffer', 'input_recent_direction', 'input_chord', 'walk_short_first_step', 'input_log', 'coop_lairs', 'extra_loot_per_knight', 'sword_enchantments', 'sword_enchantment_chance', 'armour_enchantments', 'armour_enchantment_chance', 'village_heal', 'village_heal_where', 'on_e_rest_heal', 'rest_heal_fixed_percentage', 'rest_heal_endurance_percentage', 'cheat_codes', 'anticheese', 'catchup', 'moon_days', 'save_mode', 'prevent_savescumming', 'hardcore_autosave_mode', 'pointer_coordinates',
                  'merchant_selling', 'merchant_trade_in', 'horses', 'move_bar', 'secondary_button', 'rare_horse_chance', 'computer_knights', 'black_knight_ai', 'timed_defence', *TD_DEFAULTS,
                  *(f'{name}_horse_{what}' for name, *_ in HORSES for what in ('price', 'movement', 'forest_swamp_speed', 'mountains_edges_speed')),
@@ -1180,6 +1185,8 @@ def main_patches(r, img):
         if r['speedrun'] and kind in SPEEDRUN_GAME:
             continue
         if kind in SMOOTH_HOOKS and not smooth_hooks(r):   # D136: one picture a tick: the game's own loop
+            continue
+        if kind in CURSE_HOOKS and not (r.get('ratmen_disease') or loading_hints(r)):
             continue
         if kind == 'walk_short' and not r.get('walk_short', 1):   # D154: off: the game's own first step
             continue
@@ -1472,6 +1479,49 @@ def apply(img, patches):
         img[where:where + len(new)] = new
     return bytes(img)
 
+# B10: the loading hints (make_savehook.HINT_TEXTS; docs/study-2026-11-25-b10-loading-hints.md section 3): each in the
+# store only while its condition holds. G: the game's own messages, O: the game's own items, N: Rebuilt's features
+def _ratmen_rise(r):                                  # G3: no value falls from normal to three-quarter to full moon, one rises
+    n, q, f = (r['ratmen'][p] for p, *_ in RATMEN)
+    return all(a <= b <= c for a, b, c in zip(n, q, f)) and any(a < c for a, c in zip(n, f))
+
+def _baloks_north(r):                                 # G5: the Baloks' lairs (7-9) all in the map's upper half
+    import map_mod
+    lay = r.get('layout') or map_mod.original_layout()
+    return all(lay[map_mod.lair_key(i)][1] < 95 for i in range(6, 9))
+
+_spec = lambda key: (lambda r: r['special_items'] != 0 and r[key])
+HINT_RULES = [
+    ('G0', lambda r: True), ('G1', lambda r: True), ('G3', _ratmen_rise), ('G4', lambda r: True), ('G5', _baloks_north),
+    ('G6', lambda r: True), ('G7', lambda r: True), ('G8', lambda r: not r['village_any']),
+    ('G8b', lambda r: r['village_any']), ('G9', lambda r: True), ('G11', lambda r: True),
+    ('G12', lambda r: r['computer_knights']), ('G13', lambda r: True),
+    *((f'O{n}', lambda r: True) for n in range(1, 8)),
+    *((f'N{n}', _spec('enchant')) for n in (1, 2, 3)),
+    *((f'N{n}', _spec('arm_enchant')) for n in (4, 5, 6, 7)),
+    *((f'N{n}', _spec('potions')) for n in (8, 9, 10)),
+    *((f'N{n}', _spec('rings')) for n in (11, 12, 13, 14)),
+    *((f'N{n}', _spec('gems')) for n in (15, 16, 17)),
+    ('N18', lambda r: r['special_items'] == SPEC_LAIRS),
+    ('N19', lambda r: r['horses']), ('N20', lambda r: r['horses'] and r['horse_hp'][[h[0] for h in HORSES].index('full_armour')] > 0),
+    ('N21', lambda r: r['selling']), ('N22', lambda r: r['trade_in']), ('N23', lambda r: r['coop_lairs']),
+    ('N24', lambda r: r['cross']), ('N25', lambda r: r['hoard'] == HOARD_MODES['grows']),
+    ('N26', lambda r: r['timed_defence']), ('N27', lambda r: r['timed_defence']), ('N28', lambda r: r['duck_dodge']),
+    ('N29', lambda r: r['safety'] > 0), ('N30', lambda r: r['terrain']),
+    ('N31', lambda r: any(r[k] > 0 for k in ('hawk_curse', 'protection_curse', 'haste_curse', 'wyrm_curse'))),
+    ('N32', lambda r: r['protection_curse'] > 0), ('N33', lambda r: r['catchup']),
+    ('N35', lambda r: r['math'][[n for n, _ in MATH].index('frog')] > 0),
+    ('N36', lambda r: r['rest_heal'] == REST_HEAL['fixed_and_endurance'] and r['rest_endurance'] > 0),
+    ('N37', lambda r: r['village_heal'] == VILLAGE['full'] and not r['village_any']),
+]
+
+def loading_hints(r):
+    """B10: the keys of the loading hints whose conditions hold for the rules r (none with loading_hints = original:
+    the game's own messages in its own rotation)."""
+    if not r.get('loading_hints', 1):
+        return []
+    return [key for key, cond in HINT_RULES if cond(r)]
+
 def build(game, r):
     """Returns (MAIN.EXE, SAVEHOOK.COM) for the rules r."""
     from make_savehook import make_savehook
@@ -1479,7 +1529,8 @@ def build(game, r):
     header = struct.unpack('<H', exe[8:10])[0] * 16
     r = dict(r, map_len=map_length(game))                  # D135
     img = apply(exe[header:], main_patches(r, exe[header:]))
-    return exe[:header] + img, make_savehook(table(r), terrain_table(exe[header:], r))   # D133: the 80 x 50 zones
+    return exe[:header] + img, make_savehook(table(r), terrain_table(exe[header:], r),   # D133: the 80 x 50 zones
+                                             loading_hints(r))                            # B10
 
 def install(game, setup=False):
     """install_lock around _install (below)."""

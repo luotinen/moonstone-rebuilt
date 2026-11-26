@@ -1251,6 +1251,9 @@ class SpecialItems(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.source = (ROOT / 'custom_rules-default.ini').read_text(encoding='utf-8')
+        # B9 (D161) turned ratmen_disease on in the default file; the fixtures' tables were built with it off
+        self.assertEqual(self.source.count('\nratmen_disease = on '), 1)
+        self.source = self.source.replace('\nratmen_disease = on ', '\nratmen_disease = off')
         self.chances = [getattr(rules, n) for n in self.CHANCES]
 
     def table(self, path):
@@ -1282,7 +1285,8 @@ class SpecialItems(unittest.TestCase):
         base = bytes.fromhex(self.want[self.OLD])
         for name in ('custom_rules-default.ini', 'custom_rules.ini'):   # the lairs way: the chance bytes 100
             t = self.table(ROOT / name)
-            self.assertEqual({i for i in range(n) if t[i] != base[i]}, set(self.chances), name)
+            self.assertEqual(t[rules.G_DISEASE], 1, name)              # B9: ratmen_disease = on
+            self.assertEqual({i for i in range(n) if t[i] != base[i]}, set(self.chances) | {rules.G_DISEASE}, name)
             self.assertEqual([t[at] for at in self.chances], [100] * 5)
             self.assertEqual(self.spec(t), (rules.SPEC_LAIRS, 8, [10] * 5))
 
@@ -1296,7 +1300,7 @@ class SpecialItems(unittest.TestCase):
         self.assertEqual((cp.get('Special_items', 'special_items'), cp.get('Special_items', 'special_item_lairs')), ('lairs', '8'))
         for key, old in rules.SPECIAL_KEYS.items():
             self.assertFalse(cp.has_option(old, key), key)
-        self.assertEqual((ROOT / 'custom_rules.ini').read_text(encoding='utf-8'), self.source)
+        self.assertEqual((ROOT / 'custom_rules.ini').read_text(encoding='utf-8'), (ROOT / 'custom_rules-default.ini').read_text(encoding='utf-8'))
 
     def test_a_key_in_both_places_the_new_section_wins(self):
         text = self.source.replace('[Treasure]\n', '[Treasure]\nrare_gem_chance = 55\n').replace(
@@ -2291,7 +2295,9 @@ class WalkFrames(unittest.TestCase):
         self.assertIn('walk_match', labels)
         self.assertIn('wk_h', labels)
         self.assertEqual(code[labels['wk_h'] - 0x100:labels['wk_h'] - 0x100 + 2], bytes(2))   # no file until the installer finds it
-        self.assertEqual(hook.BUF_ILOG - hook.BUF_WALK, hook.WK_SLOT + hook.WK_MARGIN)   # D153: the unpacking's margin
+        self.assertEqual(hook.BUF_MSG - hook.BUF_WALK, hook.WK_SLOT + hook.WK_MARGIN)   # D153: the unpacking's margin
+        self.assertEqual(hook.BUF_HINT - hook.BUF_MSG, hook.MSG_ROOM)  # B9: the loading screen's scratch area kept
+        self.assertEqual(hook.BUF_ILOG - hook.BUF_HINT, 66)            # B10: the hints' round (a place, 64 bytes of order)
 
     def test_packed_slots(self):
         # D153: a slot packed in place unpacks to itself (as wk_fetch does it, from the end of BUF_WALK's room); the

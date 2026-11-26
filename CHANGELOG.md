@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+* **More loading screens** (D162 = B10; custom rules, `[Rules] loading_hints = rebuilt` by default, also for an older
+  `custom_rules.ini`): the screen before every fight now goes through the gods' messages (corrected where they were
+  wrong: "Visit any village" when `village_heal_where = any`) mixed with hints about the game's items and about the
+  Rebuilt features your `custom_rules.ini` has on, and only those: enchanted blades and armour, rare potions, rings and
+  gems, horses, the merchant's buying and trade-in, co-op lairs, the fallen knight's cross, Timed Defence, ducking and
+  more. Each is shown once before any comes again, in a new order every round. `original` keeps the game's own 14
+  messages in their own order. A cursed knight still sees the curse's texts first.
+
+* **The ratmen's curse is back, and it shows** (D161 = B9; custom rules, `ratmen_disease = on` is now the default; an
+  older `custom_rules.ini` keeps the value written in it: set `ratmen_disease = on` there to have it): a ratman's bite
+  again costs a life at every moon phase until a healer, a healing potion, Danu at Stonehenge or a Potion of Full
+  Restoration cures it. A cursed human knight shows it: before every fight the loading screen tells about the curse
+  (13 texts, one at random); after one life lost to it the knight grunts at the start of each turn; after two it limps
+  in fights (the upper body sinks on one leg's step; the speed is the same); after three flies buzz around it in fights
+  and around its figure on the map on its turns. Rerun Setup.bat: `SAVEHOOK.INB` gets the limp's in-between pictures.
+
 * **Turns come at once; combos still work** (D160; custom rules): a back key no longer waits one game read (110 ms)
   for a possible combo. The knight turns at once, and if fire follows within `input_chord` ticks the turn is undone and
   the combo (backward thrust, dagger, block) goes the way the knight faced before. Left-right taps turn the knight up
